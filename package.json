@@ -1,0 +1,44 @@
+{
+  "name": "data-bp",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "db:push": "drizzle-kit push",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:studio": "drizzle-kit studio",
+    "sync:initial": "tsx --env-file=.env scripts/initial-load.ts",
+    "views:apply": "tsx --env-file=.env scripts/apply-views.ts",
+    "views:refresh": "tsx --env-file=.env scripts/refresh-views.ts",
+    "smoke:queries": "tsx --env-file=.env scripts/smoke-queries.ts",
+    "smoke:sync": "tsx --env-file=.env scripts/smoke-sync.ts"
+  },
+  "dependencies": {
+    "chart.js": "^4.4.9",
+    "csv-parse": "^5.6.0",
+    "drizzle-orm": "^0.43.1",
+    "next": "16.2.6",
+    "node-cron": "^3.0.3",
+    "postgres": "^3.4.5",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "swr": "^2.3.3",
+    "zod": "^3.24.3",
+    "zustand": "^5.0.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/node-cron": "^3.0.11",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "drizzle-kit": "^0.31.1",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.6",
+    "tsx": "^4.19.3",
+    "typescript": "^5"
+  }
+}
