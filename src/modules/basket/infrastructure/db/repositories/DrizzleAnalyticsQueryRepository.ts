@@ -1,7 +1,12 @@
 import { sql } from 'drizzle-orm';
 import { db, type Db } from '@shared/db/client';
 import type { IAnalyticsQueryRepository } from '@basket/core/ports/IAnalyticsQueryRepository';
-import type { DateRange, Granularity } from '@basket/core/dtos/shared';
+import {
+  hasFilters,
+  type CommonFilters,
+  type DateRange,
+  type Granularity,
+} from '@basket/core/dtos/shared';
 import type {
   OverviewDTO,
   OverviewBreakdown,
@@ -44,14 +49,34 @@ const TRUNC: Record<Granularity, string> = {
   month: 'month',
 };
 
+const escStr = (str: string): string => str.replace(/'/g, "''");
+
+function buildActiveFilterWhere(f?: CommonFilters): string {
+  if (!hasFilters(f)) return '';
+  const parts: string[] = [];
+  if (f!.countries && f!.countries.length > 0) {
+    const list = f!.countries.map((c) => `'${escStr(c)}'`).join(',');
+    parts.push(`user_country IN (${list})`);
+  }
+  if (f!.accessType) parts.push(`access_type = '${escStr(f!.accessType)}'`);
+  if (f!.subType) parts.push(`sub_type = '${escStr(f!.subType)}'`);
+  return ` AND ${parts.join(' AND ')}`;
+}
+
 export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepository {
   constructor(private readonly conn: Db = db) {}
 
   // --------------------------------------------------------------------------
   // OVERVIEW — 1 mat view scan + 2 small queries, parallelized
   // --------------------------------------------------------------------------
-  async getOverview(asOf: Date = new Date()): Promise<OverviewDTO> {
+  async getOverview(
+    asOf: Date = new Date(),
+    filters?: CommonFilters,
+  ): Promise<OverviewDTO> {
     const day = asOf.toISOString().slice(0, 10);
+    if (hasFilters(filters)) {
+      return this.getOverviewFiltered(day, filters!);
+    }
 
     const [todayRows, trendRows, newPayersRows, revRows] = await Promise.all([
       this.conn.execute(sql.raw(`
@@ -141,9 +166,147 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
   }
 
   // --------------------------------------------------------------------------
+  // OVERVIEW (filtered) — live SQL on basket_v_active_payments
+  // --------------------------------------------------------------------------
+  private async getOverviewFiltered(day: string, filters: CommonFilters): Promise<OverviewDTO> {
+    const fw = buildActiveFilterWhere(filters);
+
+    const [todayRows, trendRows, newPayersRows, revRows] = await Promise.all([
+      this.conn.execute(sql.raw(`
+        WITH active AS (
+          SELECT DISTINCT user_id, user_country, access_type, sub_type
+          FROM basket_v_active_payments
+          WHERE created_at::date <= '${day}'::date
+            AND (expires_at + INTERVAL '7 days')::date >= '${day}'::date
+            ${fw}
+        )
+        SELECT
+          COUNT(DISTINCT user_id)::int AS all_active,
+          COUNT(DISTINCT user_id) FILTER (WHERE access_type='real')::int    AS real_active,
+          COUNT(DISTINCT user_id) FILTER (WHERE access_type='voucher')::int AS voucher_active,
+          COUNT(DISTINCT user_id) FILTER (WHERE access_type='antel')::int   AS antel_active,
+          COUNT(DISTINCT user_id) FILTER (WHERE sub_type='Free')::int            AS free_active,
+          COUNT(DISTINCT user_id) FILTER (WHERE sub_type='Mensual_Basico')::int  AS mensual_basico_active,
+          COUNT(DISTINCT user_id) FILTER (WHERE sub_type='Mensual_Total')::int   AS mensual_total_active,
+          COUNT(DISTINCT user_id) FILTER (WHERE sub_type='Anual_Total')::int     AS anual_total_active,
+          COUNT(DISTINCT user_id) FILTER (WHERE user_country='Uruguay')::int   AS uy_active,
+          COUNT(DISTINCT user_id) FILTER (WHERE user_country='Argentina')::int AS ar_active,
+          COUNT(DISTINCT user_id) FILTER (WHERE user_country='Chile')::int     AS cl_active,
+          COUNT(DISTINCT user_id) FILTER (WHERE user_country IS NULL
+                              OR user_country NOT IN ('Uruguay','Argentina','Chile'))::int AS other_active
+        FROM active
+      `)),
+      this.conn.execute(sql.raw(`
+        WITH days AS (
+          SELECT generate_series(('${day}'::date - INTERVAL '29 days')::date,
+                                 '${day}'::date,
+                                 '1 day'::interval)::date AS d
+        ),
+        f AS (
+          SELECT user_id, created_at, expires_at, access_type
+          FROM basket_v_active_payments
+          WHERE 1=1 ${fw}
+        )
+        SELECT
+          d.d AS day,
+          COUNT(DISTINCT user_id) FILTER (
+            WHERE created_at::date <= d.d
+              AND (expires_at + INTERVAL '7 days')::date >= d.d
+          )::int AS all_active,
+          COUNT(DISTINCT user_id) FILTER (
+            WHERE access_type='real'
+              AND created_at::date <= d.d
+              AND (expires_at + INTERVAL '7 days')::date >= d.d
+          )::int AS real_active,
+          COUNT(DISTINCT user_id) FILTER (
+            WHERE access_type='voucher'
+              AND created_at::date <= d.d
+              AND (expires_at + INTERVAL '7 days')::date >= d.d
+          )::int AS voucher_active
+        FROM days d LEFT JOIN f ON TRUE
+        GROUP BY d.d
+        ORDER BY d.d
+      `)),
+      this.conn.execute(sql.raw(`
+        SELECT COUNT(*)::int AS c FROM (
+          SELECT user_id, MIN(created_at) AS first_at
+          FROM basket_v_active_payments
+          WHERE 1=1 ${fw}
+          GROUP BY user_id
+        ) f
+        WHERE f.first_at >= ('${day}'::date - INTERVAL '30 days')
+      `)),
+      this.conn.execute(sql.raw(`
+        SELECT currency, SUM(amount)::numeric AS amount
+        FROM basket_v_active_payments
+        WHERE created_at >= ('${day}'::date - INTERVAL '30 days')
+          AND amount > 0
+          ${fw}
+        GROUP BY currency
+        ORDER BY amount DESC
+      `)),
+    ]);
+
+    const today = ((todayRows as unknown) as RowAny[])[0] ?? {};
+    const all = n(today.all_active);
+    const pct = (v: unknown): number => (all > 0 ? Math.round((n(v) / all) * 1000) / 10 : 0);
+
+    const accessBreakdown: OverviewBreakdown[] = [
+      { label: 'real',    count: n(today.real_active),    pct: pct(today.real_active) },
+      { label: 'voucher', count: n(today.voucher_active), pct: pct(today.voucher_active) },
+      { label: 'antel',   count: n(today.antel_active),   pct: pct(today.antel_active) },
+    ];
+    const subTypeBreakdown: OverviewBreakdown[] = [
+      { label: 'Free',           count: n(today.free_active),           pct: pct(today.free_active) },
+      { label: 'Mensual_Basico', count: n(today.mensual_basico_active), pct: pct(today.mensual_basico_active) },
+      { label: 'Mensual_Total',  count: n(today.mensual_total_active),  pct: pct(today.mensual_total_active) },
+      { label: 'Anual_Total',    count: n(today.anual_total_active),    pct: pct(today.anual_total_active) },
+    ];
+    const countryBreakdown: OverviewBreakdown[] = [
+      { label: 'Uruguay',   count: n(today.uy_active),    pct: pct(today.uy_active) },
+      { label: 'Argentina', count: n(today.ar_active),    pct: pct(today.ar_active) },
+      { label: 'Chile',     count: n(today.cl_active),    pct: pct(today.cl_active) },
+      { label: 'Other',     count: n(today.other_active), pct: pct(today.other_active) },
+    ];
+    const trend30d: OverviewTrendPoint[] = ((trendRows as unknown) as RowAny[]).map((r) => ({
+      day: d(r.day),
+      allActive: n(r.all_active),
+      realActive: n(r.real_active),
+      voucherActive: n(r.voucher_active),
+    }));
+
+    return {
+      asOf: day,
+      kpis: {
+        activeAll: all,
+        activeReal: n(today.real_active),
+        activeVoucher: n(today.voucher_active),
+        activeAntel: n(today.antel_active),
+        activeFree: n(today.free_active),
+        activeMensualBasico: n(today.mensual_basico_active),
+        activeMensualTotal: n(today.mensual_total_active),
+        activeAnualTotal: n(today.anual_total_active),
+        newPayersLast30d: n(((newPayersRows as unknown) as RowAny[])[0]?.c),
+        revenueLast30dByCurrency: ((revRows as unknown) as RowAny[]).map((r) => ({
+          currency: s(r.currency),
+          amount: n(r.amount),
+        })),
+      },
+      trend30d,
+      accessBreakdown,
+      subTypeBreakdown,
+      countryBreakdown,
+    };
+  }
+
+  // --------------------------------------------------------------------------
   // EVOLUTION — single mat view scan, bucketed by DATE_TRUNC
   // --------------------------------------------------------------------------
-  async getEvolution(range: DateRange, granularity: Granularity = 'day'): Promise<EvolutionDTO> {
+  async getEvolution(
+    range: DateRange,
+    granularity: Granularity = 'day',
+    _filters?: CommonFilters,
+  ): Promise<EvolutionDTO> {
     const { from, to } = rangeBounds(range);
     const trunc = TRUNC[granularity];
 
@@ -183,10 +346,15 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
   // --------------------------------------------------------------------------
   // TEAMS — group team_monthly by team within range
   // --------------------------------------------------------------------------
-  async getTeams(range: DateRange, limit = 50, country?: string): Promise<TeamsDTO> {
+  async getTeams(
+    range: DateRange,
+    opts: { limit?: number; country?: string; filters?: CommonFilters } = {},
+  ): Promise<TeamsDTO> {
+    const { limit = 50, country } = opts;
+    void opts.filters;
     const { from, to } = rangeBounds(range);
     const countryFilter = country
-      ? `AND team_country = '${country.replace(/'/g, "''")}'`
+      ? `AND team_country = '${escStr(country)}'`
       : '';
 
     const [rankedRows, totalsRows] = await Promise.all([
@@ -262,7 +430,7 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
   // --------------------------------------------------------------------------
   // FINANCE — 4 aggregations against mat_revenue_daily in parallel
   // --------------------------------------------------------------------------
-  async getFinance(range: DateRange): Promise<FinanceDTO> {
+  async getFinance(range: DateRange, _filters?: CommonFilters): Promise<FinanceDTO> {
     const { from, to } = rangeBounds(range);
     const f = from.toISOString().slice(0, 10);
     const t = to.toISOString().slice(0, 10);

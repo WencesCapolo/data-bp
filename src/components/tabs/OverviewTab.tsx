@@ -5,6 +5,7 @@ import { KpiCard } from '@/components/ui/KpiCard';
 import { LineChart } from '@/components/charts/LineChart';
 import { DoughnutChart } from '@/components/charts/DoughnutChart';
 import { BarChart } from '@/components/charts/BarChart';
+import { useFilters } from '@/lib/client/filterStore';
 import type { OverviewDTO } from '@basket/core/dtos/OverviewDTO';
 
 const ACCESS_COLORS = ['#10b981', '#06b6d4', '#fbbf24'];
@@ -15,8 +16,25 @@ function fmtCurrency(n: number, c: string): string {
   return new Intl.NumberFormat('es-UY', { style: 'currency', currency: c, maximumFractionDigits: 0 }).format(n);
 }
 
+function buildOverviewUrl(s: {
+  countries: string[];
+  accessType?: string;
+  subType?: string;
+}): string {
+  const p = new URLSearchParams();
+  for (const c of s.countries) p.append('countries', c);
+  if (s.accessType) p.set('accessType', s.accessType);
+  if (s.subType) p.set('subType', s.subType);
+  const qs = p.toString();
+  return qs ? `/api/basket/overview?${qs}` : '/api/basket/overview';
+}
+
 export function OverviewTab() {
-  const { data, error, isLoading } = useSWR<OverviewDTO>('/api/basket/overview', fetcher, {
+  const countries = useFilters((s) => s.countries);
+  const accessType = useFilters((s) => s.accessType);
+  const subType = useFilters((s) => s.subType);
+  const url = buildOverviewUrl({ countries, accessType, subType });
+  const { data, error, isLoading } = useSWR<OverviewDTO>(url, fetcher, {
     refreshInterval: 300_000,
   });
 

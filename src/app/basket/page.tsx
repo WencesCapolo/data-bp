@@ -3,13 +3,11 @@ import { Header } from '@/components/layout/Header';
 import { TabBar } from '@/components/layout/TabBar';
 import { OverviewTab } from '@/components/tabs/OverviewTab';
 import { StubTab } from '@/components/tabs/StubTab';
-import { DatePills } from '@/components/ui/DatePills';
+import { FilterRow } from '@/components/ui/FilterRow';
 import { useFilters } from '@/lib/client/filterStore';
 
 export default function BasketDashboard() {
   const tab = useFilters((s) => s.tab);
-  const range = useFilters((s) => s.range);
-  const setRange = useFilters((s) => s.setRange);
 
   return (
     <>
@@ -18,10 +16,7 @@ export default function BasketDashboard() {
       <main className="main">
         {tab === 'overview' && (
           <>
-            <div className="filter-row">
-              <span className="filter-label">Rango</span>
-              <DatePills value={range} onChange={setRange} />
-            </div>
+            <FilterRow showCountries showAccess showSubType />
             <OverviewTab />
           </>
         )}

@@ -61,6 +61,37 @@ const PROBES: Probe[] = [
     validate: (b) => (isObj(b) && b.error === 'invalid_query' ? null : 'expected invalid_query'),
     expectStatus: 400,
   },
+  {
+    label: 'GET /overview?countries=Uruguay (filter live path)',
+    path: '/api/basket/overview?countries=Uruguay',
+    validate: (b) =>
+      isObj(b) && isObj((b as { kpis?: unknown }).kpis)
+        ? null
+        : 'missing kpis on filtered overview',
+  },
+  {
+    label: 'GET /overview?accessType=real',
+    path: '/api/basket/overview?accessType=real',
+    validate: (b) =>
+      isObj(b) && isObj((b as { kpis?: unknown }).kpis) &&
+      Number((b as { kpis: { activeVoucher: number } }).kpis.activeVoucher) === 0
+        ? null
+        : 'accessType=real should yield activeVoucher=0',
+  },
+  {
+    label: 'GET /overview?subType=Anual_Total',
+    path: '/api/basket/overview?subType=Anual_Total',
+    validate: (b) =>
+      isObj(b) && isObj((b as { kpis?: unknown }).kpis)
+        ? null
+        : 'missing kpis on subType filtered overview',
+  },
+  {
+    label: 'GET /overview?accessType=bogus (expect 400)',
+    path: '/api/basket/overview?accessType=bogus',
+    validate: (b) => (isObj(b) && b.error === 'invalid_query' ? null : 'expected invalid_query'),
+    expectStatus: 400,
+  },
 ];
 
 async function probeTeamTrend(): Promise<Probe> {

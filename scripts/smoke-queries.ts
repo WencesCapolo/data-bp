@@ -23,7 +23,7 @@ async function main() {
     new GetEvolutionUseCase(repo).execute({ kind: '30d' }, 'day'),
   );
   const teams = await time('teams all', () =>
-    new GetTeamsUseCase(repo).execute({ kind: 'all' }, 10),
+    new GetTeamsUseCase(repo).execute({ kind: 'all' }, { limit: 10 }),
   );
   const teamTrend = await time('team trend', () =>
     new GetTeamsUseCase(repo).trend(teams.ranked[0]?.teamId ?? 0),
