@@ -2,6 +2,8 @@
 import { Header } from '@/components/layout/Header';
 import { TabBar } from '@/components/layout/TabBar';
 import { OverviewTab } from '@/components/tabs/OverviewTab';
+import { EvolutionTab } from '@/components/tabs/EvolutionTab';
+import { TeamsTab } from '@/components/tabs/TeamsTab';
 import { StubTab } from '@/components/tabs/StubTab';
 import { FilterRow } from '@/components/ui/FilterRow';
 import { useFilters } from '@/lib/client/filterStore';
@@ -20,8 +22,18 @@ export default function BasketDashboard() {
             <OverviewTab />
           </>
         )}
-        {tab === 'evolution' && <StubTab name="Evolución Histórica" />}
-        {tab === 'teams' && <StubTab name="Análisis por Equipo" />}
+        {tab === 'evolution' && (
+          <>
+            <FilterRow showGranularity showCountries showAccess showSubType />
+            <EvolutionTab />
+          </>
+        )}
+        {tab === 'teams' && (
+          <>
+            <FilterRow showCountries showAccess showSubType />
+            <TeamsTab />
+          </>
+        )}
         {tab === 'finance' && <StubTab name="Análisis Financiero" />}
         {tab === 'retention' && <StubTab name="Retención / Churn" />}
         {tab === 'quality' && <StubTab name="Calidad de Datos" />}

@@ -305,8 +305,11 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
   async getEvolution(
     range: DateRange,
     granularity: Granularity = 'day',
-    _filters?: CommonFilters,
+    filters?: CommonFilters,
   ): Promise<EvolutionDTO> {
+    if (hasFilters(filters)) {
+      return this.getEvolutionFiltered(range, granularity, filters!);
+    }
     const { from, to } = rangeBounds(range);
     const trunc = TRUNC[granularity];
 
@@ -344,14 +347,100 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
   }
 
   // --------------------------------------------------------------------------
+  // EVOLUTION (filtered) — live SQL with generate_series buckets
+  // --------------------------------------------------------------------------
+  private async getEvolutionFiltered(
+    range: DateRange,
+    granularity: Granularity,
+    filters: CommonFilters,
+  ): Promise<EvolutionDTO> {
+    const { from, to } = rangeBounds(range);
+    const fw = buildActiveFilterWhere(filters);
+    const trunc = TRUNC[granularity];
+    const f = from.toISOString().slice(0, 10);
+    const t = to.toISOString().slice(0, 10);
+
+    const rows = await this.conn.execute(sql.raw(`
+      WITH buckets AS (
+        SELECT generate_series(
+                 DATE_TRUNC('${trunc}', '${f}'::date)::date,
+                 '${t}'::date,
+                 '1 ${trunc}'::interval
+               )::date AS b
+      ),
+      payments AS (
+        SELECT user_id, created_at, expires_at, access_type, sub_type
+        FROM basket_v_active_payments
+        WHERE 1=1 ${fw}
+      )
+      SELECT
+        b.b AS bucket,
+        COUNT(DISTINCT user_id) FILTER (
+          WHERE created_at::date <= b.b
+            AND (expires_at + INTERVAL '7 days')::date >= b.b
+        )::int AS all_active,
+        COUNT(DISTINCT user_id) FILTER (
+          WHERE access_type='real'
+            AND created_at::date <= b.b
+            AND (expires_at + INTERVAL '7 days')::date >= b.b
+        )::int AS real_active,
+        COUNT(DISTINCT user_id) FILTER (
+          WHERE access_type='voucher'
+            AND created_at::date <= b.b
+            AND (expires_at + INTERVAL '7 days')::date >= b.b
+        )::int AS voucher_active,
+        COUNT(DISTINCT user_id) FILTER (
+          WHERE sub_type='Free'
+            AND created_at::date <= b.b
+            AND (expires_at + INTERVAL '7 days')::date >= b.b
+        )::int AS free_active,
+        COUNT(DISTINCT user_id) FILTER (
+          WHERE sub_type='Mensual_Basico'
+            AND created_at::date <= b.b
+            AND (expires_at + INTERVAL '7 days')::date >= b.b
+        )::int AS mensual_basico_active,
+        COUNT(DISTINCT user_id) FILTER (
+          WHERE sub_type='Mensual_Total'
+            AND created_at::date <= b.b
+            AND (expires_at + INTERVAL '7 days')::date >= b.b
+        )::int AS mensual_total_active,
+        COUNT(DISTINCT user_id) FILTER (
+          WHERE sub_type='Anual_Total'
+            AND created_at::date <= b.b
+            AND (expires_at + INTERVAL '7 days')::date >= b.b
+        )::int AS anual_total_active
+      FROM buckets b LEFT JOIN payments ON TRUE
+      GROUP BY b.b
+      ORDER BY b.b
+    `));
+
+    return {
+      range,
+      granularity,
+      series: ((rows as unknown) as RowAny[]).map((r) => ({
+        bucket: d(r.bucket),
+        allActive: n(r.all_active),
+        realActive: n(r.real_active),
+        voucherActive: n(r.voucher_active),
+        freeActive: n(r.free_active),
+        mensualBasicoActive: n(r.mensual_basico_active),
+        mensualTotalActive: n(r.mensual_total_active),
+        anualTotalActive: n(r.anual_total_active),
+      })),
+    };
+  }
+
+  // --------------------------------------------------------------------------
   // TEAMS — group team_monthly by team within range
   // --------------------------------------------------------------------------
   async getTeams(
     range: DateRange,
     opts: { limit?: number; country?: string; filters?: CommonFilters } = {},
   ): Promise<TeamsDTO> {
-    const { limit = 50, country } = opts;
-    void opts.filters;
+    const { limit = 50, country, filters } = opts;
+    if (hasFilters(filters)) {
+      return this.getTeamsFiltered(range, limit, country, filters!);
+    }
     const { from, to } = rangeBounds(range);
     const countryFilter = country
       ? `AND team_country = '${escStr(country)}'`
@@ -383,6 +472,78 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
                         AND '${to.toISOString().slice(0,10)}'::date
           AND team_id <> 0
           ${countryFilter}
+      `)),
+    ]);
+
+    const tot = ((totalsRows as unknown) as RowAny[])[0] ?? {};
+    return {
+      range,
+      totals: {
+        teams: n(tot.teams),
+        uniquePayers: n(tot.payers),
+        totalPayments: n(tot.payments),
+      },
+      ranked: ((rankedRows as unknown) as RowAny[]).map((r) => ({
+        teamId: n(r.team_id),
+        teamName: s(r.team_name),
+        league: s(r.league),
+        teamCountry: s(r.team_country),
+        uniquePayers: n(r.unique_payers),
+        totalPayments: n(r.total_payments),
+        totalAmount: n(r.total_amount),
+        realPayers: n(r.real_payers),
+        voucherPayers: n(r.voucher_payers),
+      })),
+    };
+  }
+
+  private async getTeamsFiltered(
+    range: DateRange,
+    limit: number,
+    country: string | undefined,
+    filters: CommonFilters,
+  ): Promise<TeamsDTO> {
+    const { from, to } = rangeBounds(range);
+    const fw = buildActiveFilterWhere(filters);
+    const teamCountryFilter = country ? `AND team_country = '${escStr(country)}'` : '';
+    const f = from.toISOString().slice(0, 10);
+    const t = to.toISOString().slice(0, 10);
+
+    const [rankedRows, totalsRows] = await Promise.all([
+      this.conn.execute(sql.raw(`
+        WITH f AS (
+          SELECT user_id, team_id, team_name, league, team_country,
+                 access_type, amount
+          FROM basket_v_active_payments
+          WHERE created_at::date BETWEEN '${f}'::date AND '${t}'::date
+            AND team_id IS NOT NULL AND team_id <> 0
+            ${teamCountryFilter}
+            ${fw}
+        )
+        SELECT team_id, team_name, league, team_country,
+               COUNT(DISTINCT user_id)::int                                      AS unique_payers,
+               COUNT(*)::int                                                     AS total_payments,
+               SUM(amount)::numeric                                              AS total_amount,
+               COUNT(DISTINCT user_id) FILTER (WHERE access_type='real')::int    AS real_payers,
+               COUNT(DISTINCT user_id) FILTER (WHERE access_type='voucher')::int AS voucher_payers
+        FROM f
+        GROUP BY team_id, team_name, league, team_country
+        ORDER BY total_payments DESC
+        LIMIT ${limit}
+      `)),
+      this.conn.execute(sql.raw(`
+        WITH f AS (
+          SELECT user_id, team_id
+          FROM basket_v_active_payments
+          WHERE created_at::date BETWEEN '${f}'::date AND '${t}'::date
+            AND team_id IS NOT NULL AND team_id <> 0
+            ${teamCountryFilter}
+            ${fw}
+        )
+        SELECT COUNT(DISTINCT team_id)::int AS teams,
+               COUNT(DISTINCT user_id)::int AS payers,
+               COUNT(*)::int                AS payments
+        FROM f
       `)),
     ]);
 
