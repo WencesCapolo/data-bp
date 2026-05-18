@@ -6,7 +6,7 @@ import { EvolutionTab } from '@/components/tabs/EvolutionTab';
 import { TeamsTab } from '@/components/tabs/TeamsTab';
 import { FinanceTab } from '@/components/tabs/FinanceTab';
 import { RetentionTab } from '@/components/tabs/RetentionTab';
-import { StubTab } from '@/components/tabs/StubTab';
+import { DataQualityTab } from '@/components/tabs/DataQualityTab';
 import { FilterRow } from '@/components/ui/FilterRow';
 import { useFilters } from '@/lib/client/filterStore';
 
@@ -43,7 +43,7 @@ export default function BasketDashboard() {
           </>
         )}
         {tab === 'retention' && <RetentionTab />}
-        {tab === 'quality' && <StubTab name="Calidad de Datos" />}
+        {tab === 'quality' && <DataQualityTab />}
       </main>
     </>
   );
