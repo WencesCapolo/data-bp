@@ -15,7 +15,8 @@
     "views:apply": "tsx --env-file=.env scripts/apply-views.ts",
     "views:refresh": "tsx --env-file=.env scripts/refresh-views.ts",
     "smoke:queries": "tsx --env-file=.env scripts/smoke-queries.ts",
-    "smoke:sync": "tsx --env-file=.env scripts/smoke-sync.ts"
+    "smoke:sync": "tsx --env-file=.env scripts/smoke-sync.ts",
+    "smoke:api": "tsx scripts/smoke-api.ts"
   },
   "dependencies": {
     "chart.js": "^4.4.9",

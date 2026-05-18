@@ -5,8 +5,10 @@ import type { TeamsDTO, TeamTrendDTO } from '@basket/core/dtos/TeamsDTO';
 import type { FinanceDTO } from '@basket/core/dtos/FinanceDTO';
 import type { RetentionDTO } from '@basket/core/dtos/RetentionDTO';
 import type { DataQualityDTO } from '@basket/core/dtos/DataQualityDTO';
+import type { MetaDTO } from '@basket/core/dtos/MetaDTO';
 
 export interface IAnalyticsQueryRepository {
+  getMeta(): Promise<MetaDTO>;
   getOverview(asOf?: Date): Promise<OverviewDTO>;
   getEvolution(range: DateRange, granularity: Granularity): Promise<EvolutionDTO>;
   getTeams(range: DateRange, limit?: number, country?: string): Promise<TeamsDTO>;

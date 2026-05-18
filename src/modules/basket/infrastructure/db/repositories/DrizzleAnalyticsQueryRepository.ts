@@ -12,6 +12,7 @@ import type { TeamsDTO, TeamTrendDTO } from '@basket/core/dtos/TeamsDTO';
 import type { FinanceDTO } from '@basket/core/dtos/FinanceDTO';
 import type { RetentionDTO } from '@basket/core/dtos/RetentionDTO';
 import type { DataQualityDTO } from '@basket/core/dtos/DataQualityDTO';
+import { META_ENUMS, type MetaDTO } from '@basket/core/dtos/MetaDTO';
 
 type RowAny = Record<string, unknown>;
 const n = (v: unknown): number => (v == null ? 0 : Number(v));
@@ -395,6 +396,44 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
         { code: 'paid_zero_non_antel',  description: 'Non-Antel paid plan with amount = 0',          count: v(zeroAmountNonAntel) },
         { code: 'payment_failed',       description: 'Payments with status = 0 (failed)',             count: v(statusZero) },
       ],
+    };
+  }
+
+  async getMeta(): Promise<MetaDTO> {
+    const [rangeRows, countryRows, syncRows] = await Promise.all([
+      this.conn.execute(sql.raw(`
+        SELECT MIN(day)::text AS min_day, MAX(day)::text AS max_day
+        FROM basket_mat_daily_active
+      `)),
+      this.conn.execute(sql.raw(`
+        SELECT country, COUNT(*)::int AS c
+        FROM basket_users
+        WHERE country IS NOT NULL AND country <> ''
+        GROUP BY country
+        ORDER BY c DESC
+      `)),
+      this.conn.execute(sql.raw(`
+        SELECT source, last_sync, row_count
+        FROM basket_sync_state
+        ORDER BY source
+      `)),
+    ]);
+
+    const rangeRow = (rangeRows as unknown as RowAny[])[0] ?? {};
+    const countries = (countryRows as unknown as RowAny[]).map((r) => s(r.country));
+    const lastSync = (syncRows as unknown as RowAny[]).map((r) => ({
+      source: s(r.source),
+      lastSync: r.last_sync instanceof Date
+        ? r.last_sync.toISOString()
+        : String(r.last_sync ?? ''),
+      rowCount: r.row_count == null ? null : Number(r.row_count),
+    }));
+
+    return {
+      dataRange: { minDay: s(rangeRow.min_day), maxDay: s(rangeRow.max_day) },
+      countries,
+      lastSync,
+      enums: META_ENUMS,
     };
   }
 }
