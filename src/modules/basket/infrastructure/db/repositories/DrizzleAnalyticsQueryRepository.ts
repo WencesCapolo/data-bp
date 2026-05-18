@@ -591,7 +591,10 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
   // --------------------------------------------------------------------------
   // FINANCE — 4 aggregations against mat_revenue_daily in parallel
   // --------------------------------------------------------------------------
-  async getFinance(range: DateRange, _filters?: CommonFilters): Promise<FinanceDTO> {
+  async getFinance(range: DateRange, filters?: CommonFilters): Promise<FinanceDTO> {
+    if (hasFilters(filters)) {
+      return this.getFinanceFiltered(range, filters!);
+    }
     const { from, to } = rangeBounds(range);
     const f = from.toISOString().slice(0, 10);
     const t = to.toISOString().slice(0, 10);
@@ -628,6 +631,87 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
                SUM(total_amount)::numeric    AS total_amount
         FROM basket_mat_revenue_daily ${where}
         GROUP BY DATE_TRUNC('month', day), platform_name
+        ORDER BY month, platform_name
+      `)),
+    ]);
+
+    return {
+      range,
+      revenueByDay: ((byDayRows as unknown) as RowAny[]).map((r) => ({
+        day: d(r.day),
+        currency: s(r.currency),
+        totalAmount: n(r.total_amount),
+        realAmount: n(r.real_amount),
+        paymentCount: n(r.payment_count),
+      })),
+      byPlatform: ((byPlatRows as unknown) as RowAny[]).map((r) => ({
+        platform: n(r.platform),
+        platformName: s(r.platform_name),
+        paymentCount: n(r.payment_count),
+        totalAmount: n(r.total_amount),
+        realCount: n(r.real_count),
+        realAmount: n(r.real_amount),
+      })),
+      byCurrency: ((byCurRows as unknown) as RowAny[]).map((r) => ({
+        currency: s(r.currency),
+        totalAmount: n(r.total_amount),
+        paymentCount: n(r.payment_count),
+      })),
+      platformMonthly: ((platMoRows as unknown) as RowAny[]).map((r) => ({
+        month: d(r.month),
+        platformName: s(r.platform_name),
+        totalAmount: n(r.total_amount),
+      })),
+    };
+  }
+
+  // --------------------------------------------------------------------------
+  // FINANCE (filtered) — live SQL on basket_v_active_payments
+  // --------------------------------------------------------------------------
+  private async getFinanceFiltered(
+    range: DateRange,
+    filters: CommonFilters,
+  ): Promise<FinanceDTO> {
+    const { from, to } = rangeBounds(range);
+    const f = from.toISOString().slice(0, 10);
+    const t = to.toISOString().slice(0, 10);
+    const fw = buildActiveFilterWhere(filters);
+    const where = `WHERE created_at::date BETWEEN '${f}'::date AND '${t}'::date ${fw}`;
+
+    const [byDayRows, byPlatRows, byCurRows, platMoRows] = await Promise.all([
+      this.conn.execute(sql.raw(`
+        SELECT created_at::date AS day, currency,
+               SUM(amount)::numeric AS total_amount,
+               SUM(CASE WHEN access_type='real' THEN amount ELSE 0 END)::numeric AS real_amount,
+               COUNT(*)::int AS payment_count
+        FROM basket_v_active_payments ${where}
+        GROUP BY created_at::date, currency
+        ORDER BY created_at::date, currency
+      `)),
+      this.conn.execute(sql.raw(`
+        SELECT platform, platform_name,
+               COUNT(*)::int AS payment_count,
+               SUM(amount)::numeric AS total_amount,
+               COUNT(*) FILTER (WHERE access_type='real')::int AS real_count,
+               SUM(CASE WHEN access_type='real' THEN amount ELSE 0 END)::numeric AS real_amount
+        FROM basket_v_active_payments ${where}
+        GROUP BY platform, platform_name
+        ORDER BY total_amount DESC
+      `)),
+      this.conn.execute(sql.raw(`
+        SELECT currency,
+               SUM(amount)::numeric AS total_amount,
+               COUNT(*)::int AS payment_count
+        FROM basket_v_active_payments ${where}
+        GROUP BY currency
+        ORDER BY total_amount DESC
+      `)),
+      this.conn.execute(sql.raw(`
+        SELECT DATE_TRUNC('month', created_at)::date AS month,
+               platform_name,
+               SUM(amount)::numeric AS total_amount
+        FROM basket_v_active_payments ${where}
+        GROUP BY DATE_TRUNC('month', created_at), platform_name
         ORDER BY month, platform_name
       `)),
     ]);

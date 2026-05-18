@@ -4,6 +4,8 @@ import { TabBar } from '@/components/layout/TabBar';
 import { OverviewTab } from '@/components/tabs/OverviewTab';
 import { EvolutionTab } from '@/components/tabs/EvolutionTab';
 import { TeamsTab } from '@/components/tabs/TeamsTab';
+import { FinanceTab } from '@/components/tabs/FinanceTab';
+import { RetentionTab } from '@/components/tabs/RetentionTab';
 import { StubTab } from '@/components/tabs/StubTab';
 import { FilterRow } from '@/components/ui/FilterRow';
 import { useFilters } from '@/lib/client/filterStore';
@@ -34,8 +36,13 @@ export default function BasketDashboard() {
             <TeamsTab />
           </>
         )}
-        {tab === 'finance' && <StubTab name="Análisis Financiero" />}
-        {tab === 'retention' && <StubTab name="Retención / Churn" />}
+        {tab === 'finance' && (
+          <>
+            <FilterRow showCountries showAccess showSubType />
+            <FinanceTab />
+          </>
+        )}
+        {tab === 'retention' && <RetentionTab />}
         {tab === 'quality' && <StubTab name="Calidad de Datos" />}
       </main>
     </>
