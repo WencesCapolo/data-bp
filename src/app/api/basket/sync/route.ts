@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'sync already running' }, { status: 409 });
   }
 
-  const useCase = composeRunSync();
+  const useCase = await composeRunSync();
   const promise = useCase.execute();
   inFlight = promise;
   try {

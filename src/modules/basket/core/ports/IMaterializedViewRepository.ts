@@ -2,7 +2,8 @@ export type MatViewName =
   | 'basket_mat_daily_active'
   | 'basket_mat_monthly_lifecycle'
   | 'basket_mat_team_monthly'
-  | 'basket_mat_revenue_daily';
+  | 'basket_mat_revenue_daily'
+  | 'basket_mat_fixture_ranges';
 
 export interface RefreshResult {
   view: MatViewName;

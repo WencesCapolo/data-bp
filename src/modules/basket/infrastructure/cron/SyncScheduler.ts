@@ -37,7 +37,8 @@ export function startSyncScheduler(): void {
     state.running = true;
     state.lastError = null;
     try {
-      await composeRunSync().execute();
+      const useCase = await composeRunSync();
+      await useCase.execute();
     } catch (err) {
       state.lastError = err instanceof Error ? err.message : String(err);
       console.error('[SyncScheduler] sync failed:', state.lastError);

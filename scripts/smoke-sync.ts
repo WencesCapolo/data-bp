@@ -6,13 +6,21 @@ import type { ICsvFetcher, CsvFetchOptions, CsvRow } from '@basket/core/ports/IC
 import { DrizzleUserRepository } from '@basket/infrastructure/db/repositories/DrizzleUserRepository';
 import { DrizzlePaymentRepository } from '@basket/infrastructure/db/repositories/DrizzlePaymentRepository';
 import { DrizzleTeamRepository } from '@basket/infrastructure/db/repositories/DrizzleTeamRepository';
+import { DrizzleTournamentRepository } from '@basket/infrastructure/db/repositories/DrizzleTournamentRepository';
+import { DrizzleContentRepository } from '@basket/infrastructure/db/repositories/DrizzleContentRepository';
 import { DrizzleSyncStateRepository } from '@basket/infrastructure/db/repositories/DrizzleSyncStateRepository';
 import { DrizzleMaterializedViewRepository } from '@basket/infrastructure/db/repositories/DrizzleMaterializedViewRepository';
 import {
   mapPaymentRow,
   mapUserRow,
+  mapTournamentRow,
+  mapTeamLiveRow,
+  mapContentRow,
   type PaymentCsvRow,
   type UserCsvRow,
+  type TournamentCsvRow,
+  type TeamLiveCsvRow,
+  type ContentCsvRow,
 } from '@basket/infrastructure/sync/csvMappers';
 import { RunSyncUseCase } from '@basket/core/use-cases/sync/RunSyncUseCase';
 import { basketPayments, basketUsers } from '@basket/infrastructure/db/schema';
@@ -42,24 +50,34 @@ async function main() {
   const users = new DrizzleUserRepository();
   const payments = new DrizzlePaymentRepository();
   const teams = new DrizzleTeamRepository();
+  const tournaments = new DrizzleTournamentRepository();
+  const content = new DrizzleContentRepository();
   const syncState = new DrizzleSyncStateRepository();
   const matViews = new DrizzleMaterializedViewRepository();
 
   const fetcher = new LocalFileCsvFetcher({
-    'users.csv': resolve(DATA_DIR, 'users.csv'),
-    'payments.csv': resolve(DATA_DIR, 'payments(1).csv'),
+    users: resolve(DATA_DIR, 'users.csv'),
+    payments: resolve(DATA_DIR, 'payments(1).csv'),
+    teams: resolve(DATA_DIR, 'teams.csv'),
+    tournaments: resolve(DATA_DIR, 'tournaments.csv'),
   });
 
   const useCase = new RunSyncUseCase({
     fetcher,
     users,
     payments,
+    teams,
+    tournaments,
     syncState,
     matViews,
-    knownTeamIds: () => teams.getKnownIds(),
-    knownUserIds: () => users.getKnownIds(),
     mapUserRow: (row, t) => mapUserRow(row as unknown as UserCsvRow, t),
     mapPaymentRow: (row, u) => mapPaymentRow(row as unknown as PaymentCsvRow, u),
+    mapTournamentRow: (row) => mapTournamentRow(row as unknown as TournamentCsvRow),
+    mapTeamLiveRow: (row) => mapTeamLiveRow(row as unknown as TeamLiveCsvRow),
+    mapContentRow: (row) => mapContentRow(row as unknown as ContentCsvRow),
+    paymentsEnabled: false,
+    contentEnabled: false,
+    content,
   });
 
   const before = await counts();

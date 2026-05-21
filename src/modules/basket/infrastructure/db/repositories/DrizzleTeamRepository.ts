@@ -2,7 +2,7 @@ import { eq, sql } from 'drizzle-orm';
 import { db, type Db } from '@shared/db/client';
 import { chunk } from '@shared/lib/chunk';
 import { Team, type TeamProps } from '@basket/core/entities/Team';
-import type { ITeamRepository } from '@basket/core/ports/ITeamRepository';
+import type { ITeamRepository, TeamLiveProps } from '@basket/core/ports/ITeamRepository';
 import { basketTeams } from '../schema';
 
 const UPSERT_BATCH_SIZE = 500;
@@ -45,5 +45,40 @@ export class DrizzleTeamRepository implements ITeamRepository {
   async getKnownIds(): Promise<Set<number>> {
     const rows = await this.database.select({ id: basketTeams.id }).from(basketTeams);
     return new Set(rows.map((r) => r.id));
+  }
+
+  async count(): Promise<number> {
+    const rows = await this.database
+      .select({ c: sql<number>`COUNT(*)::int` })
+      .from(basketTeams);
+    return Number(rows[0]?.c ?? 0);
+  }
+
+  async upsertManyFromLive(teams: TeamLiveProps[]): Promise<number> {
+    if (teams.length === 0) return 0;
+    let total = 0;
+    for (const batch of chunk(teams, UPSERT_BATCH_SIZE)) {
+      await this.database
+        .insert(basketTeams)
+        .values(
+          batch.map((t) => ({
+            id: t.id,
+            teamName: t.teamName,
+            league: 'Unknown',
+            country: t.country || 'Unknown',
+            tier: 1,
+            type: 'regular',
+          })),
+        )
+        .onConflictDoUpdate({
+          target: basketTeams.id,
+          set: {
+            teamName: sql`excluded.team_name`,
+            country: sql`excluded.country`,
+          },
+        });
+      total += batch.length;
+    }
+    return total;
   }
 }

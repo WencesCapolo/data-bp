@@ -11,6 +11,7 @@ const ALL_VIEWS: MatViewName[] = [
   'basket_mat_monthly_lifecycle',
   'basket_mat_team_monthly',
   'basket_mat_revenue_daily',
+  'basket_mat_fixture_ranges',
 ];
 
 export class DrizzleMaterializedViewRepository implements IMaterializedViewRepository {

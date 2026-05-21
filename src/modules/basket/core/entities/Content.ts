@@ -1,0 +1,32 @@
+export interface ContentProps {
+  id: number;
+  idx: string | null;
+  title: string | null;
+  summary: string | null;
+  imageId: string | null;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+  date: Date | null;
+  dateEnds: Date | null;
+  dateServerSpawns: Date | null;
+  dateServerGoesLive: Date | null;
+  duration: number | null;
+  status: number | null;
+  type: number | null;
+  matchId: string | null;
+  venue: string | null;
+  team1: number | null;
+  team2: number | null;
+  team1Name: string | null;
+  team2Name: string | null;
+  team1Score: number | null;
+  team2Score: number | null;
+  matchStatus: string | null;
+  tournamentId: number | null;
+  country: string | null;
+  productId: number | null;
+  weight: number | null;
+  views: number | null;
+  viewsUsers: number | null;
+  viewsSeconds: number | null;
+}

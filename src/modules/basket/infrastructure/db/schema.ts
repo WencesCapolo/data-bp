@@ -4,8 +4,10 @@ import {
   boolean,
   index,
   integer,
+  jsonb,
   numeric,
   pgTable,
+  primaryKey,
   smallint,
   text,
   timestamp,
@@ -94,6 +96,78 @@ export const basketFixtures = pgTable('basket_fixtures', {
 }, (table) => ({
   leagueIdx: index('basket_fixtures_league_idx').on(table.league),
   datesIdx: index('basket_fixtures_dates_idx').on(table.startDate, table.endDate),
+}));
+
+export const basketTournaments = pgTable('basket_tournaments', {
+  id: integer('id').primaryKey(),
+  name: text('name').notNull(),
+  country: text('country'),
+  syncedAt: timestamp('synced_at', { withTimezone: true }).notNull().default(sql`NOW()`),
+}, (table) => ({
+  countryIdx: index('basket_tournaments_country_idx').on(table.country),
+}));
+
+export const basketContent = pgTable('basket_content', {
+  id: integer('id').primaryKey(),
+  idx: text('idx'),
+  title: text('title'),
+  summary: text('summary'),
+  imageId: text('image_id'),
+  createdAt: timestamp('created_at', { withTimezone: true }),
+  updatedAt: timestamp('updated_at', { withTimezone: true }),
+  date: timestamp('date', { withTimezone: true }),
+  dateEnds: timestamp('date_ends', { withTimezone: true }),
+  dateServerSpawns: timestamp('date_server_spawns', { withTimezone: true }),
+  dateServerGoesLive: timestamp('date_server_goes_live', { withTimezone: true }),
+  duration: integer('duration'),
+  status: smallint('status'),
+  type: smallint('type'),
+  matchId: text('match_id'),
+  venue: text('venue'),
+  team1: integer('team_1'),
+  team2: integer('team_2'),
+  team1Name: text('team_1_name'),
+  team2Name: text('team_2_name'),
+  team1Score: integer('team_1_score'),
+  team2Score: integer('team_2_score'),
+  matchStatus: text('match_status'),
+  tournamentId: integer('tournament_id'),
+  country: text('country'),
+  productId: integer('product_id'),
+  weight: integer('weight'),
+  views: bigint('views', { mode: 'number' }),
+  viewsUsers: bigint('views_users', { mode: 'number' }),
+  viewsSeconds: bigint('views_seconds', { mode: 'number' }),
+  syncedAt: timestamp('synced_at', { withTimezone: true }).notNull().default(sql`NOW()`),
+}, (table) => ({
+  tournamentIdx: index('basket_content_tournament_idx').on(table.tournamentId),
+  countryIdx: index('basket_content_country_idx').on(table.country),
+  dateIdx: index('basket_content_date_idx').on(table.date),
+}));
+
+export const basketFixtureMatches = pgTable('basket_fixture_matches', {
+  id: integer('id').primaryKey(),
+  matchDate: timestamp('match_date', { mode: 'date' }),
+  matchTime: text('match_time'),
+  homeTeam: text('home_team'),
+  awayTeam: text('away_team'),
+  venue: text('venue'),
+  broadcaster: text('broadcaster'),
+  sourceSheet: text('source_sheet').notNull(),
+  syncedAt: timestamp('synced_at', { withTimezone: true }).notNull().default(sql`NOW()`),
+}, (table) => ({
+  dateIdx: index('basket_fixture_matches_date_idx').on(table.matchDate),
+  sourceIdx: index('basket_fixture_matches_source_idx').on(table.sourceSheet),
+}));
+
+export const basketSheetRows = pgTable('basket_sheet_rows', {
+  sheet: text('sheet').notNull(),
+  rowKey: text('row_key').notNull(),
+  data: jsonb('data').notNull(),
+  syncedAt: timestamp('synced_at', { withTimezone: true }).notNull().default(sql`NOW()`),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.sheet, table.rowKey] }),
+  sheetIdx: index('basket_sheet_rows_sheet_idx').on(table.sheet),
 }));
 
 export const basketSyncState = pgTable('basket_sync_state', {
