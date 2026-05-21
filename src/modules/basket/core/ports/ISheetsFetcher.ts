@@ -6,4 +6,5 @@ export interface SheetRow {
 export interface ISheetsFetcher {
   streamRows(spreadsheetId: string, tab: string): AsyncGenerator<SheetRow, void, unknown>;
   listTabs(spreadsheetId: string): Promise<string[]>;
+  getValues(spreadsheetId: string, tab: string): Promise<string[][]>;
 }

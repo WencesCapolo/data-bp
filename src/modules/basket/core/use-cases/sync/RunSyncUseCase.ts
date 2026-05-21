@@ -20,6 +20,8 @@ import { LoadTournamentsFromCsvUseCase } from './LoadTournamentsFromCsvUseCase';
 import { LoadContentFromCsvUseCase } from './LoadContentFromCsvUseCase';
 import { LoadSheetUseCase } from './LoadSheetUseCase';
 import { LoadFixturesFromSheetUseCase } from './LoadFixturesFromSheetUseCase';
+import { LoadSheetDataMastersUseCase } from './LoadSheetDataMastersUseCase';
+import type { ISheetDataMasterRepository } from '@basket/core/ports/ISheetDataMasterRepository';
 import { RefreshMaterializedViewsUseCase } from './RefreshMaterializedViewsUseCase';
 
 export interface SheetSpec {
@@ -36,6 +38,12 @@ export interface FixtureSheetSpec {
   seasonStartYear?: number; // parsed from tab name (e.g. 'Fixture NBB 25/26' → 2025)
 }
 
+export interface DataSheetSpec {
+  workbookLabel: string;   // e.g. 'NBB_BR'
+  spreadsheetId: string;
+  tab: string;             // DATA tab name (case may vary)
+}
+
 export interface RunSyncDeps {
   fetcher: ICsvFetcher;
   users: IUserRepository;
@@ -48,6 +56,8 @@ export interface RunSyncDeps {
   sheetSpecs?: SheetSpec[];
   fixtureMatches?: IFixtureMatchRepository;
   fixtureSpecs?: FixtureSheetSpec[];
+  sheetDataMasters?: ISheetDataMasterRepository;
+  dataSheetSpecs?: DataSheetSpec[];
   syncState: ISyncStateRepository;
   matViews: IMaterializedViewRepository;
   mapUserRow: (row: Record<string, string>, knownTeamIds: Set<number>) => UserProps | null;
@@ -77,6 +87,7 @@ export interface RunSyncResult {
   syncedContent: number;
   syncedSheets: { sheet: string; inserted: number }[];
   syncedFixtures: { sheet: string; inserted: number }[];
+  syncedDataMasters: { workbook: string; teams: number; cambios: number; dias: number }[];
   refreshes: RefreshResult[];
 }
 
@@ -175,6 +186,22 @@ export class RunSyncUseCase {
       }
     }
 
+    // 6c. DATA-tab masters (teams roster + cambios/dias enums per workbook)
+    const syncedDataMasters: { workbook: string; teams: number; cambios: number; dias: number }[] = [];
+    if (this.deps.sheets && this.deps.sheetDataMasters && this.deps.dataSheetSpecs) {
+      const loader = new LoadSheetDataMastersUseCase(this.deps.sheets, this.deps.sheetDataMasters);
+      for (const spec of this.deps.dataSheetSpecs) {
+        try {
+          const r = await loader.execute(spec);
+          syncedDataMasters.push({ workbook: spec.workbookLabel, ...r });
+          await this.deps.syncState.updateLastSync(`data:${spec.workbookLabel}`, runAt, r.teams + r.cambios + r.dias);
+        } catch (err) {
+          syncedDataMasters.push({ workbook: spec.workbookLabel, teams: -1, cambios: -1, dias: -1 });
+          console.error(`data ${spec.workbookLabel} failed:`, (err as Error).message);
+        }
+      }
+    }
+
     // 7. Refresh mat views
     const refreshes = await new RefreshMaterializedViewsUseCase(this.deps.matViews).execute({ concurrent: true });
 
@@ -190,6 +217,7 @@ export class RunSyncUseCase {
       syncedContent: contentInserted,
       syncedSheets,
       syncedFixtures,
+      syncedDataMasters,
       refreshes,
     };
   }

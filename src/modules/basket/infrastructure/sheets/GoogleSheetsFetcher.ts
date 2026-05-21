@@ -52,6 +52,18 @@ export class GoogleSheetsFetcher implements ISheetsFetcher {
     }
   }
 
+  async getValues(spreadsheetId: string, tab: string): Promise<string[][]> {
+    const res = await this.sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `'${tab}'!A1:ZZ`,
+      majorDimension: 'ROWS',
+      valueRenderOption: 'UNFORMATTED_VALUE',
+      dateTimeRenderOption: 'FORMATTED_STRING',
+    });
+    const rows = res.data.values ?? [];
+    return rows.map((r) => (r ?? []).map((c) => (c == null ? '' : String(c))));
+  }
+
   async listTabs(spreadsheetId: string): Promise<string[]> {
     const res = await this.sheets.spreadsheets.get({
       spreadsheetId,

@@ -170,6 +170,38 @@ export const basketSheetRows = pgTable('basket_sheet_rows', {
   sheetIdx: index('basket_sheet_rows_sheet_idx').on(table.sheet),
 }));
 
+export const basketTeamMaster = pgTable('basket_team_master', {
+  workbookLabel: text('workbook_label').notNull(),
+  nameFull: text('name_full').notNull(),
+  nameShort: text('name_short'),
+  siglas: text('siglas'),
+  stadium: text('stadium'),
+  city: text('city'),
+  officialPage: text('official_page'),
+  syncedAt: timestamp('synced_at', { withTimezone: true }).notNull().default(sql`NOW()`),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.workbookLabel, table.nameFull] }),
+  siglasIdx: index('basket_team_master_siglas_idx').on(table.siglas),
+}));
+
+export const basketCambiosEnum = pgTable('basket_cambios_enum', {
+  workbookLabel: text('workbook_label').notNull(),
+  label: text('label').notNull(),
+  position: integer('position').notNull(),
+  syncedAt: timestamp('synced_at', { withTimezone: true }).notNull().default(sql`NOW()`),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.workbookLabel, table.label] }),
+}));
+
+export const basketDiasEnum = pgTable('basket_dias_enum', {
+  workbookLabel: text('workbook_label').notNull(),
+  label: text('label').notNull(),
+  position: integer('position').notNull(),
+  syncedAt: timestamp('synced_at', { withTimezone: true }).notNull().default(sql`NOW()`),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.workbookLabel, table.label] }),
+}));
+
 export const basketSyncState = pgTable('basket_sync_state', {
   source: text('source').primaryKey(),
   lastSync: timestamp('last_sync', { withTimezone: true }).notNull(),

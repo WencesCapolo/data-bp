@@ -6,8 +6,9 @@ import { DrizzleTournamentRepository } from '@basket/infrastructure/db/repositor
 import { DrizzleContentRepository } from '@basket/infrastructure/db/repositories/DrizzleContentRepository';
 import { DrizzleSheetRowRepository } from '@basket/infrastructure/db/repositories/DrizzleSheetRowRepository';
 import { DrizzleFixtureMatchRepository } from '@basket/infrastructure/db/repositories/DrizzleFixtureMatchRepository';
+import { DrizzleSheetDataMasterRepository } from '@basket/infrastructure/db/repositories/DrizzleSheetDataMasterRepository';
 import { GoogleSheetsFetcher } from '@basket/infrastructure/sheets/GoogleSheetsFetcher';
-import type { SheetSpec, FixtureSheetSpec } from '@basket/core/use-cases/sync/RunSyncUseCase';
+import type { SheetSpec, FixtureSheetSpec, DataSheetSpec } from '@basket/core/use-cases/sync/RunSyncUseCase';
 import { DrizzleSyncStateRepository } from '@basket/infrastructure/db/repositories/DrizzleSyncStateRepository';
 import { DrizzleMaterializedViewRepository } from '@basket/infrastructure/db/repositories/DrizzleMaterializedViewRepository';
 import {
@@ -106,6 +107,7 @@ export async function composeRunSync(): Promise<RunSyncUseCase> {
   const matViews = new DrizzleMaterializedViewRepository();
   const sheetRows = new DrizzleSheetRowRepository();
   const fixtureMatches = new DrizzleFixtureMatchRepository();
+  const sheetDataMasters = new DrizzleSheetDataMasterRepository();
 
   const gEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
   const gKey = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
@@ -144,6 +146,28 @@ export async function composeRunSync(): Promise<RunSyncUseCase> {
 
   const fixtureSpecs: FixtureSheetSpec[] = sheets ? discoverFixtureSpecs() : [];
 
+  // Discover DATA tabs per fixture workbook (case-insensitive 'data' match).
+  const dataSheetSpecs: DataSheetSpec[] = [];
+  if (sheets) {
+    const idRx = /^GOOGLE_SHEETS_FIXTURE_([A-Z0-9_]+)_ID$/;
+    const seenWorkbooks = new Set<string>();
+    for (const key of Object.keys(process.env)) {
+      const m = key.match(idRx);
+      if (!m) continue;
+      const label = m[1];
+      const id = process.env[key];
+      if (!id || seenWorkbooks.has(label)) continue;
+      seenWorkbooks.add(label);
+      try {
+        const tabs = await sheets.listTabs(id);
+        const dataTab = tabs.find((t) => /^data$/i.test(t));
+        if (dataTab) dataSheetSpecs.push({ workbookLabel: label, spreadsheetId: id, tab: dataTab });
+      } catch (err) {
+        console.error(`data discover ${label} failed:`, (err as Error).message);
+      }
+    }
+  }
+
   return new RunSyncUseCase({
     fetcher,
     users,
@@ -156,6 +180,8 @@ export async function composeRunSync(): Promise<RunSyncUseCase> {
     sheetSpecs,
     fixtureMatches,
     fixtureSpecs,
+    sheetDataMasters,
+    dataSheetSpecs,
     syncState,
     matViews,
     mapUserRow: (row, teamIds) => mapUserRow(row as unknown as UserCsvRow, teamIds),

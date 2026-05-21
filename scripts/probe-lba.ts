@@ -11,9 +11,8 @@ async function main() {
   const id = '10ARx4Ffj-Dc8zuwceqXi5lq3hX5jgbIRiTUv6pOQ5kM';
   const meta = await s.spreadsheets.get({spreadsheetId:id, fields:'sheets.properties.title'});
   console.log('tabs:', meta.data.sheets?.map(x=>x.properties?.title));
-  const r = await s.spreadsheets.values.get({spreadsheetId:id, range:"'Fixture'!A1:Z10"});
-  console.log('rows:', JSON.stringify(r.data.values, null, 2));
-  const r2 = await s.spreadsheets.values.get({spreadsheetId:id, range:"'Fixture'!A1:Z"});
-  console.log('total rows:', r2.data.values?.length);
+  const r = await s.spreadsheets.values.get({spreadsheetId:id, range:"'DATA'!A1:Z"});
+  console.log('DATA rows:', r.data.values?.length);
+  console.log(JSON.stringify(r.data.values, null, 2));
 }
 main().catch(e=>console.error(e));
