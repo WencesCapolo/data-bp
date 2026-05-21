@@ -56,7 +56,7 @@ export function mapFixtureMatchRow(
   }
 
   // Time: HORA (LNB/NBB), HORA ESP (FEB ES), INICIO PARTIDO (Uruguay), fallbacks.
-  const time = emptyToNull(firstNonEmpty(row, 'HORA', 'Hora', 'HORA ESP', 'Hora ARG', 'HORA ARG', 'GMT', 'INICIO PARTIDO', 'INICIO TRANS'));
+  const time = emptyToNull(firstNonEmpty(row, 'HORA', 'Hora', 'HORA ESP', 'CHI', 'HORA ECU', 'Hora ARG', 'HORA ARG', 'ARG', 'GMT', 'INICIO PARTIDO', 'INICIO TRANS'));
 
   // Teams: LOCAL/VISITANTE columns when present, else split PARTIDO on newline (FEB ES).
   let homeTeam = emptyToNull(row.LOCAL ?? row.Local);
