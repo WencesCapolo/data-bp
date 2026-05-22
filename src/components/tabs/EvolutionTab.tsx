@@ -5,6 +5,8 @@ import { useFilters } from '@/lib/client/filterStore';
 import { KpiCard } from '@/components/ui/KpiCard';
 import { LineChart } from '@/components/charts/LineChart';
 import { StackedAreaChart } from '@/components/charts/StackedAreaChart';
+import { TabSkeleton } from '@/components/ui/Skeleton';
+import { ErrorBox } from '@/components/ui/ErrorBox';
 import type { EvolutionDTO } from '@basket/core/dtos/EvolutionDTO';
 
 const ACCESS_COLORS = { real: '#10b981', voucher: '#fbbf24' };
@@ -41,7 +43,7 @@ export function EvolutionTab() {
   const url = buildUrl({ range, granularity, countries, accessType, subType });
   const { data, error, isLoading } = useSWR<EvolutionDTO>(url, fetcher);
 
-  if (isLoading) return <SkeletonEvolution />;
+  if (isLoading) return <TabSkeleton kpis={4} blocks={[{ kind: 'full', height: 320 }, { kind: 'full', height: 300 }, { kind: 'full', height: 240 }]} />;
   if (error) return <ErrorBox message={error.message} />;
   if (!data || data.series.length === 0) {
     return <div className="no-data">Sin datos para el rango/filtros seleccionados</div>;
@@ -127,26 +129,3 @@ export function EvolutionTab() {
   );
 }
 
-function SkeletonEvolution() {
-  return (
-    <div>
-      <div className="kpi-grid">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="skeleton" style={{ height: 96 }} />
-        ))}
-      </div>
-      <div className="skeleton" style={{ height: 320, marginBottom: 24 }} />
-      <div className="skeleton" style={{ height: 300, marginBottom: 24 }} />
-      <div className="skeleton" style={{ height: 240 }} />
-    </div>
-  );
-}
-
-function ErrorBox({ message }: { message: string }) {
-  return (
-    <div className="alert-box" style={{ background: 'rgba(239,68,68,0.08)', borderColor: 'rgba(239,68,68,0.3)' }}>
-      <div className="alert-box-title" style={{ color: 'var(--red)' }}>⚠ Error</div>
-      <div style={{ fontFamily: 'DM Mono, monospace' }}>{message}</div>
-    </div>
-  );
-}

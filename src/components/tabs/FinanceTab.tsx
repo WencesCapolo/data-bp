@@ -7,6 +7,8 @@ import { KpiCard } from '@/components/ui/KpiCard';
 import { LineChart } from '@/components/charts/LineChart';
 import { DoughnutChart } from '@/components/charts/DoughnutChart';
 import { StackedAreaChart } from '@/components/charts/StackedAreaChart';
+import { TabSkeleton } from '@/components/ui/Skeleton';
+import { ErrorBox } from '@/components/ui/ErrorBox';
 import type { FinanceDTO } from '@basket/core/dtos/FinanceDTO';
 
 const CURRENCY_COLORS: Record<string, string> = {
@@ -96,7 +98,7 @@ export function FinanceTab() {
     };
   }, [data]);
 
-  if (isLoading) return <SkeletonFinance />;
+  if (isLoading) return <TabSkeleton kpis={4} blocks={[{ kind: 'full', height: 300 }, { kind: 'col2', height: 260 }, { kind: 'full', height: 280 }]} />;
   if (error) return <ErrorBox message={error.message} />;
   if (!data) return null;
 
@@ -204,29 +206,4 @@ export function FinanceTab() {
   );
 }
 
-function SkeletonFinance() {
-  return (
-    <div>
-      <div className="kpi-grid">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="skeleton" style={{ height: 96 }} />
-        ))}
-      </div>
-      <div className="skeleton" style={{ height: 300, marginBottom: 24 }} />
-      <div className="col2">
-        <div className="skeleton" style={{ height: 260 }} />
-        <div className="skeleton" style={{ height: 260 }} />
-      </div>
-      <div className="skeleton" style={{ height: 280 }} />
-    </div>
-  );
-}
 
-function ErrorBox({ message }: { message: string }) {
-  return (
-    <div className="alert-box" style={{ background: 'rgba(239,68,68,0.08)', borderColor: 'rgba(239,68,68,0.3)' }}>
-      <div className="alert-box-title" style={{ color: 'var(--red)' }}>⚠ Error</div>
-      <div style={{ fontFamily: 'DM Mono, monospace' }}>{message}</div>
-    </div>
-  );
-}

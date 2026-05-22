@@ -8,6 +8,8 @@ import { FinanceTab } from '@/components/tabs/FinanceTab';
 import { RetentionTab } from '@/components/tabs/RetentionTab';
 import { DataQualityTab } from '@/components/tabs/DataQualityTab';
 import { FilterRow } from '@/components/ui/FilterRow';
+import { TabBoundary } from '@/components/ui/TabBoundary';
+import { UrlFilterSync } from '@/lib/client/UrlFilterSync';
 import { useFilters } from '@/lib/client/filterStore';
 
 export default function BasketDashboard() {
@@ -15,35 +17,36 @@ export default function BasketDashboard() {
 
   return (
     <>
+      <UrlFilterSync />
       <Header />
       <TabBar />
       <main className="main">
         {tab === 'overview' && (
           <>
             <FilterRow showCountries showAccess showSubType />
-            <OverviewTab />
+            <TabBoundary><OverviewTab /></TabBoundary>
           </>
         )}
         {tab === 'evolution' && (
           <>
             <FilterRow showGranularity showCountries showAccess showSubType />
-            <EvolutionTab />
+            <TabBoundary><EvolutionTab /></TabBoundary>
           </>
         )}
         {tab === 'teams' && (
           <>
             <FilterRow showCountries showAccess showSubType />
-            <TeamsTab />
+            <TabBoundary><TeamsTab /></TabBoundary>
           </>
         )}
         {tab === 'finance' && (
           <>
             <FilterRow showCountries showAccess showSubType />
-            <FinanceTab />
+            <TabBoundary><FinanceTab /></TabBoundary>
           </>
         )}
-        {tab === 'retention' && <RetentionTab />}
-        {tab === 'quality' && <DataQualityTab />}
+        {tab === 'retention' && <TabBoundary><RetentionTab /></TabBoundary>}
+        {tab === 'quality' && <TabBoundary><DataQualityTab /></TabBoundary>}
       </main>
     </>
   );

@@ -6,6 +6,8 @@ import { LineChart } from '@/components/charts/LineChart';
 import { DoughnutChart } from '@/components/charts/DoughnutChart';
 import { BarChart } from '@/components/charts/BarChart';
 import { useFilters } from '@/lib/client/filterStore';
+import { TabSkeleton } from '@/components/ui/Skeleton';
+import { ErrorBox } from '@/components/ui/ErrorBox';
 import type { OverviewDTO } from '@basket/core/dtos/OverviewDTO';
 
 const ACCESS_COLORS = ['#10b981', '#06b6d4', '#fbbf24'];
@@ -38,7 +40,7 @@ export function OverviewTab() {
     refreshInterval: 300_000,
   });
 
-  if (isLoading) return <SkeletonOverview />;
+  if (isLoading) return <TabSkeleton kpis={8} blocks={[{ kind: 'full', height: 280 }, { kind: 'col2', height: 260 }]} />;
   if (error) return <ErrorBox message={error.message} />;
   if (!data) return null;
 
@@ -142,28 +144,4 @@ export function OverviewTab() {
   );
 }
 
-function SkeletonOverview() {
-  return (
-    <div>
-      <div className="kpi-grid">
-        {Array.from({ length: 8 }).map((_, i) => (
-          <div key={i} className="skeleton" style={{ height: 96 }} />
-        ))}
-      </div>
-      <div className="skeleton" style={{ height: 280, marginBottom: 24 }} />
-      <div className="col2">
-        <div className="skeleton" style={{ height: 260 }} />
-        <div className="skeleton" style={{ height: 260 }} />
-      </div>
-    </div>
-  );
-}
 
-function ErrorBox({ message }: { message: string }) {
-  return (
-    <div className="alert-box" style={{ background: 'rgba(239,68,68,0.08)', borderColor: 'rgba(239,68,68,0.3)' }}>
-      <div className="alert-box-title" style={{ color: 'var(--red)' }}>⚠ Error</div>
-      <div style={{ fontFamily: 'DM Mono, monospace' }}>{message}</div>
-    </div>
-  );
-}

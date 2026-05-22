@@ -2,6 +2,8 @@
 import useSWR from 'swr';
 import { fetcher } from '@/lib/client/fetcher';
 import { KpiCard } from '@/components/ui/KpiCard';
+import { TabSkeleton } from '@/components/ui/Skeleton';
+import { ErrorBox } from '@/components/ui/ErrorBox';
 import type { DataQualityDTO } from '@basket/core/dtos/DataQualityDTO';
 import type { MetaDTO } from '@basket/core/dtos/MetaDTO';
 
@@ -38,7 +40,7 @@ export function DataQualityTab() {
   );
   const { data: meta } = useSWR<MetaDTO>('/api/basket/meta', fetcher);
 
-  if (dqLoading) return <Skeleton />;
+  if (dqLoading) return <TabSkeleton kpis={4} blocks={[{ kind: 'full', height: 320 }, { kind: 'full', height: 240 }]} />;
   if (dqErr) return <ErrorBox message={dqErr.message} />;
   if (!dq) return null;
 
@@ -153,25 +155,3 @@ export function DataQualityTab() {
   );
 }
 
-function Skeleton() {
-  return (
-    <div>
-      <div className="kpi-grid">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="skeleton" style={{ height: 96 }} />
-        ))}
-      </div>
-      <div className="skeleton" style={{ height: 320, marginBottom: 24 }} />
-      <div className="skeleton" style={{ height: 240 }} />
-    </div>
-  );
-}
-
-function ErrorBox({ message }: { message: string }) {
-  return (
-    <div className="alert-box" style={{ background: 'rgba(239,68,68,0.08)', borderColor: 'rgba(239,68,68,0.3)' }}>
-      <div className="alert-box-title" style={{ color: 'var(--red)' }}>⚠ Error</div>
-      <div style={{ fontFamily: 'DM Mono, monospace' }}>{message}</div>
-    </div>
-  );
-}

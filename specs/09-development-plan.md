@@ -39,11 +39,13 @@ Phase-by-phase status, gates, and what remains.
 - [ ] Sync status: surface `inFlight=true` more loudly in Header.
 - [ ] Basic smoke perf check: `evolution?range=all` < 500 ms.
 
-### Phase 8.3b — Remaining sheet tables
+### Phase 8.3b — Remaining sheet tables (deferred)
 
-- [ ] `production_grid` → likely the `Grilla` workbook is already loaded into `basket_sheet_rows` per month. Decide if a dedicated normalized table is needed or JSONB is enough.
-- [ ] `total_partidos` (`GOOGLE_SHEETS_ID_TOTAL_PARTIDOS`) → wire up. Probably an aggregate-only sheet; pick PK column.
-- [ ] Surface incidents / grilla rows somewhere in the UI (currently operational-only).
+**Decision**: JSONB in `basket_sheet_rows` is sufficient for operational sheets. No normalized tables until a tab actually surfaces them. Status: **deferred until UI demand**.
+
+- [~] `production_grid` → kept as JSONB rows under `grilla_<month>` source slugs. Already ingested per-month tab. No dedicated table.
+- [~] `total_partidos` (`GOOGLE_SHEETS_ID_TOTAL_PARTIDOS`) → not wired. Aggregate-only sheet; revisit when an engagement/coverage tab needs it.
+- [ ] Surface incidents / grilla rows in UI — pending Phase 9 (Engagement tab).
 
 ### Phase 8 follow-ups (deferred)
 

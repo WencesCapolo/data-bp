@@ -5,6 +5,8 @@ import { fetcher } from '@/lib/client/fetcher';
 import { useFilters } from '@/lib/client/filterStore';
 import { KpiCard } from '@/components/ui/KpiCard';
 import { TeamsRow } from './TeamsRow';
+import { TabSkeleton } from '@/components/ui/Skeleton';
+import { ErrorBox } from '@/components/ui/ErrorBox';
 import type { TeamsDTO, TeamRankRow } from '@basket/core/dtos/TeamsDTO';
 
 type SortKey = 'uniquePayers' | 'totalPayments' | 'totalAmount' | 'teamName';
@@ -62,7 +64,7 @@ export function TeamsTab() {
     }
   }
 
-  if (isLoading) return <SkeletonTeams />;
+  if (isLoading) return <TabSkeleton kpis={4} blocks={[{ kind: 'full', height: 480 }]} />;
   if (error) return <ErrorBox message={error.message} />;
   if (!data) return null;
 
@@ -147,26 +149,5 @@ function SortableTh({
   );
 }
 
-function SkeletonTeams() {
-  return (
-    <div>
-      <div className="kpi-grid">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="skeleton" style={{ height: 96 }} />
-        ))}
-      </div>
-      <div className="skeleton" style={{ height: 480 }} />
-    </div>
-  );
-}
-
-function ErrorBox({ message }: { message: string }) {
-  return (
-    <div className="alert-box" style={{ background: 'rgba(239,68,68,0.08)', borderColor: 'rgba(239,68,68,0.3)' }}>
-      <div className="alert-box-title" style={{ color: 'var(--red)' }}>⚠ Error</div>
-      <div style={{ fontFamily: 'DM Mono, monospace' }}>{message}</div>
-    </div>
-  );
-}
 
 export type { TeamRankRow };

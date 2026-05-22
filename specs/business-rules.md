@@ -88,6 +88,18 @@ AND (expires_at + INTERVAL '7 days')::date >= D
 
 **Grace period: 7 days** after `expires_at` still counts as active (lenient — accommodates payment processing delays + brief lapses before renewal).
 
+## Analytics reference date — today is excluded
+
+All analytics queries default to **yesterday end-of-day UTC**, not "now".
+
+- Overview KPIs: `asOf` defaults to yesterday.
+- Range bounds (`30d` / `90d` / `ytd` / `all`): `to` clamps to yesterday.
+- Custom range (`range=custom` with explicit `from` + `to`): not clamped — caller decides.
+
+**Why**: today is a partial day. Sync may not have run yet; events still in progress; payments processing. Including today would smear a mid-day point against fully-closed historical days and distort trend lines + KPI deltas. Locking the cutoff at yesterday makes every comparison apples-to-apples.
+
+Single point of control: `yesterdayEndUtc()` in `DrizzleAnalyticsQueryRepository.ts`.
+
 ---
 
 ## User → team linkage

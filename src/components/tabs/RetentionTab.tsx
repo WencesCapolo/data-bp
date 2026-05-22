@@ -6,6 +6,8 @@ import { fetcher } from '@/lib/client/fetcher';
 import { KpiCard } from '@/components/ui/KpiCard';
 import { StackedBarChart } from '@/components/charts/StackedBarChart';
 import { ChartCanvas } from '@/components/charts/ChartCanvas';
+import { TabSkeleton } from '@/components/ui/Skeleton';
+import { ErrorBox } from '@/components/ui/ErrorBox';
 import type { RetentionDTO } from '@basket/core/dtos/RetentionDTO';
 
 const COLORS = {
@@ -71,7 +73,7 @@ export function RetentionTab() {
     };
   }, [data]);
 
-  if (isLoading) return <SkeletonRetention />;
+  if (isLoading) return <TabSkeleton kpis={4} blocks={[{ kind: 'full', height: 340 }, { kind: 'full', height: 300 }, { kind: 'full', height: 280 }]} />;
   if (error) return <ErrorBox message={error.message} />;
   if (!data) return null;
   if (data.rows.length === 0) return <div className="no-data">Sin datos de lifecycle</div>;
@@ -163,26 +165,3 @@ export function RetentionTab() {
   );
 }
 
-function SkeletonRetention() {
-  return (
-    <div>
-      <div className="kpi-grid">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="skeleton" style={{ height: 96 }} />
-        ))}
-      </div>
-      <div className="skeleton" style={{ height: 340, marginBottom: 24 }} />
-      <div className="skeleton" style={{ height: 300, marginBottom: 24 }} />
-      <div className="skeleton" style={{ height: 280 }} />
-    </div>
-  );
-}
-
-function ErrorBox({ message }: { message: string }) {
-  return (
-    <div className="alert-box" style={{ background: 'rgba(239,68,68,0.08)', borderColor: 'rgba(239,68,68,0.3)' }}>
-      <div className="alert-box-title" style={{ color: 'var(--red)' }}>⚠ Error</div>
-      <div style={{ fontFamily: 'DM Mono, monospace' }}>{message}</div>
-    </div>
-  );
-}

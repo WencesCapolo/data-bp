@@ -191,7 +191,6 @@ export function mapPaymentRow(row: PaymentCsvRow, knownUserIds: Set<number>): Pa
   const amount = parseFloat(row.amount);
   return {
     id,
-    idx: emptyToNull(row.idx),
     userId,
     paymentEmail: emptyToNull(row.payment_email),
     platformPaymentId: emptyToNull(row.platform_payment_id),

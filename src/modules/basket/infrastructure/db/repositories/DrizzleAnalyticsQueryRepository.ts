@@ -28,9 +28,18 @@ const d = (v: unknown): string => {
   return String(v).slice(0, 10);
 };
 
+// Reference "now" for analytics queries: yesterday end-of-day UTC.
+// Today is excluded because mid-day sync would otherwise show a partial,
+// distorted active count vs. fully-closed historical days.
+function yesterdayEndUtc(): Date {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() - 1);
+  d.setUTCHours(23, 59, 59, 999);
+  return d;
+}
+
 function rangeBounds(r: DateRange): { from: Date; to: Date } {
-  const to = new Date();
-  to.setUTCHours(23, 59, 59, 999);
+  const to = yesterdayEndUtc();
   if (r.kind === 'custom') {
     return { from: new Date(r.from), to: new Date(r.to) };
   }
@@ -70,7 +79,7 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
   // OVERVIEW — 1 mat view scan + 2 small queries, parallelized
   // --------------------------------------------------------------------------
   async getOverview(
-    asOf: Date = new Date(),
+    asOf: Date = yesterdayEndUtc(),
     filters?: CommonFilters,
   ): Promise<OverviewDTO> {
     const day = asOf.toISOString().slice(0, 10);

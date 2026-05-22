@@ -1,10 +1,15 @@
 const BASE = process.env.API_BASE ?? 'http://localhost:3000';
+const INTERNAL_TOKEN = process.env.INTERNAL_API_TOKEN;
+const HEADERS: HeadersInit | undefined = INTERNAL_TOKEN
+  ? { 'x-internal-token': INTERNAL_TOKEN }
+  : undefined;
 
 interface Probe {
   label: string;
   path: string;
   validate: (body: unknown) => string | null;
   expectStatus?: number;
+  maxMs?: number;
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
@@ -92,10 +97,16 @@ const PROBES: Probe[] = [
     validate: (b) => (isObj(b) && b.error === 'invalid_query' ? null : 'expected invalid_query'),
     expectStatus: 400,
   },
+  {
+    label: 'PERF /evolution?range=all (< 500ms)',
+    path: '/api/basket/evolution?range=all&granularity=day',
+    validate: (b) => need(b, 'series') ?? need(b, 'range'),
+    maxMs: 500,
+  },
 ];
 
 async function probeTeamTrend(): Promise<Probe> {
-  const teamsRes = await fetch(`${BASE}/api/basket/teams?range=all&limit=1`);
+  const teamsRes = await fetch(`${BASE}/api/basket/teams?range=all&limit=1`, { headers: HEADERS });
   const body = (await teamsRes.json()) as { ranked?: Array<{ teamId: number }> };
   const teamId = body.ranked?.[0]?.teamId ?? 1;
   return {
@@ -107,7 +118,7 @@ async function probeTeamTrend(): Promise<Probe> {
 
 async function run(p: Probe): Promise<{ label: string; ok: boolean; ms: number; detail: string }> {
   const t = Date.now();
-  const res = await fetch(`${BASE}${p.path}`);
+  const res = await fetch(`${BASE}${p.path}`, { headers: HEADERS });
   const ms = Date.now() - t;
   const expected = p.expectStatus ?? 200;
   if (res.status !== expected) {
@@ -115,7 +126,11 @@ async function run(p: Probe): Promise<{ label: string; ok: boolean; ms: number; 
   }
   const body = await res.json();
   const err = p.validate(body);
-  return { label: p.label, ok: !err, ms, detail: err ?? 'ok' };
+  if (err) return { label: p.label, ok: false, ms, detail: err };
+  if (p.maxMs && ms > p.maxMs) {
+    return { label: p.label, ok: false, ms, detail: `slow: ${ms}ms > ${p.maxMs}ms` };
+  }
+  return { label: p.label, ok: true, ms, detail: 'ok' };
 }
 
 async function main() {
