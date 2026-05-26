@@ -61,10 +61,10 @@ export function Header() {
 
   return (
     <header className={inFlight ? 'header in-flight' : 'header'}>
-      <div className="logo">
-        BASKET.TV
+      <a href="/" className="logo" aria-label="Basket.tv">
+        <img src="/Basket.tv%20horizontal%20blanco.png" alt="Basket.tv" className="logo-img" />
         <span className="subtitle">Analytics</span>
-      </div>
+      </a>
       <div className="header-meta">
         <span className={badgeClass} aria-live="polite">
           <span className={`sync-dot ${dotClass}`} />

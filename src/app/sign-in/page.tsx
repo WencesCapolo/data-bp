@@ -19,8 +19,8 @@ export default function SignInPage() {
   return (
     <main style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 24 }}>
       <div className="card" style={{ width: '100%', maxWidth: 360, padding: 32, textAlign: 'center' }}>
-        <div className="logo" style={{ justifyContent: 'center', marginBottom: 16 }}>
-          BASKET.TV
+        <div className="logo" style={{ justifyContent: 'center', marginBottom: 16, flexDirection: 'column', gap: 8 }}>
+          <img src="/Basket.tv%20horizontal%20blanco.png" alt="Basket.tv" className="logo-img" style={{ height: 40 }} />
           <span className="subtitle">Analytics</span>
         </div>
         <p style={{ color: 'var(--text3)', marginBottom: 24, fontSize: 13 }}>

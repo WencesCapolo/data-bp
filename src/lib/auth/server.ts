@@ -17,6 +17,16 @@ async function isEmailAllowed(email: string): Promise<boolean> {
   return rows.length > 0;
 }
 
+async function roleForEmail(email: string): Promise<'admin' | 'viewer'> {
+  const rows = await db
+    .select({ role: authAllowedEmails.role })
+    .from(authAllowedEmails)
+    .where(eq(authAllowedEmails.email, email.toLowerCase()))
+    .limit(1);
+  const r = rows[0]?.role;
+  return r === 'admin' ? 'admin' : 'viewer';
+}
+
 export const auth = betterAuth({
   baseURL: process.env.BETTER_AUTH_URL,
   secret: process.env.BETTER_AUTH_SECRET,
@@ -55,7 +65,8 @@ export const auth = betterAuth({
           if (!(await isEmailAllowed(user.email))) {
             throw new Error(`Email ${user.email} is not authorized to access this dashboard.`);
           }
-          return { data: user };
+          const role = await roleForEmail(user.email);
+          return { data: { ...user, role } };
         },
       },
     },

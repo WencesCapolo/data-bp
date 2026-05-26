@@ -8,10 +8,11 @@
   - ~~`ChartSkeleton` / `KpiGridSkeleton` / `TabSkeleton` primitives~~ → `src/components/ui/Skeleton.tsx`.
   - ~~`inFlight=true` louder in Header~~ → accent border + animated sweep bar (`.header.in-flight`).
   - ~~Smoke perf: `evolution?range=all` < 500 ms~~ → `pnpm smoke:perf` (`scripts/smoke-perf.ts`).
-- ~~Auth on GET routes~~ → **done**. `src/middleware.ts` checks better-auth session cookie on `/basket/*` and `/api/basket/*`; redirects pages to `/sign-in`, returns 401 for API. `/api/basket/sync` allows `x-sync-token` bypass for cron.
+- ~~Auth on GET routes~~ → **done**. `src/proxy.ts` (Next 16 proxy convention — replaces deprecated middleware) checks better-auth session cookie on `/`, `/basket/*`, `/admin/*`, `/api/basket/*`, `/api/admin/*`; redirects pages to `/sign-in`, returns 401 for API. `/api/basket/sync` allows `x-sync-token` bypass for cron.
 - ~~Cache-Control / ETag on `/meta`~~ → done via `okCached` (`src/lib/api/responses.ts`). Stable reads beyond `/meta` deferred (filtered routes change too often to benefit).
 - ~~Filter push-down to SQL across all routes~~ → done. `buildActiveFilterWhere` in `DrizzleAnalyticsQueryRepository` applies `countries[]` / `accessType` / `subType` for Overview / Evolution / Teams / Finance.
 - ~~Phase 8.3b~~ → **deferred**. JSONB rows in `basket_sheet_rows` sufficient until a UI surface needs structured columns.
+- ~~Multi-dashboard landing + RBAC~~ → done. `/` lists dashboards (`src/lib/dashboards.ts` registry: `Suscripciones` live → `/basket`, `Financiero` soon). Roles `admin`/`viewer` on `auth_user` + `auth_allowed_emails` (migration `0006_user_roles.sql`). Role copied from allowlist on first sign-in (`src/lib/auth/server.ts`). `requireSession` / `requireRole` / `requireDashboard` in `src/lib/auth/rbac.ts`. Admin UI at `/admin` (admin-only): add/remove/role-change users; backed by `/api/admin/users`. Middleware extended to gate `/admin/*` and `/api/admin/*`.
 
 ## Phase B · Secrets + config
 

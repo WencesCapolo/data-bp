@@ -37,5 +37,11 @@ export function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/basket/:path*', '/api/basket/:path*'],
+  matcher: [
+    '/',
+    '/basket/:path*',
+    '/admin/:path*',
+    '/api/basket/:path*',
+    '/api/admin/:path*',
+  ],
 };

@@ -12,7 +12,7 @@ import { TabBoundary } from '@/components/ui/TabBoundary';
 import { UrlFilterSync } from '@/lib/client/UrlFilterSync';
 import { useFilters } from '@/lib/client/filterStore';
 
-export default function BasketDashboard() {
+export function BasketDashboard() {
   const tab = useFilters((s) => s.tab);
 
   return (
