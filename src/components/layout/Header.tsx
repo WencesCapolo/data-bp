@@ -60,7 +60,7 @@ export function Header() {
   const badgeClass = inFlight ? 'sync-badge live' : 'sync-badge';
 
   return (
-    <header className="header">
+    <header className={inFlight ? 'header in-flight' : 'header'}>
       <div className="logo">
         BASKET.TV
         <span className="subtitle">Analytics</span>

@@ -17,6 +17,10 @@
     "smoke:queries": "tsx --env-file=.env scripts/smoke-queries.ts",
     "smoke:sync": "tsx --env-file=.env scripts/smoke-sync.ts",
     "smoke:api": "tsx scripts/smoke-api.ts",
+    "smoke:perf": "tsx scripts/smoke-perf.ts",
+    "db:verify": "tsx --env-file=.env scripts/db-verify.ts",
+    "db:bootstrap": "bash scripts/db-bootstrap.sh",
+    "db:backup": "bash scripts/db-backup.sh",
     "backfill:payments": "tsx --env-file=.env scripts/backfill-payments.ts"
   },
   "dependencies": {

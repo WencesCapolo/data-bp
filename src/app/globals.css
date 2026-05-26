@@ -47,6 +47,31 @@ button { font: inherit; }
   top: 0;
   z-index: 100;
 }
+.header.in-flight {
+  border-bottom-color: var(--accent);
+  background:
+    linear-gradient(135deg, var(--bg2) 0%, #0d1828 100%),
+    color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.header.in-flight::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: -2px;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--accent) 50%,
+    transparent 100%
+  );
+  background-size: 40% 100%;
+  background-repeat: no-repeat;
+  animation: header-sync-sweep 1.6s linear infinite;
+}
+@keyframes header-sync-sweep {
+  0%   { background-position: -40% 0; }
+  100% { background-position: 140% 0; }
+}
 .logo {
   display: flex;
   align-items: center;

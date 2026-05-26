@@ -1,0 +1,49 @@
+# Production Postgres for private VPS.
+# Bound to loopback only — never expose 5432 publicly.
+# Reverse proxy (Caddy) → Next.js (127.0.0.1:3000) → this PG (127.0.0.1:5432).
+#
+# Bring up:   podman compose -f docker-compose.prod.yml up -d
+# Bring down: podman compose -f docker-compose.prod.yml down
+# Logs:       podman compose -f docker-compose.prod.yml logs -f postgres
+
+services:
+  postgres:
+    image: docker.io/library/postgres:16-alpine
+    container_name: data-bp-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-basket_analytics}
+      POSTGRES_USER: ${POSTGRES_USER:-basket}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}
+      # Tuned for ~1 GB RAM VPS. Override via env if instance is larger.
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - /var/lib/data-bp/pgdata:/var/lib/postgresql/data
+      - /var/backups/data-bp:/backups
+    shm_size: 256mb
+    command:
+      - "postgres"
+      - "-c"
+      - "max_connections=50"
+      - "-c"
+      - "shared_buffers=256MB"
+      - "-c"
+      - "effective_cache_size=768MB"
+      - "-c"
+      - "work_mem=8MB"
+      - "-c"
+      - "maintenance_work_mem=64MB"
+      - "-c"
+      - "wal_compression=on"
+      - "-c"
+      - "log_min_duration_statement=500"
+      - "-c"
+      - "log_checkpoints=on"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-basket} -d ${POSTGRES_DB:-basket_analytics}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s

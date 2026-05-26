@@ -2,14 +2,14 @@
 
 ## Phase A · Code completeness (must-fix before ship)
 
-- Phase 7 polish (from `09-development-plan.md`)
-  - URL ↔ filter state sync (deep links)
-  - Error boundary per tab (replace inline `ErrorBox`)
-  - Unified `ChartSkeleton` primitives
-  - `inFlight=true` louder in Header
-  - Smoke perf: `evolution?range=all` < 500 ms
-- Auth on GET routes — currently open. Cookie/session before public exposure.
-- Cache-Control / ETag on `/meta` + stable reads.
+- ~~Phase 7 polish~~ → **done**.
+  - ~~URL ↔ filter state sync~~ → `src/lib/client/UrlFilterSync.tsx`.
+  - ~~Error boundary per tab~~ → `src/components/ui/TabBoundary.tsx` wraps every tab.
+  - ~~`ChartSkeleton` / `KpiGridSkeleton` / `TabSkeleton` primitives~~ → `src/components/ui/Skeleton.tsx`.
+  - ~~`inFlight=true` louder in Header~~ → accent border + animated sweep bar (`.header.in-flight`).
+  - ~~Smoke perf: `evolution?range=all` < 500 ms~~ → `pnpm smoke:perf` (`scripts/smoke-perf.ts`).
+- ~~Auth on GET routes~~ → **done**. `src/middleware.ts` checks better-auth session cookie on `/basket/*` and `/api/basket/*`; redirects pages to `/sign-in`, returns 401 for API. `/api/basket/sync` allows `x-sync-token` bypass for cron.
+- ~~Cache-Control / ETag on `/meta`~~ → done via `okCached` (`src/lib/api/responses.ts`). Stable reads beyond `/meta` deferred (filtered routes change too often to benefit).
 - ~~Filter push-down to SQL across all routes~~ → done. `buildActiveFilterWhere` in `DrizzleAnalyticsQueryRepository` applies `countries[]` / `accessType` / `subType` for Overview / Evolution / Teams / Finance.
 - ~~Phase 8.3b~~ → **deferred**. JSONB rows in `basket_sheet_rows` sufficient until a UI surface needs structured columns.
 
@@ -21,14 +21,14 @@
 - `NODE_ENV=production` set (gates cron start in `layout.tsx`).
 - Service-account JSON mount strategy (file vs env-encoded).
 
-## Phase C · Database
+## Phase C · Database — **done** (private VPS, podman + Postgres 16)
 
-- Provision PG 16 instance + connection pool (pgBouncer / built-in).
-- Run `migrations/sql/0001–0004` against prod.
-- Verify `CREATE UNIQUE INDEX` on all 5 mat views (REFRESH CONCURRENTLY needs them).
-- Initial backfill: run `scripts/initial-load.ts` against prod DB.
-- Backup policy: daily snapshot + PITR.
-- Connection-limit sizing vs Next.js process count.
+- ~~Provision PG 16 + pool~~ → `docker-compose.prod.yml` (PG 16 alpine, bound `127.0.0.1:5432`, tuned for 1 GB RAM VPS: `max_connections=50`, `shared_buffers=256MB`, `effective_cache_size=768MB`, `wal_compression=on`, slow-query log at 500ms).
+- ~~Connection pool sizing~~ → `src/shared/db/client.ts` now reads `DB_POOL_MAX` (default 10), `DB_IDLE_TIMEOUT_S`, `DB_CONNECT_TIMEOUT_S`. Single Next.js process × 10 = 10 connections, well under PG's 50.
+- ~~Run migrations 0001-0005~~ → `pnpm db:bootstrap` (`scripts/db-bootstrap.sh`) runs drizzle migrate → apply-views → raw SQL 0002-0005 → initial-load → refresh-views → verify. Idempotent.
+- ~~Verify unique indexes on all 5 mat views~~ → `pnpm db:verify` (`scripts/db-verify.ts`) confirms PG ≥16, core tables exist, every mat view has a `CREATE UNIQUE INDEX` (required for `REFRESH CONCURRENTLY`), prints row counts.
+- ~~Initial backfill~~ → existing `pnpm sync:initial`, invoked by bootstrap.
+- ~~Backup policy~~ → **manual only**. PG is the system of record but every table is re-derivable from upstream (Basket.tv API + Google Sheets) via `pnpm sync:initial`. `pnpm db:backup` (`scripts/db-backup.sh`) available for one-shot dumps before risky schema changes; no automated timer.
 
 ## Phase D · Hosting + runtime
 

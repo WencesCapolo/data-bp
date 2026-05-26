@@ -11,7 +11,15 @@ const globalForDb = globalThis as unknown as {
 function buildConnection(): ReturnType<typeof postgres> {
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error('DATABASE_URL not set');
-  return postgres(url, { max: 10, prepare: false });
+  const max = Number(process.env.DB_POOL_MAX ?? 10);
+  const idleTimeout = Number(process.env.DB_IDLE_TIMEOUT_S ?? 30);
+  const connectTimeout = Number(process.env.DB_CONNECT_TIMEOUT_S ?? 10);
+  return postgres(url, {
+    max,
+    idle_timeout: idleTimeout,
+    connect_timeout: connectTimeout,
+    prepare: false,
+  });
 }
 
 export const connection = globalForDb.connection ?? buildConnection();
