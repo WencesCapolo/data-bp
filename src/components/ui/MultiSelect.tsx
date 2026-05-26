@@ -25,75 +25,35 @@ export function MultiSelect({ label, options, value, onChange }: Props) {
     else onChange([...value, o]);
   }
 
-  const summary = value.length === 0 ? label : `${label}: ${value.length}`;
-
   return (
-    <div ref={ref} style={{ position: 'relative' }}>
+    <div ref={ref} className={`multiselect ${open ? 'open' : ''}`}>
       <button
-        className={`date-pill ${value.length > 0 ? 'active' : ''}`}
-        onClick={() => setOpen((o) => !o)}
         type="button"
+        className="multiselect-btn"
+        onClick={() => setOpen((o) => !o)}
       >
-        {summary} ▾
+        {label}
+        {value.length > 0 && <span className="multiselect-count">{value.length}</span>}
       </button>
       {open && (
-        <div
-          style={{
-            position: 'absolute',
-            top: 'calc(100% + 6px)',
-            left: 0,
-            zIndex: 50,
-            background: 'var(--bg3)',
-            border: '1px solid var(--border)',
-            borderRadius: 8,
-            padding: 6,
-            minWidth: 180,
-            maxHeight: 260,
-            overflowY: 'auto',
-            boxShadow: '0 8px 16px rgba(0,0,0,0.4)',
-          }}
-        >
-          {value.length > 0 && (
-            <button
-              type="button"
-              onClick={() => onChange([])}
-              style={{
-                width: '100%',
-                padding: '6px 10px',
-                background: 'transparent',
-                border: 'none',
-                color: 'var(--text3)',
-                fontSize: 11,
-                textAlign: 'left',
-                cursor: 'pointer',
-              }}
-            >
-              Limpiar
+        <div className="multiselect-dropdown">
+          <div className="multiselect-actions">
+            <button type="button" className="multiselect-action" onClick={() => onChange([...options])}>
+              Todos
             </button>
-          )}
-          {options.map((o) => (
-            <label
-              key={o}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                padding: '6px 10px',
-                fontSize: 12,
-                color: 'var(--text2)',
-                cursor: 'pointer',
-                borderRadius: 4,
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={value.includes(o)}
-                onChange={() => toggle(o)}
-                style={{ accentColor: 'var(--accent)' }}
-              />
-              {o}
-            </label>
-          ))}
+            <button type="button" className="multiselect-action" onClick={() => onChange([])}>
+              Ninguno
+            </button>
+          </div>
+          {options.map((o) => {
+            const sel = value.includes(o);
+            return (
+              <label key={o} className={`multiselect-option ${sel ? 'selected' : ''}`}>
+                <input type="checkbox" checked={sel} onChange={() => toggle(o)} />
+                {o}
+              </label>
+            );
+          })}
         </div>
       )}
     </div>

@@ -74,6 +74,8 @@ export interface RunSyncDeps {
   contentWindowDays?: number;
   paymentsEnabled?: boolean;
   contentEnabled?: boolean;
+  /** Relative window for live payments endpoint (e.g. "-1month", "-2years"). Default "-1month". */
+  paymentsWindow?: string;
 }
 
 export interface RunSyncResult {
@@ -126,7 +128,7 @@ export class RunSyncUseCase {
     if (paymentsEnabled) {
       const lastPayments = await this.deps.syncState.getLastSync('payments');
       const userIds = await this.deps.users.getKnownIds();
-      const paymentsStream = this.mapPayments(paymentsResource, lastPayments ?? undefined, userIds);
+      const paymentsStream = this.mapPayments(paymentsResource, lastPayments ?? undefined, userIds, this.deps.paymentsWindow ?? '-1month');
       const paymentsResult = await new LoadPaymentsFromCsvUseCase(this.deps.payments).execute({ rows: paymentsStream });
       paymentsInserted = paymentsResult.inserted;
       await this.deps.syncState.updateLastSync('payments', runAt, await this.deps.payments.count());
@@ -264,10 +266,18 @@ export class RunSyncUseCase {
 
   private async *mapPayments(
     resource: string,
-    since: Date | undefined,
+    _since: Date | undefined,
     userIds: Set<number>,
+    window: string,
   ): AsyncGenerator<PaymentProps> {
-    for await (const row of this.deps.fetcher.streamRows<Record<string, string>>(resource, { since })) {
+    // Live `/payments` endpoint accepts only anonymous requests + a relative window
+    // param ("-1month", "-2years", etc). Upsert is idempotent via PK so a rolling
+    // window stays cheap and dedups automatically.
+    for await (const row of this.deps.fetcher.streamRows<Record<string, string>>(resource, {
+      auth: 'none',
+      omitSince: true,
+      extraParams: { from: window },
+    })) {
       const mapped = this.deps.mapPaymentRow(row, userIds);
       if (mapped) yield mapped;
     }

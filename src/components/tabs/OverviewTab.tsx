@@ -14,28 +14,42 @@ const ACCESS_COLORS = ['#10b981', '#06b6d4', '#fbbf24'];
 const SUBTYPE_COLORS = ['#94a3b8', '#4f8ef7', '#22d3ee', '#a78bfa', '#fb923c'];
 const COUNTRY_COLORS = ['#4f8ef7', '#22d3ee', '#f43f5e', '#a78bfa', '#34d399', '#fb923c', '#94a3b8'];
 
+function rangeLabel(r: string): string {
+  if (r === '30d') return '30 días';
+  if (r === '90d') return '90 días';
+  if (r === 'ytd') return 'YTD';
+  if (r === 'all') return 'todo';
+  return r;
+}
+
 function fmtCurrency(n: number, c: string): string {
-  return new Intl.NumberFormat('es-UY', { style: 'currency', currency: c, maximumFractionDigits: 0 }).format(n);
+  try {
+    return new Intl.NumberFormat('es-UY', { style: 'currency', currency: c, maximumFractionDigits: 0 }).format(n);
+  } catch {
+    return `${c} ${new Intl.NumberFormat('es-UY', { maximumFractionDigits: 0 }).format(n)}`;
+  }
 }
 
 function buildOverviewUrl(s: {
+  range: string;
   countries: string[];
   accessType?: string;
   subType?: string;
 }): string {
   const p = new URLSearchParams();
+  p.set('range', s.range);
   for (const c of s.countries) p.append('countries', c);
   if (s.accessType) p.set('accessType', s.accessType);
   if (s.subType) p.set('subType', s.subType);
-  const qs = p.toString();
-  return qs ? `/api/basket/overview?${qs}` : '/api/basket/overview';
+  return `/api/basket/overview?${p.toString()}`;
 }
 
 export function OverviewTab() {
+  const range = useFilters((s) => s.range);
   const countries = useFilters((s) => s.countries);
   const accessType = useFilters((s) => s.accessType);
   const subType = useFilters((s) => s.subType);
-  const url = buildOverviewUrl({ countries, accessType, subType });
+  const url = buildOverviewUrl({ range, countries, accessType, subType });
   const { data, error, isLoading } = useSWR<OverviewDTO>(url, fetcher, {
     refreshInterval: 300_000,
   });
@@ -44,7 +58,7 @@ export function OverviewTab() {
   if (error) return <ErrorBox message={error.message} />;
   if (!data) return null;
 
-  const { kpis, trend30d, accessBreakdown, subTypeBreakdown, countryBreakdown } = data;
+  const { kpis, trend, accessBreakdown, subTypeBreakdown, countryBreakdown } = data;
 
   return (
     <div>
@@ -56,19 +70,19 @@ export function OverviewTab() {
         <KpiCard label="Mensual básico" value={kpis.activeMensualBasico} />
         <KpiCard label="Mensual total" value={kpis.activeMensualTotal} />
         <KpiCard label="Anual total" value={kpis.activeAnualTotal} />
-        <KpiCard label="Nuevos pagadores 30d" value={kpis.newPayersLast30d} variant="green" />
+        <KpiCard label={`Nuevos pagadores ${rangeLabel(range)}`} value={kpis.newPayersInRange} variant="green" />
       </div>
 
       <div className="chart-full">
-        <div className="chart-title">Tendencia 30 días · activos por tipo de acceso</div>
+        <div className="chart-title">Tendencia ({rangeLabel(range)}) · activos por tipo de acceso</div>
         <div style={{ height: 260 }}>
           <LineChart
             height={260}
-            labels={trend30d.map((p) => p.day.slice(5))}
+            labels={trend.map((p) => p.day.slice(5))}
             series={[
-              { label: 'Total', data: trend30d.map((p) => p.allActive), color: '#06b6d4', fill: true },
-              { label: 'Reales', data: trend30d.map((p) => p.realActive), color: '#10b981' },
-              { label: 'Vouchers', data: trend30d.map((p) => p.voucherActive), color: '#fbbf24' },
+              { label: 'Total', data: trend.map((p) => p.allActive), color: '#06b6d4', fill: true },
+              { label: 'Reales', data: trend.map((p) => p.realActive), color: '#10b981' },
+              { label: 'Vouchers', data: trend.map((p) => p.voucherActive), color: '#fbbf24' },
             ]}
           />
         </div>
@@ -110,12 +124,12 @@ export function OverviewTab() {
 
       <div className="col2">
         <div className="summary-card">
-          <div className="summary-card-title">💰 Revenue últimos 30 días</div>
+          <div className="summary-card-title">💰 Revenue · {rangeLabel(range)}</div>
           <div className="summary-card-body">
-            {kpis.revenueLast30dByCurrency.length === 0 ? (
+            {kpis.revenueInRangeByCurrency.length === 0 ? (
               <div>(sin datos)</div>
             ) : (
-              kpis.revenueLast30dByCurrency.map((r) => (
+              kpis.revenueInRangeByCurrency.map((r) => (
                 <div key={r.currency}>
                   {r.currency}: <strong style={{ color: 'var(--text)' }}>{fmtCurrency(r.amount, r.currency)}</strong>
                 </div>

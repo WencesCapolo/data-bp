@@ -7,8 +7,8 @@ export interface OverviewKpis {
   activeMensualBasico: number;
   activeMensualTotal: number;
   activeAnualTotal: number;
-  newPayersLast30d: number;
-  revenueLast30dByCurrency: { currency: string; amount: number }[];
+  newPayersInRange: number;
+  revenueInRangeByCurrency: { currency: string; amount: number }[];
 }
 
 export interface OverviewTrendPoint {
@@ -27,7 +27,7 @@ export interface OverviewBreakdown {
 export interface OverviewDTO {
   asOf: string;
   kpis: OverviewKpis;
-  trend30d: OverviewTrendPoint[];
+  trend: OverviewTrendPoint[];
   accessBreakdown: OverviewBreakdown[];
   subTypeBreakdown: OverviewBreakdown[];
   countryBreakdown: OverviewBreakdown[];

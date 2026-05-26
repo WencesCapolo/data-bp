@@ -182,6 +182,9 @@ button { font: inherit; }
   margin-top: 4px;
   font-family: 'DM Mono', monospace;
 }
+.kpi-delta { font-size: 11px; font-family: 'DM Mono', monospace; margin-top: 4px; }
+.kpi-delta.up { color: var(--green); }
+.kpi-delta.down { color: var(--red); }
 
 .charts-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 24px; }
 .col2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
@@ -214,7 +217,7 @@ button { font: inherit; }
   gap: 10px;
   flex-wrap: wrap;
   align-items: center;
-  margin-bottom: 18px;
+  margin-bottom: 12px;
   padding: 14px;
   background: var(--bg2);
   border: 1px solid var(--border);
@@ -243,11 +246,297 @@ button { font: inherit; }
 }
 .date-pill:hover { border-color: var(--accent); color: var(--text); }
 .date-pill.active {
-  background: rgba(227, 6, 19, 0.12);
+  background: rgba(249, 115, 22, 0.12);
   border-color: var(--accent);
   color: var(--accent);
   font-weight: 600;
 }
+
+.subtype-pills { display: flex; gap: 5px; }
+.subtype-pill {
+  padding: 6px 12px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text2);
+  border-radius: 99px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s;
+  user-select: none;
+}
+.subtype-pill:hover { border-color: var(--accent2); }
+.subtype-pill.active {
+  background: rgba(6, 182, 212, 0.12);
+  border-color: var(--accent2);
+  color: var(--accent2);
+  font-weight: 600;
+}
+
+.multiselect { position: relative; display: inline-block; }
+.multiselect-btn {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 7px 28px 7px 10px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-family: 'Poppins', sans-serif;
+  cursor: pointer;
+  min-width: 100px;
+  max-width: 240px;
+  text-align: left;
+  position: relative;
+  outline: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.multiselect-btn:hover { border-color: var(--border2); }
+.multiselect-btn::after {
+  content: '▾';
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text3);
+  font-size: 9px;
+}
+.multiselect.open .multiselect-btn { border-color: var(--accent2); }
+.multiselect-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  padding: 8px;
+  min-width: 200px;
+  max-height: 320px;
+  overflow-y: auto;
+  z-index: 1000;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+.multiselect-actions {
+  display: flex;
+  gap: 4px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 6px;
+}
+.multiselect-action {
+  font-size: 10px;
+  color: var(--accent2);
+  cursor: pointer;
+  padding: 3px 6px;
+  border-radius: 4px;
+  user-select: none;
+  background: transparent;
+  border: none;
+  font-family: inherit;
+}
+.multiselect-action:hover { background: rgba(6, 182, 212, 0.08); }
+.multiselect-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text2);
+  user-select: none;
+  transition: background 0.1s;
+}
+.multiselect-option:hover { background: var(--bg3); }
+.multiselect-option input { accent-color: var(--accent); cursor: pointer; }
+.multiselect-option.selected { color: var(--accent); }
+.multiselect-count {
+  display: inline-block;
+  background: var(--accent);
+  color: white;
+  border-radius: 99px;
+  padding: 1px 7px;
+  font-size: 10px;
+  margin-left: 6px;
+  font-weight: 600;
+}
+
+.search-wrap { position: relative; flex: 1; max-width: 280px; }
+.search-input {
+  width: 100%;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 7px 10px 7px 32px;
+  border-radius: 7px;
+  font-size: 12px;
+  outline: none;
+  font-family: 'Poppins', sans-serif;
+}
+.search-input:focus { border-color: var(--accent2); }
+.search-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text3);
+  font-size: 14px;
+}
+
+.toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text2);
+  cursor: pointer;
+  user-select: none;
+}
+.toggle-label input { accent-color: var(--accent); cursor: pointer; }
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 99px;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.country-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+.country-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.country-card:hover { border-color: var(--border2); transform: translateY(-1px); }
+.country-card.selected { border-color: var(--accent); background: rgba(249, 115, 22, 0.05); }
+.country-flag { font-size: 24px; margin-bottom: 8px; }
+.country-name {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 18px;
+  letter-spacing: 1px;
+  margin-bottom: 4px;
+}
+.country-payers { font-size: 22px; font-family: 'DM Mono', monospace; font-weight: 600; }
+.country-label {
+  font-size: 10px;
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.country-bar {
+  height: 3px;
+  background: var(--border);
+  border-radius: 2px;
+  margin-top: 12px;
+  overflow: hidden;
+}
+.country-bar-fill { height: 100%; border-radius: 2px; transition: width 0.6s ease; }
+
+.rank-num {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--text3);
+  width: 28px;
+}
+.table-wrap {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.chart-nav {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+  padding: 4px 0;
+}
+.chart-nav-group {
+  display: flex;
+  gap: 1px;
+  background: rgba(20, 28, 46, 0.5);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px;
+}
+.chart-nav-btn {
+  background: transparent;
+  border: none;
+  color: var(--text2);
+  padding: 4px 9px;
+  border-radius: 4px;
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-weight: 500;
+  min-width: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.chart-nav-btn:hover { background: rgba(6, 182, 212, 0.15); color: var(--accent2); }
+.chart-nav-btn:active { background: var(--accent2); color: var(--bg); }
+.chart-nav-btn[disabled] { opacity: 0.3; cursor: not-allowed; pointer-events: none; }
+.chart-nav-info {
+  font-size: 10px;
+  color: var(--text3);
+  font-family: 'DM Mono', monospace;
+  margin-right: auto;
+  padding-left: 4px;
+}
+.chart-nav-reset {
+  background: rgba(20, 28, 46, 0.5);
+  border: 1px solid var(--border);
+  color: var(--text3);
+  padding: 3px 10px;
+  border-radius: 5px;
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+  margin-left: 6px;
+}
+.chart-nav-reset:hover { background: var(--chi); color: #fff; border-color: var(--chi); }
+.chart-zoom-hint {
+  font-size: 9px;
+  color: var(--text3);
+  font-family: 'DM Mono', monospace;
+  margin-top: 6px;
+  text-align: right;
+}
+
+.animate-in { animation: fadeUp 0.3s ease both; }
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+select {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 7px 10px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-family: 'Poppins', sans-serif;
+  cursor: pointer;
+  outline: none;
+}
+select:hover { border-color: var(--border2); }
+select:focus { border-color: var(--accent2); }
 
 .alert-box {
   margin-top: 18px;
@@ -311,7 +600,7 @@ button { font: inherit; }
 .data-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: 13px;
 }
 .data-table thead th {
   background: var(--bg3);
@@ -332,8 +621,9 @@ button { font: inherit; }
   color: var(--text);
 }
 .data-table tbody tr:hover { background: rgba(255, 255, 255, 0.02); }
+.data-table tbody tr:last-child td { border-bottom: none; }
 .data-table tbody tr.row-active {
-  background: rgba(227, 6, 19, 0.05);
+  background: rgba(249, 115, 22, 0.05);
 }
 .data-table tbody tr.row-active td { border-bottom-color: transparent; }
 

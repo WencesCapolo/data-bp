@@ -79,10 +79,15 @@ export const RangeQuerySchema = z
 export const OverviewQuerySchema = z
   .object({
     asOf: z.string().regex(ISO_DATE).optional(),
+    range: rangeKindSchema,
+    from: z.string().regex(ISO_DATE).optional(),
+    to: z.string().regex(ISO_DATE).optional(),
     ...commonFiltersShape,
   })
+  .superRefine(customRangeRefine)
   .transform((v) => ({
     asOf: v.asOf,
+    range: toDateRange(v),
     filters: toFilters(v),
   }));
 

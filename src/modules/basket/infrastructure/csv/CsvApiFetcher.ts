@@ -28,9 +28,11 @@ export class CsvApiFetcher implements ICsvFetcher {
     resource: string,
     options: CsvFetchOptions = {},
   ): AsyncGenerator<T, void, unknown> {
-    const url = new URL(this.buildUrl(resource, options));
+    const effectiveAuth: CsvAuthMode =
+      options.auth && options.auth !== 'inherit' ? options.auth : (this.cfg.authMode ?? 'bearer');
+    const url = new URL(this.buildUrl(resource, options, effectiveAuth));
     const headers: Record<string, string> = { accept: 'text/csv' };
-    if ((this.cfg.authMode ?? 'bearer') === 'bearer' && this.cfg.apiKey) {
+    if (effectiveAuth === 'bearer' && this.cfg.apiKey) {
       headers.authorization = `Bearer ${this.cfg.apiKey}`;
     }
 
@@ -77,9 +79,9 @@ export class CsvApiFetcher implements ICsvFetcher {
     }
   }
 
-  private buildUrl(resource: string, options: CsvFetchOptions): string {
+  private buildUrl(resource: string, options: CsvFetchOptions, effectiveAuth: CsvAuthMode): string {
     const url = new URL(resource, this.cfg.baseUrl.endsWith('/') ? this.cfg.baseUrl : this.cfg.baseUrl + '/');
-    if (options.since) {
+    if (options.since && !options.omitSince) {
       url.searchParams.set(this.cfg.sinceParam ?? 'since', options.since.toISOString());
     }
     for (const [k, v] of Object.entries(this.cfg.staticParams ?? {})) {
@@ -88,7 +90,7 @@ export class CsvApiFetcher implements ICsvFetcher {
     for (const [k, v] of Object.entries(options.extraParams ?? {})) {
       url.searchParams.set(k, v);
     }
-    if (this.cfg.authMode === 'query-token' && this.cfg.apiKey) {
+    if (effectiveAuth === 'query-token' && this.cfg.apiKey) {
       url.searchParams.set(this.cfg.tokenParam ?? 'token', this.cfg.apiKey);
     }
     return url.toString();

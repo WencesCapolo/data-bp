@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
   if (!parsed.success) return badRequest(parsed.error);
   try {
     const asOf = parsed.data.asOf ? new Date(parsed.data.asOf) : undefined;
-    const dto = await new GetOverviewUseCase(composeRepo()).execute(asOf, parsed.data.filters);
+    const dto = await new GetOverviewUseCase(composeRepo()).execute(asOf, parsed.data.range, parsed.data.filters);
     return ok(dto);
   } catch (err) {
     return serverError(err);

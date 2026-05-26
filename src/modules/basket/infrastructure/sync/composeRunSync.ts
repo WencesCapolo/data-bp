@@ -197,6 +197,7 @@ export async function composeRunSync(): Promise<RunSyncUseCase> {
     contentResource: process.env.EXTERNAL_CONTENT_PATH ?? 'content',
     contentWindowDays: Number(process.env.SYNC_CONTENT_WINDOW_DAYS ?? '30'),
     paymentsEnabled,
+    paymentsWindow: process.env.SYNC_PAYMENTS_WINDOW ?? '-1month',
     contentEnabled: process.env.SYNC_CONTENT_ENABLED !== 'false',
   });
 }

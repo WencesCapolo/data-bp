@@ -9,7 +9,7 @@ import type { MetaDTO } from '@basket/core/dtos/MetaDTO';
 
 export interface IAnalyticsQueryRepository {
   getMeta(): Promise<MetaDTO>;
-  getOverview(asOf?: Date, filters?: CommonFilters): Promise<OverviewDTO>;
+  getOverview(asOf?: Date, range?: DateRange, filters?: CommonFilters): Promise<OverviewDTO>;
   getEvolution(
     range: DateRange,
     granularity: Granularity,

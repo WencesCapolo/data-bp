@@ -16,7 +16,8 @@
     "views:refresh": "tsx --env-file=.env scripts/refresh-views.ts",
     "smoke:queries": "tsx --env-file=.env scripts/smoke-queries.ts",
     "smoke:sync": "tsx --env-file=.env scripts/smoke-sync.ts",
-    "smoke:api": "tsx scripts/smoke-api.ts"
+    "smoke:api": "tsx scripts/smoke-api.ts",
+    "backfill:payments": "tsx --env-file=.env scripts/backfill-payments.ts"
   },
   "dependencies": {
     "better-auth": "^1.6.11",

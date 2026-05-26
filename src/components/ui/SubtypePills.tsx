@@ -18,12 +18,12 @@ export function SubtypePills({
   onChange: (v?: SubType) => void;
 }) {
   return (
-    <div className="date-pills">
+    <div className="subtype-pills">
       {OPTS.map((o) => (
         <button
           key={o.label}
           type="button"
-          className={`date-pill ${value === o.val ? 'active' : ''}`}
+          className={`subtype-pill ${value === o.val ? 'active' : ''}`}
           onClick={() => onChange(o.val)}
         >
           {o.label}

@@ -6,6 +6,9 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 let inFlight: Promise<unknown> | null = null;
+let startedAt: number | null = null;
+let lastError: string | null = null;
+let lastResult: unknown = null;
 
 export async function GET() {
   const repo = new DrizzleSyncStateRepository();
@@ -17,6 +20,9 @@ export async function GET() {
       rowCount: r.rowCount,
     })),
     inFlight: inFlight !== null,
+    startedAt: startedAt ? new Date(startedAt).toISOString() : null,
+    lastError,
+    lastResult,
   });
 }
 
@@ -30,19 +36,30 @@ export async function POST(req: NextRequest) {
   }
 
   if (inFlight) {
-    return NextResponse.json({ error: 'sync already running' }, { status: 409 });
+    return NextResponse.json(
+      { status: 'already_running', startedAt: startedAt ? new Date(startedAt).toISOString() : null },
+      { status: 202 },
+    );
   }
 
   const useCase = await composeRunSync();
+  startedAt = Date.now();
+  lastError = null;
   const promise = useCase.execute();
   inFlight = promise;
-  try {
-    const result = await promise;
-    return NextResponse.json(result);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ error: message }, { status: 500 });
-  } finally {
-    inFlight = null;
-  }
+  promise
+    .then((result) => {
+      lastResult = result;
+    })
+    .catch((err) => {
+      lastError = err instanceof Error ? err.message : String(err);
+    })
+    .finally(() => {
+      inFlight = null;
+    });
+
+  return NextResponse.json(
+    { status: 'started', startedAt: new Date(startedAt).toISOString() },
+    { status: 202 },
+  );
 }

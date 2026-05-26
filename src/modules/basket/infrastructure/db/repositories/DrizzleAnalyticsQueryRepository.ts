@@ -38,6 +38,22 @@ function yesterdayEndUtc(): Date {
   return d;
 }
 
+// Trend window start day (YYYY-MM-DD) given asOf day + optional range.
+// Defaults to last 30 days. 'all' clamps at 2024-01-01 to keep generate_series sane.
+function trendFromDay(day: string, range?: DateRange): string {
+  if (!range) return shiftDay(day, -29);
+  if (range.kind === 'custom') return range.from;
+  if (range.kind === '30d') return shiftDay(day, -29);
+  if (range.kind === '90d') return shiftDay(day, -89);
+  if (range.kind === 'ytd') return `${day.slice(0, 4)}-01-01`;
+  return '2024-01-01';
+}
+function shiftDay(day: string, deltaDays: number): string {
+  const d = new Date(`${day}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + deltaDays);
+  return d.toISOString().slice(0, 10);
+}
+
 function rangeBounds(r: DateRange): { from: Date; to: Date } {
   const to = yesterdayEndUtc();
   if (r.kind === 'custom') {
@@ -80,11 +96,13 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
   // --------------------------------------------------------------------------
   async getOverview(
     asOf: Date = yesterdayEndUtc(),
+    range?: DateRange,
     filters?: CommonFilters,
   ): Promise<OverviewDTO> {
     const day = asOf.toISOString().slice(0, 10);
+    const trendFrom = trendFromDay(day, range);
     if (hasFilters(filters)) {
-      return this.getOverviewFiltered(day, filters!);
+      return this.getOverviewFiltered(day, trendFrom, filters!);
     }
 
     const [todayRows, trendRows, newPayersRows, revRows] = await Promise.all([
@@ -98,7 +116,7 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
       this.conn.execute(sql.raw(`
         SELECT day, all_active, real_active, voucher_active
         FROM basket_mat_daily_active
-        WHERE day BETWEEN ('${day}'::date - INTERVAL '29 days')::date AND '${day}'::date
+        WHERE day BETWEEN '${trendFrom}'::date AND '${day}'::date
         ORDER BY day
       `)),
       this.conn.execute(sql.raw(`
@@ -108,12 +126,13 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
           FROM basket_v_active_payments
           GROUP BY user_id
         ) f
-        WHERE f.first_at >= ('${day}'::date - INTERVAL '30 days')
+        WHERE f.first_at >= '${trendFrom}'::date
+          AND f.first_at <= '${day}'::date
       `)),
       this.conn.execute(sql.raw(`
         SELECT currency, SUM(total_amount)::numeric AS amount
         FROM basket_mat_revenue_daily
-        WHERE day >= ('${day}'::date - INTERVAL '30 days')
+        WHERE day BETWEEN '${trendFrom}'::date AND '${day}'::date
         GROUP BY currency
         ORDER BY amount DESC
       `)),
@@ -143,7 +162,7 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
       { label: 'Other',     count: n(today.other_active), pct: pct(today.other_active) },
     ];
 
-    const trend30d: OverviewTrendPoint[] = ((trendRows as unknown) as RowAny[]).map((r) => ({
+    const trend: OverviewTrendPoint[] = ((trendRows as unknown) as RowAny[]).map((r) => ({
       day: d(r.day),
       allActive: n(r.all_active),
       realActive: n(r.real_active),
@@ -161,13 +180,13 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
         activeMensualBasico: n(today.mensual_basico_active),
         activeMensualTotal: n(today.mensual_total_active),
         activeAnualTotal: n(today.anual_total_active),
-        newPayersLast30d: n(((newPayersRows as unknown) as RowAny[])[0]?.c),
-        revenueLast30dByCurrency: ((revRows as unknown) as RowAny[]).map((r) => ({
+        newPayersInRange: n(((newPayersRows as unknown) as RowAny[])[0]?.c),
+        revenueInRangeByCurrency: ((revRows as unknown) as RowAny[]).map((r) => ({
           currency: s(r.currency),
           amount: n(r.amount),
         })),
       },
-      trend30d,
+      trend,
       accessBreakdown,
       subTypeBreakdown,
       countryBreakdown,
@@ -177,7 +196,7 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
   // --------------------------------------------------------------------------
   // OVERVIEW (filtered) — live SQL on basket_v_active_payments
   // --------------------------------------------------------------------------
-  private async getOverviewFiltered(day: string, filters: CommonFilters): Promise<OverviewDTO> {
+  private async getOverviewFiltered(day: string, trendFrom: string, filters: CommonFilters): Promise<OverviewDTO> {
     const fw = buildActiveFilterWhere(filters);
 
     const [todayRows, trendRows, newPayersRows, revRows] = await Promise.all([
@@ -206,35 +225,33 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
         FROM active
       `)),
       this.conn.execute(sql.raw(`
-        WITH days AS (
-          SELECT generate_series(('${day}'::date - INTERVAL '29 days')::date,
-                                 '${day}'::date,
-                                 '1 day'::interval)::date AS d
-        ),
-        f AS (
-          SELECT user_id, created_at, expires_at, access_type
+        WITH f AS (
+          SELECT user_id, created_at::date AS start_d,
+                 (expires_at + INTERVAL '7 days')::date AS end_d,
+                 access_type
           FROM basket_v_active_payments
-          WHERE 1=1 ${fw}
+          WHERE created_at::date <= '${day}'::date
+            AND (expires_at + INTERVAL '7 days')::date >= '${trendFrom}'::date
+            ${fw}
+        ),
+        spans AS (
+          SELECT user_id, access_type,
+                 GREATEST(start_d, '${trendFrom}'::date) AS s,
+                 LEAST(end_d, '${day}'::date) AS e
+          FROM f
+        ),
+        per_user_day AS (
+          SELECT DISTINCT user_id, access_type, gs::date AS d
+          FROM spans, generate_series(s, e, '1 day'::interval) AS gs
         )
         SELECT
-          d.d AS day,
-          COUNT(DISTINCT user_id) FILTER (
-            WHERE created_at::date <= d.d
-              AND (expires_at + INTERVAL '7 days')::date >= d.d
-          )::int AS all_active,
-          COUNT(DISTINCT user_id) FILTER (
-            WHERE access_type='real'
-              AND created_at::date <= d.d
-              AND (expires_at + INTERVAL '7 days')::date >= d.d
-          )::int AS real_active,
-          COUNT(DISTINCT user_id) FILTER (
-            WHERE access_type='voucher'
-              AND created_at::date <= d.d
-              AND (expires_at + INTERVAL '7 days')::date >= d.d
-          )::int AS voucher_active
-        FROM days d LEFT JOIN f ON TRUE
-        GROUP BY d.d
-        ORDER BY d.d
+          d AS day,
+          COUNT(DISTINCT user_id)::int AS all_active,
+          COUNT(DISTINCT user_id) FILTER (WHERE access_type='real')::int    AS real_active,
+          COUNT(DISTINCT user_id) FILTER (WHERE access_type='voucher')::int AS voucher_active
+        FROM per_user_day
+        GROUP BY d
+        ORDER BY d
       `)),
       this.conn.execute(sql.raw(`
         SELECT COUNT(*)::int AS c FROM (
@@ -243,12 +260,13 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
           WHERE 1=1 ${fw}
           GROUP BY user_id
         ) f
-        WHERE f.first_at >= ('${day}'::date - INTERVAL '30 days')
+        WHERE f.first_at >= '${trendFrom}'::date
+          AND f.first_at <= '${day}'::date
       `)),
       this.conn.execute(sql.raw(`
         SELECT currency, SUM(amount)::numeric AS amount
         FROM basket_v_active_payments
-        WHERE created_at >= ('${day}'::date - INTERVAL '30 days')
+        WHERE created_at BETWEEN '${trendFrom}'::date AND '${day}'::date
           AND amount > 0
           ${fw}
         GROUP BY currency
@@ -277,7 +295,7 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
       { label: 'Chile',     count: n(today.cl_active),    pct: pct(today.cl_active) },
       { label: 'Other',     count: n(today.other_active), pct: pct(today.other_active) },
     ];
-    const trend30d: OverviewTrendPoint[] = ((trendRows as unknown) as RowAny[]).map((r) => ({
+    const trend: OverviewTrendPoint[] = ((trendRows as unknown) as RowAny[]).map((r) => ({
       day: d(r.day),
       allActive: n(r.all_active),
       realActive: n(r.real_active),
@@ -295,13 +313,13 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
         activeMensualBasico: n(today.mensual_basico_active),
         activeMensualTotal: n(today.mensual_total_active),
         activeAnualTotal: n(today.anual_total_active),
-        newPayersLast30d: n(((newPayersRows as unknown) as RowAny[])[0]?.c),
-        revenueLast30dByCurrency: ((revRows as unknown) as RowAny[]).map((r) => ({
+        newPayersInRange: n(((newPayersRows as unknown) as RowAny[])[0]?.c),
+        revenueInRangeByCurrency: ((revRows as unknown) as RowAny[]).map((r) => ({
           currency: s(r.currency),
           amount: n(r.amount),
         })),
       },
-      trend30d,
+      trend,
       accessBreakdown,
       subTypeBreakdown,
       countryBreakdown,
