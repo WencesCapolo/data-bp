@@ -21,6 +21,15 @@ export const DASHBOARDS: Dashboard[] = [
     status: 'live',
   },
   {
+    slug: 'partidos',
+    title: 'Partidos',
+    description: 'Emisiones nacionales e internacionales por canal.',
+    href: '/partidos',
+    icon: '▶',
+    roles: ['admin', 'viewer'],
+    status: 'live',
+  },
+  {
     slug: 'financiero',
     title: 'Financiero',
     description: 'Ingresos, MRR, cobros y reportes contables.',

@@ -22,7 +22,7 @@ function relative(iso: string): string {
 
 export function Header() {
   const [syncErr, setSyncErr] = useState<string | null>(null);
-  const { data } = useSWR<SyncState>('/api/basket/sync', fetcher, {
+  const { data } = useSWR<SyncState>('/api/sync', fetcher, {
     refreshInterval: (d) => (d?.inFlight ? 3_000 : 60_000),
   });
   const { data: session } = useSession();
@@ -32,7 +32,14 @@ export function Header() {
   useEffect(() => {
     const now = data?.inFlight ?? false;
     if (wasInFlight.current && !now) {
-      mutate((key) => typeof key === 'string' && key.startsWith('/api/basket/') && key !== '/api/basket/sync', undefined, { revalidate: true });
+      mutate(
+        (key) =>
+          typeof key === 'string' &&
+          (key.startsWith('/api/basket/') || key.startsWith('/api/partidos/')) &&
+          key !== '/api/sync',
+        undefined,
+        { revalidate: true },
+      );
       if (data?.lastError) setSyncErr(data.lastError);
     }
     wasInFlight.current = now;
@@ -41,10 +48,10 @@ export function Header() {
   async function runSync() {
     setSyncErr(null);
     try {
-      const res = await fetch('/api/basket/sync', { method: 'POST' });
+      const res = await fetch('/api/sync', { method: 'POST' });
       const body = await res.json().catch(() => ({}));
       if (res.status !== 202 && !res.ok) throw new Error(body?.error ?? `HTTP ${res.status}`);
-      await mutate('/api/basket/sync');
+      await mutate('/api/sync');
     } catch (e) {
       setSyncErr(e instanceof Error ? e.message : String(e));
     }

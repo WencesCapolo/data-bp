@@ -1,5 +1,5 @@
-import { NextResponse } from 'next/server';
-import { requireDashboard, requireRole } from '@/lib/auth/rbac';
+import { NextResponse, type NextRequest } from 'next/server';
+import { requireDashboard } from '@/lib/auth/rbac';
 import { composeSyncPartidos } from '@partidos/infrastructure/sync/composeSyncPartidos';
 import { DrizzlePartidosSyncStateRepository } from '@partidos/infrastructure/db/repositories/DrizzlePartidosSyncStateRepository';
 import type { PartidosSyncStateDTO } from '@partidos/core/dtos/PartidosSyncDTO';
@@ -27,8 +27,14 @@ export async function GET(): Promise<NextResponse> {
   });
 }
 
-export async function POST(): Promise<NextResponse> {
-  await requireRole('admin');
+export async function POST(req: NextRequest): Promise<NextResponse> {
+  const expected = process.env.SYNC_TOKEN;
+  if (expected) {
+    const got = req.headers.get('x-sync-token');
+    if (got !== expected) {
+      return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+    }
+  }
 
   if (inFlight) {
     return NextResponse.json(

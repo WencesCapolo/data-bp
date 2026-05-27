@@ -5,12 +5,13 @@ import { GooglePartidosSheetsFetcher } from '@partidos/infrastructure/sheets/Goo
 import { SyncPartidosUseCase } from '@partidos/core/use-cases/sync/SyncPartidosUseCase';
 
 export function composeSyncPartidos(): SyncPartidosUseCase {
-  const spreadsheetId = process.env.GOOGLE_SHEETS_ID;
+  const spreadsheetId =
+    process.env.GOOGLE_SHEETS_ID_TOTAL_PARTIDOS ?? process.env.GOOGLE_SHEETS_ID;
   const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
   const privateKey = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
   if (!spreadsheetId || !email || !privateKey) {
     throw new Error(
-      'Missing env: GOOGLE_SHEETS_ID, GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_SERVICE_ACCOUNT_KEY',
+      'Missing env: GOOGLE_SHEETS_ID_TOTAL_PARTIDOS, GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_SERVICE_ACCOUNT_KEY',
     );
   }
 
@@ -21,7 +22,13 @@ export function composeSyncPartidos(): SyncPartidosUseCase {
     intlRepo: new DrizzlePartidosIntlRepository(),
     syncState: new DrizzlePartidosSyncStateRepository(),
     sheets,
-    nacionalTab: process.env.SHEET_TAB_NAME ?? 'Ligas Argentinas',
-    intlTab: process.env.SHEET_TAB_NAME_INTL ?? 'Ligas Internacionales',
+    nacionalTab:
+      process.env.GOOGLE_SHEETS_TAB_PARTIDOS_NACIONAL ??
+      process.env.SHEET_TAB_NAME ??
+      'Ligas Argentinas',
+    intlTab:
+      process.env.GOOGLE_SHEETS_TAB_PARTIDOS_INTL ??
+      process.env.SHEET_TAB_NAME_INTL ??
+      'Ligas Internacionales',
   });
 }
