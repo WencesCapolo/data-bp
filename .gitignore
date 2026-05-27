@@ -43,4 +43,5 @@ next-env.d.ts
 /data/*
 /data/basket_dashboard_29.html
 /data/payments(1).csv
-/data/users.csv
+/data/users.csvdump.pgc
+dump.pgc

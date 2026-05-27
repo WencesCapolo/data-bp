@@ -1,0 +1,95 @@
+import { sql } from 'drizzle-orm';
+import {
+  bigserial,
+  boolean,
+  date,
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+} from 'drizzle-orm/pg-core';
+
+export const partidosNacional = pgTable(
+  'partidos_nacional',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    season: text('season').notNull(),
+    monthYear: text('month_year').notNull(),
+    weekRange: text('week_range'),
+    weekStart: date('week_start'),
+    weekEnd: date('week_end'),
+    isMonthTotal: boolean('is_month_total').notNull().default(false),
+    control: text('control'),
+    org: text('org').notNull(),
+    league: text('league').notNull(),
+    total: integer('total').notNull().default(0),
+    tyc: integer('tyc'),
+    directTv: integer('direct_tv'),
+    bpEmitido: integer('bp_emitido').notNull().default(0),
+    bpProducido: integer('bp_producido').notNull().default(0),
+    externoProducido: integer('externo_producido').notNull().default(0),
+    syncedAt: timestamp('synced_at', { withTimezone: true }).notNull().default(sql`NOW()`),
+  },
+  (table) => ({
+    naturalKey: uniqueIndex('partidos_nacional_natural_key').on(
+      table.season,
+      table.monthYear,
+      table.weekRange,
+      table.org,
+      table.league,
+      table.isMonthTotal,
+    ),
+    leagueIdx: index('partidos_nacional_league_idx').on(table.league),
+    weekStartIdx: index('partidos_nacional_week_start_idx').on(table.weekStart),
+    seasonIdx: index('partidos_nacional_season_idx').on(table.season),
+  }),
+);
+
+export const partidosIntl = pgTable(
+  'partidos_intl',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    season: text('season').notNull(),
+    monthYear: text('month_year').notNull(),
+    weekRange: text('week_range'),
+    weekStart: date('week_start'),
+    weekEnd: date('week_end'),
+    isMonthTotal: boolean('is_month_total').notNull().default(false),
+    country: text('country').notNull(),
+    league: text('league').notNull(),
+    total: integer('total').notNull().default(0),
+    totalArg: integer('total_arg'),
+    totalFuera: integer('total_fuera'),
+    bpEmitido: integer('bp_emitido').notNull().default(0),
+    bpProducido: integer('bp_producido').notNull().default(0),
+    externoProducido: integer('externo_producido').notNull().default(0),
+    granular: jsonb('granular').notNull().default(sql`'{}'::jsonb`),
+    syncedAt: timestamp('synced_at', { withTimezone: true }).notNull().default(sql`NOW()`),
+  },
+  (table) => ({
+    naturalKey: uniqueIndex('partidos_intl_natural_key').on(
+      table.season,
+      table.monthYear,
+      table.weekRange,
+      table.country,
+      table.league,
+      table.isMonthTotal,
+    ),
+    countryIdx: index('partidos_intl_country_idx').on(table.country),
+    leagueIdx: index('partidos_intl_league_idx').on(table.league),
+    weekStartIdx: index('partidos_intl_week_start_idx').on(table.weekStart),
+    seasonIdx: index('partidos_intl_season_idx').on(table.season),
+  }),
+);
+
+export const partidosSyncState = pgTable('partidos_sync_state', {
+  id: integer('id').primaryKey().default(1),
+  lastSyncAt: timestamp('last_sync_at', { withTimezone: true }),
+  lastCountNacional: integer('last_count_nacional').notNull().default(0),
+  lastCountIntl: integer('last_count_intl').notNull().default(0),
+  lastError: text('last_error'),
+  lastDurationMs: integer('last_duration_ms'),
+});

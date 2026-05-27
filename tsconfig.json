@@ -21,7 +21,8 @@
     "paths": {
       "@/*": ["./src/*"],
       "@shared/*": ["./src/shared/*"],
-      "@basket/*": ["./src/modules/basket/*"]
+      "@basket/*": ["./src/modules/basket/*"],
+      "@partidos/*": ["./src/modules/partidos/*"]
     }
   },
   "include": [
