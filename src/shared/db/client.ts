@@ -1,8 +1,9 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import * as basketSchema from '@basket/infrastructure/db/schema';
+import * as partidosSchema from '@partidos/infrastructure/db/schema';
 
-const schema = { ...basketSchema };
+const schema = { ...basketSchema, ...partidosSchema };
 
 const globalForDb = globalThis as unknown as {
   connection: ReturnType<typeof postgres> | undefined;
