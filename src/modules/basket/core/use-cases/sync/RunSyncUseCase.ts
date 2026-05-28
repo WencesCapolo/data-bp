@@ -270,11 +270,10 @@ export class RunSyncUseCase {
     userIds: Set<number>,
     window: string,
   ): AsyncGenerator<PaymentProps> {
-    // Live `/payments` endpoint accepts only anonymous requests + a relative window
-    // param ("-1month", "-2years", etc). Upsert is idempotent via PK so a rolling
-    // window stays cheap and dedups automatically.
+    // `/payments` accepts relative window param ("-1month", "-2years", etc).
+    // Upsert is idempotent via PK so a rolling window stays cheap and dedups automatically.
+    // Uses default auth mode (query-token / bearer per env), endpoint requires login.
     for await (const row of this.deps.fetcher.streamRows<Record<string, string>>(resource, {
-      auth: 'none',
       omitSince: true,
       extraParams: { from: window },
     })) {
