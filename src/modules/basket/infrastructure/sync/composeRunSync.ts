@@ -96,6 +96,7 @@ export async function composeRunSync(): Promise<RunSyncUseCase> {
     tokenParam: 'token',
     delimiter: ';',
     sinceParam: process.env.EXTERNAL_SINCE_PARAM ?? 'since',
+    cookie: process.env.BP_SESSION_COOKIE,
   });
 
   const users = new DrizzleUserRepository();

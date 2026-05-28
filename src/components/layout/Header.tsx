@@ -65,6 +65,8 @@ export function Header() {
   const inFlight = data?.inFlight ?? false;
   const dotClass = inFlight ? 'live' : !latest ? 'error' : ageH > 12 ? 'stale' : '';
   const badgeClass = inFlight ? 'sync-badge live' : 'sync-badge';
+  const persistErr = syncErr ?? data?.lastError ?? null;
+  const cookieExpired = persistErr ? /Expiró la Cookie|cookie/i.test(persistErr) : false;
 
   return (
     <header className={inFlight ? 'header in-flight' : 'header'}>
@@ -77,6 +79,22 @@ export function Header() {
           <span className={`sync-dot ${dotClass}`} />
           {inFlight ? 'Sincronizando…' : latest ? `synced ${relative(latest)}` : 'no sync'}
         </span>
+        {cookieExpired && (
+          <span
+            aria-live="polite"
+            title={persistErr ?? undefined}
+            style={{
+              background: 'var(--red)',
+              color: 'white',
+              borderRadius: 6,
+              padding: '2px 10px',
+              fontSize: 11,
+              fontWeight: 600,
+            }}
+          >
+            ⚠ Expiró la Cookie
+          </span>
+        )}
         <button
           type="button"
           onClick={runSync}

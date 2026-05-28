@@ -7,6 +7,8 @@ export interface CsvFetchOptions {
   auth?: CsvAuthOverride;
   /** Skip the configured sinceParam — useful when endpoint uses a relative window param. */
   omitSince?: boolean;
+  /** Override Cookie header for this call (e.g. Control Panel session). */
+  cookie?: string;
 }
 
 export type CsvRow = Record<string, string>;

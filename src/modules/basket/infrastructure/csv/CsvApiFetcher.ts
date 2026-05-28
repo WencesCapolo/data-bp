@@ -17,6 +17,7 @@ export interface CsvApiFetcherConfig {
   delimiter?: string;
   sinceParam?: string;
   staticParams?: Record<string, string>;
+  cookie?: string;
 }
 
 const v4Agent = new Agent({ family: 4, keepAlive: true });
@@ -34,6 +35,10 @@ export class CsvApiFetcher implements ICsvFetcher {
     const headers: Record<string, string> = { accept: 'text/csv' };
     if (effectiveAuth === 'bearer' && this.cfg.apiKey) {
       headers.authorization = `Bearer ${this.cfg.apiKey}`;
+    }
+    const cookie = options.cookie ?? this.cfg.cookie;
+    if (cookie) {
+      headers.cookie = cookie;
     }
 
     const res = await new Promise<import('node:http').IncomingMessage>((resolve, reject) => {

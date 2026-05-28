@@ -270,15 +270,22 @@ export class RunSyncUseCase {
     userIds: Set<number>,
     window: string,
   ): AsyncGenerator<PaymentProps> {
-    // `/payments` accepts relative window param ("-1month", "-2years", etc).
-    // Upsert is idempotent via PK so a rolling window stays cheap and dedups automatically.
-    // Uses default auth mode (query-token / bearer per env), endpoint requires login.
-    for await (const row of this.deps.fetcher.streamRows<Record<string, string>>(resource, {
-      omitSince: true,
-      extraParams: { from: window },
-    })) {
-      const mapped = this.deps.mapPaymentRow(row, userIds);
-      if (mapped) yield mapped;
+    // `/payments` requires Control Panel session cookie (BP_SESSION_COOKIE).
+    // Upsert idempotent via PK so rolling window stays cheap.
+    try {
+      for await (const row of this.deps.fetcher.streamRows<Record<string, string>>(resource, {
+        omitSince: true,
+        extraParams: { from: window },
+      })) {
+        const mapped = this.deps.mapPaymentRow(row, userIds);
+        if (mapped) yield mapped;
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (/403|Must be logged in|No permission/i.test(msg)) {
+        throw new Error('Expiró la Cookie');
+      }
+      throw err;
     }
   }
 }
