@@ -3,10 +3,14 @@ import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { nextCookies } from 'better-auth/next-js';
 import { eq } from 'drizzle-orm';
 import { db } from '@shared/db/client';
+import { authDb } from '@shared/db/auth-client';
+import { resolveCrossSubdomainCookieConfig } from './cookie-domain';
 import { authUser, authSession, authAccount, authVerification, authAllowedEmails } from './schema';
 
 const ALLOWED_DOMAIN = '@basquetpass.tv';
 
+// Allowlist lives in the analytics domain DB (basket_analytics), NOT the shared
+// identity DB — each app authorizes its own users independently.
 async function isEmailAllowed(email: string): Promise<boolean> {
   if (!email.toLowerCase().endsWith(ALLOWED_DOMAIN)) return false;
   const rows = await db
@@ -17,22 +21,13 @@ async function isEmailAllowed(email: string): Promise<boolean> {
   return rows.length > 0;
 }
 
-async function roleForEmail(email: string): Promise<'admin' | 'viewer'> {
-  const rows = await db
-    .select({ role: authAllowedEmails.role })
-    .from(authAllowedEmails)
-    .where(eq(authAllowedEmails.email, email.toLowerCase()))
-    .limit(1);
-  const r = rows[0]?.role;
-  return r === 'admin' ? 'admin' : 'viewer';
-}
-
 export const auth = betterAuth({
   baseURL: process.env.BETTER_AUTH_URL,
   secret: process.env.BETTER_AUTH_SECRET,
   trustedOrigins: [process.env.BETTER_AUTH_URL ?? 'http://localhost:3000'],
 
-  database: drizzleAdapter(db, {
+  // Identity tables live in the shared basket_auth DB so portal sessions are found.
+  database: drizzleAdapter(authDb, {
     provider: 'pg',
     schema: {
       user: authUser,
@@ -61,19 +56,23 @@ export const auth = betterAuth({
   databaseHooks: {
     user: {
       create: {
+        // Gate analytics-initiated sign-ups. Role is NOT written here: it is
+        // portal-owned on the shared user row and resolved per-app from the
+        // allowlist at read time (see getSessionUser).
         before: async (user) => {
           if (!(await isEmailAllowed(user.email))) {
             throw new Error(`Email ${user.email} is not authorized to access this dashboard.`);
           }
-          const role = await roleForEmail(user.email);
-          return { data: { ...user, role } };
+          return { data: user };
         },
       },
     },
     session: {
       create: {
+        // Defense-in-depth for analytics-initiated logins where the user already
+        // exists (so user.create.before never ran). authUser lives in the shared DB.
         before: async (session) => {
-          const rows = await db
+          const rows = await authDb
             .select({ email: authUser.email })
             .from(authUser)
             .where(eq(authUser.id, session.userId))
@@ -90,6 +89,9 @@ export const auth = betterAuth({
 
   advanced: {
     useSecureCookies: process.env.NODE_ENV === 'production',
+    crossSubDomainCookies: resolveCrossSubdomainCookieConfig(
+      process.env.BETTER_AUTH_URL ?? 'http://localhost:3000',
+    ),
   },
 
   plugins: [nextCookies()],

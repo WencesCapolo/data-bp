@@ -2,7 +2,7 @@ import { headers } from 'next/headers';
 import { eq } from 'drizzle-orm';
 import { db } from '@shared/db/client';
 import { auth } from './server';
-import { authUser } from './schema';
+import { authAllowedEmails } from './schema';
 import type { Role } from '@/lib/dashboards';
 
 export interface SessionUser {
@@ -16,12 +16,19 @@ export interface SessionUser {
 export async function getSessionUser(): Promise<SessionUser | null> {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session?.user) return null;
+
+  // Identity is shared across *.basket-app.com, so a valid session may have been
+  // created by a sibling app (e.g. portal) and never passed through this app's
+  // databaseHooks. Authorize against the analytics allowlist on every read, and
+  // derive the role from it — never trust the shared, portal-owned authUser.role.
   const rows = await db
-    .select({ role: authUser.role })
-    .from(authUser)
-    .where(eq(authUser.id, session.user.id))
+    .select({ role: authAllowedEmails.role })
+    .from(authAllowedEmails)
+    .where(eq(authAllowedEmails.email, session.user.email.toLowerCase()))
     .limit(1);
-  const role = (rows[0]?.role ?? 'viewer') as Role;
+  if (rows.length === 0) return null;
+
+  const role: Role = rows[0]?.role === 'admin' ? 'admin' : 'viewer';
   return {
     id: session.user.id,
     email: session.user.email,
