@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 import { fetcher } from '@/lib/client/fetcher';
 import { useSession, signOut } from '@/lib/auth/client';
+import { swapToPortal, buildPortalLoginUrl } from '@/lib/auth/portal';
 
 interface SyncState {
   sources: { source: string; lastSync: string; rowCount: number | null }[];
@@ -115,13 +116,13 @@ export function Header() {
         >
           {inFlight ? '…' : '↻ Sync'}
         </button>
-        <span>{new Date().toISOString().slice(0, 10)}</span>
+        <span className="header-date">{new Date().toISOString().slice(0, 10)}</span>
         {session?.user && (
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ color: 'var(--text2)' }}>{session.user.email}</span>
+            <span className="header-email" style={{ color: 'var(--text2)' }}>{session.user.email}</span>
             <button
               type="button"
-              onClick={() => signOut({ fetchOptions: { onSuccess: () => { window.location.href = '/sign-in'; } } })}
+              onClick={() => signOut({ fetchOptions: { onSuccess: () => { window.location.href = buildPortalLoginUrl(swapToPortal(window.location.origin)); } } })}
               style={{ background: 'transparent', color: 'var(--text3)', border: '1px solid var(--border)', borderRadius: 4, padding: '2px 8px', cursor: 'pointer', fontSize: 11 }}
             >
               salir

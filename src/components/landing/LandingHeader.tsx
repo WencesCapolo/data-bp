@@ -1,5 +1,6 @@
 'use client';
 import { signOut } from '@/lib/auth/client';
+import { swapToPortal, buildPortalLoginUrl } from '@/lib/auth/portal';
 
 interface Props {
   email: string;
@@ -27,7 +28,7 @@ export function LandingHeader({ email, role }: Props) {
             signOut({
               fetchOptions: {
                 onSuccess: () => {
-                  window.location.href = '/sign-in';
+                  window.location.href = buildPortalLoginUrl(swapToPortal(window.location.origin));
                 },
               },
             })

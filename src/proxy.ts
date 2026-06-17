@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSessionCookie } from 'better-auth/cookies';
+import { swapToPortal, buildPortalLoginUrl } from '@/lib/auth/portal';
 
 const PUBLIC_API = new Set(['/api/basket/sync']);
 
@@ -27,10 +28,13 @@ export function proxy(req: NextRequest) {
     if (pathname.startsWith('/api/')) {
       return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
     }
-    const url = req.nextUrl.clone();
-    url.pathname = '/sign-in';
-    url.search = '';
-    return NextResponse.redirect(url);
+    // SSO: bounce to the portal login, preserving the analytics deep link so the
+    // user lands back here after authenticating. Use BETTER_AUTH_URL for an https
+    // origin (the proxied request scheme may be http behind nginx).
+    const analyticsBase = process.env.BETTER_AUTH_URL ?? req.nextUrl.origin;
+    const portalBase = process.env.PORTAL_BASE_URL ?? swapToPortal(analyticsBase);
+    const redirectTo = `${analyticsBase.replace(/\/$/, '')}${pathname}${req.nextUrl.search}`;
+    return NextResponse.redirect(buildPortalLoginUrl(portalBase, redirectTo));
   }
 
   return NextResponse.next();

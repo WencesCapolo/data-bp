@@ -1,10 +1,12 @@
 import { redirect } from 'next/navigation';
 import { getSessionUser, type SessionUser } from './getSessionUser';
+import { resolvePortalLoginUrl } from './portal';
 import { findDashboard, type Role } from '@/lib/dashboards';
 
 export async function requireSession(): Promise<SessionUser> {
   const user = await getSessionUser();
-  if (!user) redirect('/sign-in');
+  // No session, or session not on this app's allowlist -> portal login (SSO).
+  if (!user) redirect(resolvePortalLoginUrl());
   return user;
 }
 
