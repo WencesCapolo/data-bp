@@ -8,6 +8,7 @@ import { inArray } from 'drizzle-orm';
 import { db } from '@shared/db/client';
 import { basketPriceTiers, basketUsers } from '@basket/infrastructure/db/schema';
 import { platformName } from '@basket/core/value-objects/Platform';
+import { classifyNotApproved } from '@basket/core/value-objects/PaymentStatus';
 import {
   PAYMENT_UPLOAD_COLUMNS,
   type PaymentUploadRow,
@@ -45,7 +46,7 @@ export const dynamic = 'force-dynamic';
 /** Windows shorter than this leave gaps between consecutive Uploads. */
 const MIN_WINDOW_DAYS = 30;
 
-/** Period, in days, of a monthly Cobro — the only one Tiers resolve. */
+/** Period, in days, of a monthly Pago — the only one Tiers resolve. */
 const MONTHLY_RECURRENT = 30;
 
 /** How many distinct Subscriber ids to ask about per statement. */
@@ -80,7 +81,7 @@ function parseHeader(head: Buffer): string[] | null {
  * Distinct Subscriber ids resolved in one set-based statement (chunked only if
  * the Export names more ids than one statement should carry). Returns null when
  * `basket_users` cannot be read at all, so the caller can stay silent rather
- * than claim every Cobro would be skipped.
+ * than claim every Pago would be skipped.
  */
 async function findKnownSubscriberIds(ids: number[]): Promise<Set<number> | null> {
   if (ids.length === 0) return new Set();
@@ -126,6 +127,9 @@ interface Tally {
   byProvider: Record<string, number>;
   approved: number;
   failed: number;
+  rejected: number;
+  pending: number;
+  otherNotApproved: number;
   /** Rows per distinct Subscriber id — ints, never rows. */
   rowsByUserId: Map<number, number>;
   /** Rows whose `user_id` is missing or not a number; the mapper drops these. */
@@ -143,6 +147,9 @@ async function tally(filePath: string): Promise<Tally> {
     byProvider: {},
     approved: 0,
     failed: 0,
+    rejected: 0,
+    pending: 0,
+    otherNotApproved: 0,
     rowsByUserId: new Map(),
     rowsWithoutUserId: 0,
     monthlyRowsByCurrency: new Map(),
@@ -162,7 +169,13 @@ async function tally(filePath: string): Promise<Tally> {
 
     const status = row.status?.trim();
     if (status === '1') acc.approved += 1;
-    else if (status === '0') acc.failed += 1;
+    else if (status === '0') {
+      acc.failed += 1;
+      const kind = classifyNotApproved(row.status_detail);
+      if (kind === 'rejected') acc.rejected += 1;
+      else if (kind === 'pending') acc.pending += 1;
+      else acc.otherNotApproved += 1;
+    }
 
     const userId = Number(row.user_id);
     if (Number.isInteger(userId) && userId > 0) {
@@ -244,7 +257,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     if (!header || header.length !== expected.length || header.some((c, i) => c !== expected[i])) {
       return reject(
         'bad_header',
-        'Las columnas del archivo no coinciden con el Export de Cobros. ' +
+        'Las columnas del archivo no coinciden con el Export de Pagos. ' +
           `Se esperaban, en este orden: ${PAYMENT_UPLOAD_COLUMNS.join(', ')}.`,
       );
     }
@@ -282,13 +295,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       });
     }
 
-    // The Cobros Export and the Suscripciones Export share the same 15 columns,
+    // The Pagos Export and the Suscripciones Export share the same 15 columns,
     // so the absence of failures is the only signal that the wrong one was picked.
     if (acc.failed === 0) {
       warnings.push({
         code: 'looks_like_subscriptions',
         message:
-          'No hay ningún Cobro fallido en el archivo. El Export de Cobros siempre incluye ' +
+          'No hay ningún Pago fallido en el archivo. El Export de Pagos siempre incluye ' +
           'intentos fallidos, así que es probable que hayas subido el Export de Suscripciones.',
       });
     }
@@ -297,7 +310,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       warnings.push({
         code: 'unknown_subscribers',
         message:
-          `${wouldSkip} Cobros pertenecen a Suscriptores que el espejo todavía no conoce y se ` +
+          `${wouldSkip} Pagos pertenecen a Suscriptores que el espejo todavía no conoce y se ` +
           'omitirían. La sincronización refresca los Suscriptores primero, así que el número final ' +
           'puede ser menor.',
         count: wouldSkip,
@@ -318,7 +331,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         warnings.push({
           code: 'unmapped_price_points',
           message:
-            `${unmappedRows} Cobros mensuales usan monedas sin Tier configurado ` +
+            `${unmappedRows} Pagos mensuales usan monedas sin Tier configurado ` +
             `(${unmappedCurrencies.join(', ')}); su tipo de suscripción quedará como "Otros".`,
           count: unmappedRows,
         });
@@ -336,6 +349,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       byProvider: acc.byProvider,
       approved: acc.approved,
       failed: acc.failed,
+      rejected: acc.rejected,
+      pending: acc.pending,
+      otherNotApproved: acc.otherNotApproved,
       wouldSkip,
       warnings,
     };

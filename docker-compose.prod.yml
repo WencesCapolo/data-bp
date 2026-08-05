@@ -1,6 +1,11 @@
 # Production Postgres for private VPS.
 # Bound to loopback only — never expose 5432 publicly.
-# Reverse proxy (Caddy) → Next.js (127.0.0.1:3000) → this PG (127.0.0.1:5432).
+# Reverse proxy (nginx) → Next.js (127.0.0.1:3001) → this PG (127.0.0.1:5432).
+#
+# The nginx vhost MUST carry `client_max_body_size 64m;` to match
+# MAX_UPLOAD_BYTES. nginx defaults to 1m and answers 413 itself, before the
+# request reaches Next.js — which is invisible in app logs and looked like a
+# parse failure in the Sync modal. See /etc/nginx/sites-available/analytics.conf.
 #
 # Bring up:   podman compose -f docker-compose.prod.yml up -d
 # Bring down: podman compose -f docker-compose.prod.yml down

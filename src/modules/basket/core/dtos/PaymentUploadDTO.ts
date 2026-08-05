@@ -1,5 +1,5 @@
 // Contract shared by the upload endpoint, the sync endpoint and the modal.
-// The Cobros Export is the CSV a person downloads from the Control Panel; see
+// The Pagos Export is the CSV a person downloads from the Control Panel; see
 // CONTEXT.md for the vocabulary and docs/adr/0001 for why it is uploaded by hand.
 
 /** The 15 columns the Control Panel emits, in order. Data rows may omit the
@@ -22,14 +22,21 @@ export const PAYMENT_UPLOAD_COLUMNS = [
   'payment_country',
 ] as const;
 
-/** One raw row of a Cobros Export, before mapping. All values are strings. */
+/** Ceiling for an accepted Upload. A full-history Export is ~20 MB.
+ *  Lives here, not in uploadStaging, so the modal can check `file.size` before
+ *  spending the user's uplink on a request the server would reject anyway.
+ *  Any reverse proxy in front of Next.js must allow at least this much body —
+ *  nginx defaults `client_max_body_size` to 1 MB and answers 413 on its own. */
+export const MAX_UPLOAD_BYTES = 64 * 1024 * 1024;
+
+/** One raw row of a Pagos Export, before mapping. All values are strings. */
 export type PaymentUploadRow = Record<(typeof PAYMENT_UPLOAD_COLUMNS)[number], string>;
 
 /** Non-blocking advisories shown in the preview. None of these prevent confirming. */
 export type UploadWarningCode =
-  /** Window shorter than a month — likely leaves gaps in Cobros. */
+  /** Window shorter than a month — likely leaves gaps in Pagos. */
   | 'short_window'
-  /** Zero failed Cobros, which is how the Suscripciones Export looks. */
+  /** Zero failed Pagos, which is how the Suscripciones Export looks. */
   | 'looks_like_subscriptions'
   /** Rows whose Subscriber the mirror does not know; they will be skipped. */
   | 'unknown_subscribers'
@@ -74,9 +81,20 @@ export interface UploadPreviewDTO {
   windowDays: number | null;
   /** Row counts keyed by Provider name (MercadoPago, Stripe, PayPal, Manual, …). */
   byProvider: Record<string, number>;
-  /** Cobros that succeeded (status=1) versus failed (status=0). */
+  /** Pagos that succeeded (status=1) versus not approved (status=0). */
   approved: number;
+  /** Umbrella count of status=0. Kept because `looks_like_subscriptions` keys off
+   *  it: the Suscripciones Export has none at all. Split for display into the
+   *  three fields below, which sum back to it. */
   failed: number;
+  /** Declined by the payment method (`status_detail = rejected`). */
+  rejected: number;
+  /** Not settled yet — chiefly MercadoPago cash rails, which many Subscribers pay
+   *  over a counter days later. These are not failures. */
+  pending: number;
+  /** Abandoned checkouts, refunds and disputes: everything status=0 that is
+   *  neither a decline nor still in flight. */
+  otherNotApproved: number;
   /** Rows the mapper would drop, chiefly unknown Subscriber. Advisory: Subscribers
    *  are refreshed during the sync that follows, so the final number may be lower. */
   wouldSkip: number;

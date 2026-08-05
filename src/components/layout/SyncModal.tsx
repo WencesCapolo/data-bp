@@ -1,6 +1,10 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { UploadPreviewDTO, UploadRejection } from '@basket/core/dtos/PaymentUploadDTO';
+import {
+  MAX_UPLOAD_BYTES,
+  type UploadPreviewDTO,
+  type UploadRejection,
+} from '@basket/core/dtos/PaymentUploadDTO';
 
 /** Last Upload, as the sync endpoint reports it. Everything is optional: the
  *  modal simply hides the line when the API does not provide it. */
@@ -64,6 +68,20 @@ function fmtNum(n: number): string {
   return n.toLocaleString('es-AR');
 }
 
+/** The one message for "too big", whoever says so: our own ceiling check, the
+ *  endpoint's `too_large` rejection, or a reverse proxy answering 413 before the
+ *  request ever reaches Next.js. */
+function tooLargeMessage(bytes?: number): string {
+  const max = Math.floor(MAX_UPLOAD_BYTES / (1024 * 1024));
+  const actual = typeof bytes === 'number' ? ` (el archivo pesa ${fmtSize(bytes)})` : '';
+  return (
+    `El servidor rechazó el archivo por tamaño${actual}. El máximo es ${max} MB. ` +
+    'Descargá el Export de un período más corto y volvé a intentarlo. ' +
+    'Si el archivo está por debajo del máximo, avisale al equipo: el límite lo está ' +
+    'poniendo el reverse proxy, no la aplicación.'
+  );
+}
+
 function fmtSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
@@ -121,6 +139,11 @@ export function SyncModal({ onClose, onConfirm, lastUpload, syncInFlight }: Sync
   function pick(next: File | null) {
     setRejection(null);
     setNotice(null);
+    if (next && next.size > MAX_UPLOAD_BYTES) {
+      setRejection({ error: 'too_large', message: tooLargeMessage(next.size) });
+      setFile(null);
+      return;
+    }
     setFile(next);
   }
 
@@ -136,6 +159,22 @@ export function SyncModal({ onClose, onConfirm, lastUpload, syncInFlight }: Sync
       const json: unknown = await res.json().catch(() => null);
       if (isRejection(json)) {
         setRejection(json);
+        setFile(null);
+        return;
+      }
+      // 413 never comes from the endpoint — it rejects with `too_large` and a 400.
+      // A 413 here is a proxy in front of Next.js capping the body, and its reply
+      // is HTML, so there is no JSON rejection to show.
+      if (res.status === 413) {
+        setRejection({ error: 'too_large', message: tooLargeMessage(file.size) });
+        setFile(null);
+        return;
+      }
+      if (res.status === 401) {
+        setRejection({
+          error: 'not_csv',
+          message: 'Tu sesión expiró. Recargá la página para volver a iniciar sesión y reintentá.',
+        });
         setFile(null);
         return;
       }
@@ -197,7 +236,7 @@ export function SyncModal({ onClose, onConfirm, lastUpload, syncInFlight }: Sync
       >
         <div className="modal-head">
           <h2 className="modal-title" id="sync-modal-title">
-            {preview ? 'Revisar el Cobros Export' : 'Subir el Cobros Export'}
+            {preview ? 'Revisar el Pagos Export' : 'Subir el Pagos Export'}
           </h2>
           <span style={{ fontSize: 11, color: 'var(--text3)', fontFamily: "'DM Mono', monospace" }}>
             paso {preview ? 2 : 1} de 2
@@ -218,10 +257,10 @@ export function SyncModal({ onClose, onConfirm, lastUpload, syncInFlight }: Sync
                 </li>
                 <li>
                   Elegí un rango de fechas que cubra <strong>más de un mes</strong>. Un rango
-                  más corto deja huecos en los Cobros.
+                  más corto deja huecos en los Pagos.
                 </li>
                 <li>
-                  Tiene que ser el Export de <strong>Cobros</strong>, no el de{' '}
+                  Tiene que ser el Export de <strong>Pagos</strong>, no el de{' '}
                   <strong>Suscripciones</strong>. Las dos exportaciones tienen las mismas
                   columnas y se confunden fácil.
                 </li>
@@ -242,7 +281,7 @@ export function SyncModal({ onClose, onConfirm, lastUpload, syncInFlight }: Sync
                 ref={inputRef}
                 type="file"
                 accept=".csv,text/csv"
-                aria-label="Cobros Export en CSV"
+                aria-label="Pagos Export en CSV"
                 style={{ display: 'none' }}
                 onChange={(e) => pick(e.target.files?.[0] ?? null)}
               />
@@ -312,11 +351,25 @@ export function SyncModal({ onClose, onConfirm, lastUpload, syncInFlight }: Sync
                   </div>
                 </div>
                 <div className="modal-stat">
-                  <div className="modal-stat-label">Fallidos</div>
+                  <div className="modal-stat-label">Rechazados</div>
                   <div className="modal-stat-value" style={{ color: 'var(--red)' }}>
-                    {fmtNum(preview.failed)}
+                    {fmtNum(preview.rejected)}
                   </div>
                 </div>
+                <div className="modal-stat">
+                  <div className="modal-stat-label">Pendientes</div>
+                  <div className="modal-stat-value" style={{ color: 'var(--yellow)' }}>
+                    {fmtNum(preview.pending)}
+                  </div>
+                </div>
+                {preview.otherNotApproved > 0 && (
+                  <div className="modal-stat">
+                    <div className="modal-stat-label">Otros no aprobados</div>
+                    <div className="modal-stat-value" style={{ color: 'var(--text2)' }}>
+                      {fmtNum(preview.otherNotApproved)}
+                    </div>
+                  </div>
+                )}
                 <div className="modal-stat">
                   <div className="modal-stat-label">Se omitirían</div>
                   <div className="modal-stat-value" style={{ color: 'var(--yellow)' }}>
@@ -324,6 +377,13 @@ export function SyncModal({ onClose, onConfirm, lastUpload, syncInFlight }: Sync
                   </div>
                 </div>
               </div>
+
+              {preview.pending > 0 && (
+                <p style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 14, lineHeight: 1.6 }}>
+                  Los Pendientes no son fallas: son Pagos en efectivo (Rapipago, PagoFácil) que el
+                  Suscriptor todavía puede ir a pagar, y muchos terminan aprobados.
+                </p>
+              )}
 
               <div style={{ marginBottom: 16 }}>
                 <div className="modal-stat-label">Window</div>

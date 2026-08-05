@@ -1,6 +1,7 @@
 import type { UserProps } from '@basket/core/entities/User';
 import type { PaymentProps } from '@basket/core/entities/Payment';
 import type { PaymentUploadRow } from '@basket/core/dtos/PaymentUploadDTO';
+import { normalizeStatusDetail } from '@basket/core/value-objects/PaymentStatus';
 
 export interface UserCsvRow {
   id: string;
@@ -63,13 +64,13 @@ const PANEL_UTC_OFFSET_MS = -3 * 3_600_000;
 const PANEL_DATE_RX = /^(\d{1,2})\/(\d{1,2})\/(\d{4})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?$/;
 
 /**
- * Parses the `dd/mm/yyyy HH:MM` stamps the Control Panel writes into a Cobros Export.
+ * Parses the `dd/mm/yyyy HH:MM` stamps the Control Panel writes into a Pagos Export.
  *
  * Timezone: the Export omits any offset, while the (now dead) API CSVs carried an
  * explicit one — `2020-10-01T03:25:26-03:00` — which `new Date()` resolves to the
  * right instant on its own. To keep both paths on one clock we pin Export stamps to
  * that same `-03:00` instead of the host's local zone: the app runs on UTC servers,
- * so relying on local time would shift every Cobro three hours later than it happened
+ * so relying on local time would shift every Pago three hours later than it happened
  * and slide rows across day and month boundaries in the dashboards.
  */
 export function parsePanelDate(value: string): Date | null {
@@ -94,13 +95,13 @@ export function parsePanelDate(value: string): Date | null {
 
 const MS_PER_DAY = 86_400_000;
 
-/** Expiry the Cobros Export does not carry: `created + Period days`. See ADR 0002. */
+/** Expiry the Pagos Export does not carry: `created + Period days`. See ADR 0002. */
 export function deriveExpiry(createdAt: Date, recurrentDays: number): Date {
   return new Date(createdAt.getTime() + recurrentDays * MS_PER_DAY);
 }
 
 /**
- * Maps one Cobros Export row (the hand-uploaded CSV) to a Payment.
+ * Maps one Pagos Export row (the hand-uploaded CSV) to a Payment.
  *
  * Differences from `mapPaymentRow`, which reads the old API CSV:
  * - `created` is panel-formatted, not ISO (see `parsePanelDate`).
@@ -136,7 +137,7 @@ export function mapPaymentUploadRow(
     expiresAt: deriveExpiry(createdAt, recurrent),
     createdAt,
     status: parseIntOrNull(row.status) ?? 0,
-    statusDetail: emptyToNull(row.status_detail),
+    statusDetail: normalizeStatusDetail(row.status_detail),
     keycode: null,
     // ISO-3166 numeric code as a string ('32', '858'); stored verbatim. Absent when
     // the Export drops the trailing empty field, leaving the row 14 columns wide.
@@ -292,7 +293,7 @@ export function mapPaymentRow(row: PaymentCsvRow, knownUserIds: Set<number>): Pa
     expiresAt,
     createdAt,
     status: parseIntOrNull(row.status) ?? 0,
-    statusDetail: emptyToNull(row.status_detail),
+    statusDetail: normalizeStatusDetail(row.status_detail),
     keycode: emptyToNull(row.keycode),
     paymentCountry: emptyToNull(row.payment_country),
   };

@@ -1,4 +1,4 @@
-// Smoke test for the Cobros Export Upload → Sync → dashboards path.
+// Smoke test for the Pagos Export Upload → Sync → dashboards path.
 //
 // Same idiom as scripts/smoke-api.ts: a declared PROBES list run against a live
 // server, one line of output per probe. Unlike smoke-api the probes here are
@@ -13,7 +13,7 @@
 //
 // Fixtures are the REAL Exports committed at the repo root, because they carry
 // quirks a synthetic file would smooth over (a Window shorter than a month, a
-// four-Provider mix, 1706 failed Cobros, and — in the Suscripciones Export —
+// four-Provider mix, 1706 failed Pagos, and — in the Suscripciones Export —
 // data rows one field short of the header).
 //
 // Requires a server already running at API_BASE and INTERNAL_API_TOKEN matching
@@ -47,10 +47,10 @@ const SYNC_POLL_MS = 3_000;
 // Fixtures
 // ---------------------------------------------------------------------------
 
-/** The correct Cobros Export. Numbers below were recounted from the file with a
+/** The correct Pagos Export. Numbers below were recounted from the file with a
  *  real CSV parser, not taken on trust; `approved`/`failed` follow the DTO's
  *  definition (status=1 vs status=0) and split 5792/1706, not 5804/1694. */
-const COBROS = {
+const PAGOS = {
   path: resolve(process.cwd(), 'payments20260804223735.csv'),
   rowTotal: 7498,
   windowFrom: '2026-07-28',
@@ -58,10 +58,16 @@ const COBROS = {
   byProvider: { MercadoPago: 4961, Stripe: 2483, PayPal: 44, Manual: 10 } as Record<string, number>,
   approved: 5792,
   failed: 1706,
+  // The status=0 bucket, split by status_detail. Counts recounted from the file:
+  // rejected 550; pending 968 + in_process 24; cancelled 85 + canceled 8 +
+  // incomplete_expired 54 + refunded 9 + in_mediation 8. Sums back to `failed`.
+  rejected: 550,
+  pending: 992,
+  otherNotApproved: 164,
 };
 
 /** The WRONG file: a Suscripciones Export. Every row status=1, so zero failed
- *  Cobros, which is exactly what `looks_like_subscriptions` detects. Its data
+ *  Pagos, which is exactly what `looks_like_subscriptions` detects. Its data
  *  rows also carry only 14 fields against the 15-column header. */
 const SUBSCRIPCIONES = {
   path: resolve(process.cwd(), 'subscriptions20260803144655.csv'),
@@ -291,7 +297,7 @@ function sumTotalAmount(rows: unknown): number {
 }
 
 /** Revenue per paid Tier, from FinanceDTO filtered by subType. A non-zero value
- *  for any of them means the Cobro was mapped, its Tier resolved through the
+ *  for any of them means the Pago was mapped, its Tier resolved through the
  *  price-tier fallback, its derived expiry made it active, and the mat views
  *  were rebuilt — none of which this script can see directly. */
 async function tierTotals(): Promise<{ error: string | null; totals: Record<string, number> }> {
@@ -308,7 +314,7 @@ async function tierTotals(): Promise<{ error: string | null; totals: Record<stri
     if (shape) return { error: `${tier}: ${shape}`, totals };
     const f = r.body as unknown as FinanceShape;
     // revenueByDay and byCurrency are two independent aggregations of the same
-    // Cobros; take the larger so a range-clipped daily series cannot mask money.
+    // Pagos; take the larger so a range-clipped daily series cannot mask money.
     totals[tier] = Math.max(sumTotalAmount(f.revenueByDay), sumTotalAmount(f.byCurrency));
   }
   return { error: null, totals };
@@ -323,8 +329,8 @@ const fmtTotals = (t: Record<string, number>): string =>
 // Generated fixtures (temp files, cleaned up in main())
 // ---------------------------------------------------------------------------
 
-const TMP_XLSX = resolve(tmpdir(), `smoke-cobros-${process.pid}.xlsx`);
-const TMP_BAD_HEADER = resolve(tmpdir(), `smoke-cobros-bad-header-${process.pid}.csv`);
+const TMP_XLSX = resolve(tmpdir(), `smoke-pagos-${process.pid}.xlsx`);
+const TMP_BAD_HEADER = resolve(tmpdir(), `smoke-pagos-bad-header-${process.pid}.csv`);
 
 /** A believable Excel workbook as far as byte sniffing goes: the ZIP magic
  *  number every .xlsx starts with. Enough to prove non-CSV is refused. */
@@ -335,7 +341,7 @@ function writeFakeXlsx(): void {
 /** The real Export with its header line mangled — one column renamed. Only the
  *  first rows are kept: the header is rejected before any of them is read. */
 function writeMangledHeader(): void {
-  const lines = readFileSync(COBROS.path, 'utf8').split('\n');
+  const lines = readFileSync(PAGOS.path, 'utf8').split('\n');
   const header = lines[0].replace('amount', 'importe');
   writeFileSync(TMP_BAD_HEADER, [header, ...lines.slice(1, 21)].join('\n'));
 }
@@ -381,9 +387,9 @@ async function expectRejection(
 
 const PROBES: Probe[] = [
   {
-    label: 'POST upload — real Cobros Export',
+    label: 'POST upload — real Pagos Export',
     run: async (ctx) => {
-      const r = await postMultipart(UPLOAD_PATH, COBROS.path, 'payments20260804223735.csv');
+      const r = await postMultipart(UPLOAD_PATH, PAGOS.path, 'payments20260804223735.csv');
       const hint = authHint(r);
       if (hint) return hint;
       if (r.status !== 200) {
@@ -397,15 +403,23 @@ const PROBES: Probe[] = [
       const failed = numField(b, 'failed');
       const err = first(
         uploadId && uploadId.length > 0 ? null : 'missing uploadId',
-        expectNum(b, 'rowTotal', COBROS.rowTotal),
-        from?.startsWith(COBROS.windowFrom) ? null : `windowFrom=${String(from)} (expected ${COBROS.windowFrom})`,
-        to?.startsWith(COBROS.windowTo) ? null : `windowTo=${String(to)} (expected ${COBROS.windowTo})`,
+        expectNum(b, 'rowTotal', PAGOS.rowTotal),
+        from?.startsWith(PAGOS.windowFrom) ? null : `windowFrom=${String(from)} (expected ${PAGOS.windowFrom})`,
+        to?.startsWith(PAGOS.windowTo) ? null : `windowTo=${String(to)} (expected ${PAGOS.windowTo})`,
         // 28/07 → 04/08 is 8 calendar days, 7 elapsed; accept either convention.
         days === 7 || days === 8 ? null : `windowDays=${String(days)} (expected 7 or 8)`,
-        sameCounts(isObj(b) ? b.byProvider : null, COBROS.byProvider, 'byProvider'),
-        expectNum(b, 'approved', COBROS.approved),
-        expectNum(b, 'failed', COBROS.failed),
-        failed !== null && failed > 0 ? null : 'failed must be > 0 for a Cobros Export',
+        sameCounts(isObj(b) ? b.byProvider : null, PAGOS.byProvider, 'byProvider'),
+        expectNum(b, 'approved', PAGOS.approved),
+        expectNum(b, 'failed', PAGOS.failed),
+        failed !== null && failed > 0 ? null : 'failed must be > 0 for a Pagos Export',
+        expectNum(b, 'rejected', PAGOS.rejected),
+        expectNum(b, 'pending', PAGOS.pending),
+        expectNum(b, 'otherNotApproved', PAGOS.otherNotApproved),
+        // The split must be exhaustive: a status_detail nobody classified would
+        // otherwise vanish from the modal without anyone noticing.
+        PAGOS.rejected + PAGOS.pending + PAGOS.otherNotApproved === PAGOS.failed
+          ? null
+          : 'rejected + pending + otherNotApproved must sum to failed',
         hasWarning(b, 'short_window'),
       );
       if (err) return err;
@@ -434,11 +448,11 @@ const PROBES: Probe[] = [
   },
   {
     label: 'POST upload — .xlsx rejected as not_csv',
-    run: async () => expectRejection(TMP_XLSX, 'cobros.xlsx', 'not_csv', /csv/i),
+    run: async () => expectRejection(TMP_XLSX, 'pagos.xlsx', 'not_csv', /csv/i),
   },
   {
     label: 'POST upload — mangled header rejected',
-    run: async () => expectRejection(TMP_BAD_HEADER, 'cobros-bad-header.csv', 'bad_header'),
+    run: async () => expectRejection(TMP_BAD_HEADER, 'pagos-bad-header.csv', 'bad_header'),
   },
   {
     label: 'POST /api/sync — ingests the upload',
@@ -448,13 +462,13 @@ const PROBES: Probe[] = [
       if (error) return error;
       const rows = paymentsRowCount(final);
       if (rows === null) return `no payments source in GET ${SYNC_PATH}${syncErrorSuffix(final)}`;
-      if (rows <= 0) return `payments rowCount=${rows}, no Cobros ingested${syncErrorSuffix(final)}`;
+      if (rows <= 0) return `payments rowCount=${rows}, no Pagos ingested${syncErrorSuffix(final)}`;
       const result = findUploadResult(final, ctx.uploadId);
       if (!result) {
         return `no UploadResultDTO for uploadId=${ctx.uploadId} in the sync payload${syncErrorSuffix(final)}`;
       }
-      if (result.rowTotal !== COBROS.rowTotal) {
-        return `UploadResultDTO.rowTotal=${result.rowTotal} (expected ${COBROS.rowTotal})`;
+      if (result.rowTotal !== PAGOS.rowTotal) {
+        return `UploadResultDTO.rowTotal=${result.rowTotal} (expected ${PAGOS.rowTotal})`;
       }
       if (result.rowsIngested <= 0) {
         return `UploadResultDTO.rowsIngested=${result.rowsIngested}${syncErrorSuffix(final)}`;
@@ -485,7 +499,7 @@ const PROBES: Probe[] = [
       if (!ctx.preview || ctx.paymentsRows === null || !ctx.tiers) {
         return 'skipped: no baseline from probes 1/5/6';
       }
-      const r = await postMultipart(UPLOAD_PATH, COBROS.path, 'payments20260804223735.csv');
+      const r = await postMultipart(UPLOAD_PATH, PAGOS.path, 'payments20260804223735.csv');
       if (r.status !== 200) return `re-upload status=${r.status} (expected 200)`;
       const before = ctx.preview;
       const shifted = first(
@@ -535,7 +549,7 @@ function preflight(): string | null {
       '  Fix: set INTERNAL_API_TOKEN in .env to the same value the server runs with.'
     );
   }
-  for (const p of [COBROS.path, SUBSCRIPCIONES.path]) {
+  for (const p of [PAGOS.path, SUBSCRIPCIONES.path]) {
     if (!existsSync(p)) {
       return `Missing fixture ${p}\n  The real Exports must be present at the repo root; run from the repo root.`;
     }

@@ -1,4 +1,4 @@
-// Staging area for uploaded Cobros Exports.
+// Staging area for uploaded Pagos Exports.
 //
 // An Upload is written to disk before it is looked at, so neither the preview
 // nor the sync ever holds the file in memory: production is a ~1 GB VPS and a
@@ -13,8 +13,8 @@ import { once } from 'node:events';
 import os from 'node:os';
 import path from 'node:path';
 
-/** Ceiling for an accepted Upload. A full-history Export is ~20 MB. */
-export const MAX_UPLOAD_BYTES = 64 * 1024 * 1024;
+export { MAX_UPLOAD_BYTES } from '@basket/core/dtos/PaymentUploadDTO';
+import { MAX_UPLOAD_BYTES } from '@basket/core/dtos/PaymentUploadDTO';
 
 /** Staged files older than this are swept; an Upload is confirmed in seconds. */
 export const STAGED_TTL_MS = 30 * 60 * 1000;
