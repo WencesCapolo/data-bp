@@ -13,7 +13,7 @@ import type {
   OverviewTrendPoint,
 } from '@basket/core/dtos/OverviewDTO';
 import type { EvolutionDTO } from '@basket/core/dtos/EvolutionDTO';
-import type { TeamsDTO, TeamTrendDTO } from '@basket/core/dtos/TeamsDTO';
+import type { TeamsDTO, TeamRankRow, TeamDailyDTO } from '@basket/core/dtos/TeamsDTO';
 import type { FinanceDTO } from '@basket/core/dtos/FinanceDTO';
 import type { RetentionDTO } from '@basket/core/dtos/RetentionDTO';
 import type { DataQualityDTO } from '@basket/core/dtos/DataQualityDTO';
@@ -458,161 +458,391 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
   }
 
   // --------------------------------------------------------------------------
-  // TEAMS — group team_monthly by team within range
+  // TEAMS — master list: fanbase size + Subscription movement per team
+  //
+  // Two independent halves, merged in memory:
+  //   followers — every Subscriber whose promo_team_id is the team, paying or
+  //               not, so it is never touched by the Subscription filters;
+  //   movement  — altas/bajas/activeSubs/pagos, from basket_mat_team_daily when
+  //               no CommonFilters are set, live from basket_v_active_payments
+  //               when they are (the mat view has no access_type/sub_type/
+  //               country split to filter on).
+  //
+  // Alta on day D = active on D, not active on D-1 (a new or reactivated
+  // Subscriber, NOT a renewal). Baja on D = active on D-1, not on D. Active on D
+  // = a Pago with created_at::date <= D and (expires_at + 7 days)::date >= D.
+  // Because of that 7-day grace, bajas trail the real expiry by ~7 days.
+  // Movement is attributed to the Subscriber's CURRENT promo team: someone who
+  // changes favourite team takes their whole history with them. Team 0 is the
+  // 'Sin equipo' bucket and is a first-class row here, not an exclusion.
   // --------------------------------------------------------------------------
   async getTeams(
     range: DateRange,
     opts: { limit?: number; country?: string; filters?: CommonFilters } = {},
   ): Promise<TeamsDTO> {
     const { limit = 50, country, filters } = opts;
-    if (hasFilters(filters)) {
-      return this.getTeamsFiltered(range, limit, country, filters!);
-    }
     const { from, to } = rangeBounds(range);
-    const countryFilter = country
-      ? `AND team_country = '${escStr(country)}'`
-      : '';
+    const f = d(from);
+    const t = d(to);
 
-    const [rankedRows, totalsRows] = await Promise.all([
+    const [followerRows, movementRows] = await Promise.all([
       this.conn.execute(sql.raw(`
-        SELECT team_id, team_name, league, team_country,
-               SUM(unique_payers)::int   AS unique_payers,
-               SUM(total_payments)::int  AS total_payments,
-               SUM(total_amount)::numeric AS total_amount,
-               SUM(real_payers)::int     AS real_payers,
-               SUM(voucher_payers)::int  AS voucher_payers
-        FROM basket_mat_team_monthly
-        WHERE month BETWEEN '${from.toISOString().slice(0,10)}'::date
-                        AND '${to.toISOString().slice(0,10)}'::date
-          AND team_id <> 0
-          ${countryFilter}
-        GROUP BY team_id, team_name, league, team_country
-        ORDER BY total_payments DESC
-        LIMIT ${limit}
+        SELECT COALESCE(u.promo_team_id, 0)             AS team_id,
+               COALESCE(t.team_name, 'Sin equipo')      AS team_name,
+               COALESCE(t.league, 'N/A')                AS league,
+               COALESCE(t.country, 'N/A')               AS team_country,
+               COUNT(*)::int                            AS followers,
+               COUNT(*) FILTER (WHERE u.created_at::date BETWEEN '${f}'::date
+                                                            AND '${t}'::date)::int AS new_followers
+        FROM basket_users u
+        LEFT JOIN basket_teams t ON t.id = u.promo_team_id
+        ${country ? `WHERE COALESCE(t.country, 'N/A') = '${escStr(country)}'` : ''}
+        GROUP BY 1, 2, 3, 4
       `)),
-      this.conn.execute(sql.raw(`
-        SELECT COUNT(DISTINCT team_id)::int  AS teams,
-               SUM(unique_payers)::int       AS payers,
-               SUM(total_payments)::int      AS payments
-        FROM basket_mat_team_monthly
-        WHERE month BETWEEN '${from.toISOString().slice(0,10)}'::date
-                        AND '${to.toISOString().slice(0,10)}'::date
-          AND team_id <> 0
-          ${countryFilter}
-      `)),
+      hasFilters(filters)
+        ? this.teamsMovementFiltered(f, t, country, filters!)
+        : this.teamsMovementFromMatView(f, t, country),
     ]);
 
-    const tot = ((totalsRows as unknown) as RowAny[])[0] ?? {};
+    const rows = new Map<number, TeamRankRow>();
+    const row = (teamId: number): TeamRankRow => {
+      let r = rows.get(teamId);
+      if (!r) {
+        r = {
+          teamId, teamName: `#${teamId}`, league: 'N/A', teamCountry: 'N/A',
+          followers: 0, newFollowers: 0, activeSubs: 0,
+          altas: 0, bajas: 0, net: 0,
+          payments: 0, amount: 0, uniquePayers: 0,
+        };
+        rows.set(teamId, r);
+      }
+      return r;
+    };
+
+    for (const r of ((followerRows as unknown) as RowAny[])) {
+      const team = row(n(r.team_id));
+      team.teamName = s(r.team_name);
+      team.league = s(r.league);
+      team.teamCountry = s(r.team_country);
+      team.followers = n(r.followers);
+      team.newFollowers = n(r.new_followers);
+    }
+    for (const r of movementRows) {
+      const team = row(n(r.team_id));
+      team.activeSubs = n(r.active_subs);
+      team.altas = n(r.altas);
+      team.bajas = n(r.bajas);
+      team.net = team.altas - team.bajas;
+      team.payments = n(r.payments);
+      team.amount = n(r.amount);
+      team.uniquePayers = n(r.unique_payers);
+    }
+
+    const all = [...rows.values()].sort((a, b) => b.followers - a.followers);
+    const sum = (pick: (r: TeamRankRow) => number): number =>
+      all.reduce((acc, r) => acc + pick(r), 0);
+    const altas = sum((r) => r.altas);
+    const bajas = sum((r) => r.bajas);
+
     return {
       range,
+      from: f,
+      to: t,
       totals: {
-        teams: n(tot.teams),
-        uniquePayers: n(tot.payers),
-        totalPayments: n(tot.payments),
+        teams: all.length,
+        followers: sum((r) => r.followers),
+        // Each Subscriber has exactly one favourite team, so team sums don't overlap.
+        activeSubs: sum((r) => r.activeSubs),
+        altas,
+        bajas,
+        net: altas - bajas,
+        teamsWithMovement: all.filter((r) => r.altas + r.bajas > 0).length,
       },
-      ranked: ((rankedRows as unknown) as RowAny[]).map((r) => ({
-        teamId: n(r.team_id),
-        teamName: s(r.team_name),
-        league: s(r.league),
-        teamCountry: s(r.team_country),
-        uniquePayers: n(r.unique_payers),
-        totalPayments: n(r.total_payments),
-        totalAmount: n(r.total_amount),
-        realPayers: n(r.real_payers),
-        voucherPayers: n(r.voucher_payers),
-      })),
+      ranked: all.slice(0, limit),
     };
   }
 
-  private async getTeamsFiltered(
-    range: DateRange,
-    limit: number,
+  // Unfiltered movement: cumulative-sum `delta` over the window, seeded by the
+  // sum of every delta strictly before it — without that seed the level would
+  // restart at 0 instead of the Subscription base the window inherits.
+  // `unique_payers` is summed per day, so it is a per-day distinct count rolled
+  // up, not a window-wide distinct Subscriber count (the mat view cannot give one).
+  private async teamsMovementFromMatView(
+    f: string,
+    t: string,
+    country?: string,
+  ): Promise<RowAny[]> {
+    const cf = country ? `AND team_country = '${escStr(country)}'` : '';
+    const rows = await this.conn.execute(sql.raw(`
+      WITH win AS (
+        SELECT team_id,
+               SUM(altas)::int         AS altas,
+               SUM(bajas)::int         AS bajas,
+               SUM(delta)::int         AS delta_win,
+               SUM(payments)::int      AS payments,
+               SUM(amount)::numeric    AS amount,
+               SUM(unique_payers)::int AS unique_payers
+        FROM basket_mat_team_daily
+        WHERE day BETWEEN '${f}'::date AND '${t}'::date ${cf}
+        GROUP BY team_id
+      ),
+      seed AS (
+        SELECT team_id, SUM(delta)::int AS base
+        FROM basket_mat_team_daily
+        WHERE day < '${f}'::date ${cf}
+        GROUP BY team_id
+      ),
+      universe AS (
+        SELECT team_id FROM win
+        UNION
+        SELECT team_id FROM seed
+      )
+      SELECT u.team_id,
+             COALESCE(w.altas, 0)                            AS altas,
+             COALESCE(w.bajas, 0)                            AS bajas,
+             COALESCE(w.payments, 0)                         AS payments,
+             COALESCE(w.amount, 0)                           AS amount,
+             COALESCE(w.unique_payers, 0)                    AS unique_payers,
+             (COALESCE(s.base, 0) + COALESCE(w.delta_win, 0)) AS active_subs
+      FROM universe u
+      LEFT JOIN win w  ON w.team_id = u.team_id
+      LEFT JOIN seed s ON s.team_id = u.team_id
+    `));
+    return (rows as unknown) as RowAny[];
+  }
+
+  // Filtered movement: same semantics computed live. Each Subscriber's Pago
+  // spans are merged into islands of uninterrupted access (7-day grace); an
+  // island start is an alta, the day after an island end is a baja. Islands are
+  // built over full history — no window truncation — so an alta is genuinely a
+  // new or reactivated Subscriber, never a window-edge artefact.
+  private async teamsMovementFiltered(
+    f: string,
+    t: string,
     country: string | undefined,
     filters: CommonFilters,
-  ): Promise<TeamsDTO> {
-    const { from, to } = rangeBounds(range);
+  ): Promise<RowAny[]> {
     const fw = buildActiveFilterWhere(filters);
-    const teamCountryFilter = country ? `AND team_country = '${escStr(country)}'` : '';
-    const f = from.toISOString().slice(0, 10);
-    const t = to.toISOString().slice(0, 10);
+    const cf = country ? `AND team_country = '${escStr(country)}'` : '';
+    const rows = await this.conn.execute(sql.raw(`
+      WITH spans AS (
+        SELECT v.user_id, COALESCE(v.team_id, 0) AS team_id,
+               v.created_at::date AS s,
+               (v.expires_at + INTERVAL '7 days')::date AS e
+        FROM basket_v_active_payments v
+        -- Pagos whose expires_at precedes their own created_at are active on no
+        -- day, so they must yield neither alta nor baja. Same guard as the mat
+        -- view; without it their baja predates their alta.
+        WHERE (v.expires_at + INTERVAL '7 days')::date >= v.created_at::date
+          ${fw} ${cf}
+      ),
+      ord AS (
+        SELECT user_id, team_id, s, e,
+               MAX(e) OVER (PARTITION BY user_id ORDER BY s
+                            ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS prev_max
+        FROM spans
+      ),
+      grp AS (
+        SELECT user_id, team_id, s, e,
+               SUM(CASE WHEN prev_max IS NULL OR s > prev_max + 1 THEN 1 ELSE 0 END)
+                 OVER (PARTITION BY user_id ORDER BY s) AS island
+        FROM ord
+      ),
+      islands AS (
+        SELECT user_id, team_id, MIN(s) AS s, MAX(e) AS e
+        FROM grp GROUP BY user_id, team_id, island
+      ),
+      ev AS (
+        SELECT team_id, s     AS d, 1 AS alta, 0 AS baja FROM islands
+        UNION ALL
+        SELECT team_id, e + 1 AS d, 0 AS alta, 1 AS baja FROM islands
+      ),
+      agg AS (
+        SELECT team_id, d, SUM(alta)::int AS altas, SUM(baja)::int AS bajas,
+               SUM(alta - baja)::int AS delta
+        FROM ev GROUP BY team_id, d
+      ),
+      win AS (
+        SELECT team_id, SUM(altas)::int AS altas, SUM(bajas)::int AS bajas,
+               SUM(delta)::int AS delta_win
+        FROM agg WHERE d BETWEEN '${f}'::date AND '${t}'::date
+        GROUP BY team_id
+      ),
+      seed AS (
+        SELECT team_id, SUM(delta)::int AS base
+        FROM agg WHERE d < '${f}'::date
+        GROUP BY team_id
+      ),
+      money AS (
+        SELECT COALESCE(team_id, 0) AS team_id,
+               COUNT(*)::int                AS payments,
+               COALESCE(SUM(amount), 0)     AS amount,
+               COUNT(DISTINCT user_id)::int AS unique_payers
+        FROM basket_v_active_payments
+        WHERE created_at::date BETWEEN '${f}'::date AND '${t}'::date ${fw} ${cf}
+        GROUP BY 1
+      ),
+      universe AS (
+        SELECT team_id FROM win
+        UNION SELECT team_id FROM seed
+        UNION SELECT team_id FROM money
+      )
+      SELECT u.team_id,
+             COALESCE(w.altas, 0)                             AS altas,
+             COALESCE(w.bajas, 0)                             AS bajas,
+             COALESCE(m.payments, 0)                          AS payments,
+             COALESCE(m.amount, 0)                            AS amount,
+             COALESCE(m.unique_payers, 0)                     AS unique_payers,
+             (COALESCE(s.base, 0) + COALESCE(w.delta_win, 0)) AS active_subs
+      FROM universe u
+      LEFT JOIN win   w ON w.team_id = u.team_id
+      LEFT JOIN seed  s ON s.team_id = u.team_id
+      LEFT JOIN money m ON m.team_id = u.team_id
+    `));
+    return (rows as unknown) as RowAny[];
+  }
 
-    const [rankedRows, totalsRows] = await Promise.all([
+  // --------------------------------------------------------------------------
+  // TEAM DAILY — one team's dense altas/bajas/activeSubs series over the window
+  // --------------------------------------------------------------------------
+  async getTeamDaily(
+    teamId: number,
+    range: DateRange,
+    filters?: CommonFilters,
+  ): Promise<TeamDailyDTO> {
+    const id = Number(teamId);
+    const { from, to } = rangeBounds(range);
+    const f = d(from);
+    const t = d(to);
+
+    const [nameRows, seriesRows] = await Promise.all([
       this.conn.execute(sql.raw(`
-        WITH f AS (
-          SELECT user_id, team_id, team_name, league, team_country,
-                 access_type, amount
-          FROM basket_v_active_payments
-          WHERE created_at::date BETWEEN '${f}'::date AND '${t}'::date
-            AND team_id IS NOT NULL AND team_id <> 0
-            ${teamCountryFilter}
-            ${fw}
-        )
-        SELECT team_id, team_name, league, team_country,
-               COUNT(DISTINCT user_id)::int                                      AS unique_payers,
-               COUNT(*)::int                                                     AS total_payments,
-               SUM(amount)::numeric                                              AS total_amount,
-               COUNT(DISTINCT user_id) FILTER (WHERE access_type='real')::int    AS real_payers,
-               COUNT(DISTINCT user_id) FILTER (WHERE access_type='voucher')::int AS voucher_payers
-        FROM f
-        GROUP BY team_id, team_name, league, team_country
-        ORDER BY total_payments DESC
-        LIMIT ${limit}
+        SELECT COALESCE(t.team_name, 'Sin equipo') AS team_name
+        FROM (SELECT ${id}::int AS id) x
+        LEFT JOIN basket_teams t ON t.id = x.id
       `)),
-      this.conn.execute(sql.raw(`
-        WITH f AS (
-          SELECT user_id, team_id
-          FROM basket_v_active_payments
-          WHERE created_at::date BETWEEN '${f}'::date AND '${t}'::date
-            AND team_id IS NOT NULL AND team_id <> 0
-            ${teamCountryFilter}
-            ${fw}
-        )
-        SELECT COUNT(DISTINCT team_id)::int AS teams,
-               COUNT(DISTINCT user_id)::int AS payers,
-               COUNT(*)::int                AS payments
-        FROM f
-      `)),
+      hasFilters(filters)
+        ? this.teamDailyFiltered(id, f, t, filters!)
+        : this.teamDailyFromMatView(id, f, t),
     ]);
 
-    const tot = ((totalsRows as unknown) as RowAny[])[0] ?? {};
+    const days: string[] = [];
+    const altas: number[] = [];
+    const bajas: number[] = [];
+    const activeSubs: number[] = [];
+    for (const r of seriesRows) {
+      days.push(d(r.day));
+      altas.push(n(r.altas));
+      bajas.push(n(r.bajas));
+      activeSubs.push(n(r.active_subs));
+    }
+
     return {
-      range,
-      totals: {
-        teams: n(tot.teams),
-        uniquePayers: n(tot.payers),
-        totalPayments: n(tot.payments),
-      },
-      ranked: ((rankedRows as unknown) as RowAny[]).map((r) => ({
-        teamId: n(r.team_id),
-        teamName: s(r.team_name),
-        league: s(r.league),
-        teamCountry: s(r.team_country),
-        uniquePayers: n(r.unique_payers),
-        totalPayments: n(r.total_payments),
-        totalAmount: n(r.total_amount),
-        realPayers: n(r.real_payers),
-        voucherPayers: n(r.voucher_payers),
-      })),
+      teamId: id,
+      teamName: s(((nameRows as unknown) as RowAny[])[0]?.team_name ?? 'Sin equipo'),
+      from: f,
+      to: t,
+      days,
+      altas,
+      bajas,
+      activeSubs,
     };
   }
 
-  async getTeamTrend(teamId: number): Promise<TeamTrendDTO> {
+  // generate_series makes the series dense; the running sum of `delta` is seeded
+  // with every delta before the window so the level starts at the real base.
+  private async teamDailyFromMatView(id: number, f: string, t: string): Promise<RowAny[]> {
     const rows = await this.conn.execute(sql.raw(`
-      SELECT month, team_name, unique_payers, total_amount
-      FROM basket_mat_team_monthly
-      WHERE team_id = ${Number(teamId)}
-      ORDER BY month
+      WITH days AS (
+        SELECT generate_series('${f}'::date, '${t}'::date, INTERVAL '1 day')::date AS d
+      ),
+      seed AS (
+        SELECT COALESCE(SUM(delta), 0)::int AS base
+        FROM basket_mat_team_daily
+        WHERE team_id = ${id} AND day < '${f}'::date
+      ),
+      win AS (
+        SELECT day, altas, bajas, delta
+        FROM basket_mat_team_daily
+        WHERE team_id = ${id} AND day BETWEEN '${f}'::date AND '${t}'::date
+      )
+      SELECT days.d                                            AS day,
+             COALESCE(w.altas, 0)::int                         AS altas,
+             COALESCE(w.bajas, 0)::int                         AS bajas,
+             (seed.base
+              + SUM(COALESCE(w.delta, 0)) OVER (ORDER BY days.d))::int AS active_subs
+      FROM days
+      CROSS JOIN seed
+      LEFT JOIN win w ON w.day = days.d
+      ORDER BY days.d
     `));
-    const arr = (rows as unknown) as RowAny[];
-    return {
-      teamId,
-      teamName: s(arr[0]?.team_name ?? ''),
-      points: arr.map((r) => ({
-        month: d(r.month),
-        uniquePayers: n(r.unique_payers),
-        totalAmount: n(r.total_amount),
-      })),
-    };
+    return (rows as unknown) as RowAny[];
+  }
+
+  // Same island construction as teamsMovementFiltered, restricted to one team.
+  // Restricting the spans up front is safe: team_id in the view is the
+  // Subscriber's current promo team, constant across all of their Pagos.
+  private async teamDailyFiltered(
+    id: number,
+    f: string,
+    t: string,
+    filters: CommonFilters,
+  ): Promise<RowAny[]> {
+    const fw = buildActiveFilterWhere(filters);
+    const rows = await this.conn.execute(sql.raw(`
+      WITH spans AS (
+        SELECT v.user_id,
+               v.created_at::date AS s,
+               (v.expires_at + INTERVAL '7 days')::date AS e
+        FROM basket_v_active_payments v
+        -- See getTeams: a Pago expiring before it was created is active on no day.
+        WHERE COALESCE(v.team_id, 0) = ${id}
+          AND (v.expires_at + INTERVAL '7 days')::date >= v.created_at::date
+          ${fw}
+      ),
+      ord AS (
+        SELECT user_id, s, e,
+               MAX(e) OVER (PARTITION BY user_id ORDER BY s
+                            ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS prev_max
+        FROM spans
+      ),
+      grp AS (
+        SELECT user_id, s, e,
+               SUM(CASE WHEN prev_max IS NULL OR s > prev_max + 1 THEN 1 ELSE 0 END)
+                 OVER (PARTITION BY user_id ORDER BY s) AS island
+        FROM ord
+      ),
+      islands AS (
+        SELECT user_id, MIN(s) AS s, MAX(e) AS e
+        FROM grp GROUP BY user_id, island
+      ),
+      ev AS (
+        SELECT s     AS d, 1 AS alta, 0 AS baja FROM islands
+        UNION ALL
+        SELECT e + 1 AS d, 0 AS alta, 1 AS baja FROM islands
+      ),
+      agg AS (
+        SELECT d, SUM(alta)::int AS altas, SUM(baja)::int AS bajas,
+               SUM(alta - baja)::int AS delta
+        FROM ev GROUP BY d
+      ),
+      days AS (
+        SELECT generate_series('${f}'::date, '${t}'::date, INTERVAL '1 day')::date AS d
+      ),
+      seed AS (
+        SELECT COALESCE(SUM(delta), 0)::int AS base FROM agg WHERE d < '${f}'::date
+      )
+      SELECT days.d                                            AS day,
+             COALESCE(a.altas, 0)::int                         AS altas,
+             COALESCE(a.bajas, 0)::int                         AS bajas,
+             (seed.base
+              + SUM(COALESCE(a.delta, 0)) OVER (ORDER BY days.d))::int AS active_subs
+      FROM days
+      CROSS JOIN seed
+      LEFT JOIN agg a ON a.d = days.d
+      ORDER BY days.d
+    `));
+    return (rows as unknown) as RowAny[];
   }
 
   // --------------------------------------------------------------------------

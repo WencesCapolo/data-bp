@@ -136,7 +136,21 @@ export const TeamsQuerySchema = z
     filters: toFilters(v),
   }));
 
-export const TeamIdSchema = z.coerce.number().int().positive();
+// Team 0 is the 'Sin equipo' bucket, a drillable row like any other team.
+export const TeamIdSchema = z.coerce.number().int().nonnegative();
+
+export const TeamDailyQuerySchema = z
+  .object({
+    range: rangeKindSchema,
+    from: z.string().regex(ISO_DATE).optional(),
+    to: z.string().regex(ISO_DATE).optional(),
+    ...commonFiltersShape,
+  })
+  .superRefine(customRangeRefine)
+  .transform((v) => ({
+    range: toDateRange(v),
+    filters: toFilters(v),
+  }));
 
 export function parseSearchParams(req: {
   nextUrl: { searchParams: URLSearchParams };

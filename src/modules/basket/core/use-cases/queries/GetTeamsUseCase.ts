@@ -1,6 +1,6 @@
 import type { IAnalyticsQueryRepository } from '@basket/core/ports/IAnalyticsQueryRepository';
 import type { CommonFilters, DateRange } from '@basket/core/dtos/shared';
-import type { TeamsDTO, TeamTrendDTO } from '@basket/core/dtos/TeamsDTO';
+import type { TeamsDTO, TeamDailyDTO } from '@basket/core/dtos/TeamsDTO';
 
 export class GetTeamsUseCase {
   constructor(private readonly repo: IAnalyticsQueryRepository) {}
@@ -10,7 +10,7 @@ export class GetTeamsUseCase {
   ): Promise<TeamsDTO> {
     return this.repo.getTeams(range, opts);
   }
-  async trend(teamId: number): Promise<TeamTrendDTO> {
-    return this.repo.getTeamTrend(teamId);
+  async daily(teamId: number, range: DateRange, filters?: CommonFilters): Promise<TeamDailyDTO> {
+    return this.repo.getTeamDaily(teamId, range, filters);
   }
 }

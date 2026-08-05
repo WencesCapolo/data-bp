@@ -2,30 +2,14 @@
 import { useMemo, useState } from 'react';
 import useSWR from 'swr';
 import { fetcher } from '@/lib/client/fetcher';
-import { useFilters } from '@/lib/client/filterStore';
-import { KpiCard } from '@/components/ui/KpiCard';
-import { TeamsRow } from './TeamsRow';
+import { buildFilterQS, useFilters } from '@/lib/client/filterStore';
 import { TabSkeleton } from '@/components/ui/Skeleton';
 import { ErrorBox } from '@/components/ui/ErrorBox';
-import type { TeamsDTO, TeamRankRow } from '@basket/core/dtos/TeamsDTO';
+import { TeamList } from './teams/TeamList';
+import { TeamDetail } from './teams/TeamDetail';
+import type { TeamsDTO } from '@basket/core/dtos/TeamsDTO';
 
-type SortKey = 'uniquePayers' | 'totalPayments' | 'totalAmount' | 'teamName';
-type SortDir = 'asc' | 'desc';
-
-function buildUrl(s: {
-  range: string;
-  countries: string[];
-  accessType?: string;
-  subType?: string;
-}): string {
-  const p = new URLSearchParams();
-  p.set('range', s.range);
-  p.set('limit', '100');
-  for (const c of s.countries) p.append('countries', c);
-  if (s.accessType) p.set('accessType', s.accessType);
-  if (s.subType) p.set('subType', s.subType);
-  return `/api/basket/teams?${p.toString()}`;
-}
+const LIST_LIMIT = 100;
 
 export function TeamsTab() {
   const range = useFilters((s) => s.range);
@@ -33,121 +17,56 @@ export function TeamsTab() {
   const accessType = useFilters((s) => s.accessType);
   const subType = useFilters((s) => s.subType);
 
-  const url = buildUrl({ range, countries, accessType, subType });
-  const { data, error, isLoading } = useSWR<TeamsDTO>(url, fetcher);
+  const filterQS = buildFilterQS({ range, countries, accessType, subType });
+  const { data, error, isLoading } = useSWR<TeamsDTO>(
+    `/api/basket/teams?${filterQS}&limit=${LIST_LIMIT}`,
+    fetcher,
+    { keepPreviousData: true },
+  );
 
-  const [sortKey, setSortKey] = useState<SortKey>('totalPayments');
-  const [sortDir, setSortDir] = useState<SortDir>('desc');
-  const [expanded, setExpanded] = useState<number | null>(null);
+  const [selected, setSelected] = useState<number | null>(null);
+  const [query, setQuery] = useState('');
 
-  const sorted = useMemo(() => {
-    if (!data?.ranked) return [];
-    const arr = [...data.ranked];
-    arr.sort((a, b) => {
-      const va = a[sortKey];
-      const vb = b[sortKey];
-      if (typeof va === 'number' && typeof vb === 'number') {
-        return sortDir === 'asc' ? va - vb : vb - va;
-      }
-      return sortDir === 'asc'
-        ? String(va).localeCompare(String(vb))
-        : String(vb).localeCompare(String(va));
-    });
-    return arr;
-  }, [data, sortKey, sortDir]);
+  const list = useMemo(() => {
+    if (!data) return [];
+    const needle = query.trim().toLowerCase();
+    return data.ranked
+      .filter(
+        (t) =>
+          !needle ||
+          t.teamName.toLowerCase().includes(needle) ||
+          t.league.toLowerCase().includes(needle),
+      )
+      .sort((a, b) => b.followers - a.followers);
+  }, [data, query]);
 
-  function toggleSort(k: SortKey) {
-    if (k === sortKey) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
-    else {
-      setSortKey(k);
-      setSortDir(k === 'teamName' ? 'asc' : 'desc');
-    }
+  if (isLoading && !data) {
+    return <TabSkeleton kpis={5} blocks={[{ kind: 'full', height: 520 }]} />;
   }
-
-  if (isLoading) return <TabSkeleton kpis={4} blocks={[{ kind: 'full', height: 480 }]} />;
   if (error) return <ErrorBox message={error.message} />;
   if (!data) return null;
 
-  const topTeam = sorted[0];
+  // The selection defaults to the first team, and falls back to it when the
+  // current pick drops out of the filtered list.
+  const team = list.find((t) => t.teamId === selected) ?? list[0];
 
   return (
-    <div>
-      <div className="kpi-grid">
-        <KpiCard label="Equipos con pagadores" value={data.totals.teams} />
-        <KpiCard label="Pagadores únicos" value={data.totals.uniquePayers} variant="green" />
-        <KpiCard label="Pagos totales" value={data.totals.totalPayments} variant="blue" />
-        <KpiCard
-          label="Top equipo"
-          value={topTeam?.teamName ?? '—'}
-          sub={topTeam ? `${topTeam.totalPayments.toLocaleString()} pagos` : ''}
-          variant="yellow"
-        />
-      </div>
-
-      <div className="chart-full" style={{ padding: 0, overflow: 'hidden' }}>
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th style={{ width: 40 }}>#</th>
-              <SortableTh label="Equipo" k="teamName" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
-              <th>Liga</th>
-              <th>País</th>
-              <SortableTh label="Pagadores" k="uniquePayers" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} align="right" />
-              <SortableTh label="Pagos" k="totalPayments" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} align="right" />
-              <SortableTh label="Monto" k="totalAmount" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} align="right" />
-              <th style={{ width: 30 }}></th>
-            </tr>
-          </thead>
-          <tbody>
-            {sorted.map((row, i) => (
-              <TeamsRow
-                key={row.teamId}
-                row={row}
-                rank={i + 1}
-                expanded={expanded === row.teamId}
-                onToggle={() => setExpanded((e) => (e === row.teamId ? null : row.teamId))}
-              />
-            ))}
-            {sorted.length === 0 && (
-              <tr>
-                <td colSpan={8} className="no-data">
-                  Sin datos para el rango/filtros seleccionados
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+    <div style={{ display: 'grid', gridTemplateColumns: '340px 1fr', gap: 16, alignItems: 'start' }}>
+      <TeamList
+        teams={list}
+        selectedId={team?.teamId}
+        onSelect={setSelected}
+        query={query}
+        onQueryChange={setQuery}
+      />
+      {/* min-height keeps the skeleton → data swap from jumping the layout. */}
+      <div style={{ minHeight: '70vh' }}>
+        {team ? (
+          <TeamDetail team={team} filterQS={filterQS} from={data.from} to={data.to} />
+        ) : (
+          <div className="no-data">Sin equipos para el rango/filtros seleccionados</div>
+        )}
       </div>
     </div>
   );
 }
-
-function SortableTh({
-  label,
-  k,
-  sortKey,
-  sortDir,
-  onClick,
-  align = 'left',
-}: {
-  label: string;
-  k: SortKey;
-  sortKey: SortKey;
-  sortDir: SortDir;
-  onClick: (k: SortKey) => void;
-  align?: 'left' | 'right';
-}) {
-  const active = sortKey === k;
-  return (
-    <th
-      onClick={() => onClick(k)}
-      style={{ cursor: 'pointer', textAlign: align, userSelect: 'none' }}
-    >
-      {label}
-      {active && <span style={{ marginLeft: 4, color: 'var(--accent)' }}>{sortDir === 'asc' ? '▲' : '▼'}</span>}
-    </th>
-  );
-}
-
-
-export type { TeamRankRow };

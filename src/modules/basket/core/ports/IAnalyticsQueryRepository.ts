@@ -1,7 +1,7 @@
 import type { CommonFilters, DateRange, Granularity } from '@basket/core/dtos/shared';
 import type { OverviewDTO } from '@basket/core/dtos/OverviewDTO';
 import type { EvolutionDTO } from '@basket/core/dtos/EvolutionDTO';
-import type { TeamsDTO, TeamTrendDTO } from '@basket/core/dtos/TeamsDTO';
+import type { TeamsDTO, TeamDailyDTO } from '@basket/core/dtos/TeamsDTO';
 import type { FinanceDTO } from '@basket/core/dtos/FinanceDTO';
 import type { RetentionDTO } from '@basket/core/dtos/RetentionDTO';
 import type { DataQualityDTO } from '@basket/core/dtos/DataQualityDTO';
@@ -19,7 +19,11 @@ export interface IAnalyticsQueryRepository {
     range: DateRange,
     opts?: { limit?: number; country?: string; filters?: CommonFilters },
   ): Promise<TeamsDTO>;
-  getTeamTrend(teamId: number): Promise<TeamTrendDTO>;
+  getTeamDaily(
+    teamId: number,
+    range: DateRange,
+    filters?: CommonFilters,
+  ): Promise<TeamDailyDTO>;
   getFinance(range: DateRange, filters?: CommonFilters): Promise<FinanceDTO>;
   getRetention(): Promise<RetentionDTO>;
   getDataQuality(): Promise<DataQualityDTO>;

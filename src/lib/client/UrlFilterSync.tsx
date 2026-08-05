@@ -48,9 +48,6 @@ export function UrlFilterSync() {
     if (state.accessType) p.set('accessType', state.accessType);
     if (state.subType) p.set('subType', state.subType);
     if (state.granularity !== 'day') p.set('granularity', state.granularity);
-    // PROTOTYPE: keep ?variant= alive across filter writes (teams-daily prototype).
-    const variant = new URLSearchParams(window.location.search).get('variant');
-    if (variant) p.set('variant', variant);
     const qs = p.toString();
     const url = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
     if (url !== window.location.pathname + window.location.search) {

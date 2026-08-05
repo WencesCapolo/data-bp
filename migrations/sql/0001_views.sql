@@ -3,6 +3,7 @@
 -- Idempotent: drop then recreate. Safe to re-run.
 
 DROP MATERIALIZED VIEW IF EXISTS basket_mat_revenue_daily CASCADE;
+DROP MATERIALIZED VIEW IF EXISTS basket_mat_team_daily CASCADE;
 DROP MATERIALIZED VIEW IF EXISTS basket_mat_team_monthly CASCADE;
 DROP MATERIALIZED VIEW IF EXISTS basket_mat_monthly_lifecycle CASCADE;
 DROP MATERIALIZED VIEW IF EXISTS basket_mat_daily_active CASCADE;
@@ -229,6 +230,93 @@ CREATE INDEX basket_mat_team_monthly_league_idx
   ON basket_mat_team_monthly(league);
 CREATE INDEX basket_mat_team_monthly_country_idx
   ON basket_mat_team_monthly(team_country);
+
+-- ============================================================================
+-- basket_mat_team_daily
+-- Grain: team × day, SPARSE — one row only where there was movement or a pago.
+-- Feeds: TeamsTab / Equipos (daily altas/bajas, active-subs series, money).
+-- Consumers cumulative-sum `delta` over their window to rebuild active subs,
+-- so every event day must be present even when there is no pago that day.
+-- Altas/bajas come from merging each Subscriber's payment spans into islands of
+-- uninterrupted access (7-day grace, same as every other basket query): an
+-- island start is an alta, the day after an island end is a baja. Islands are
+-- built over full history, so an alta is a genuinely new or reactivated
+-- Subscriber, never a window-edge artefact.
+-- ============================================================================
+CREATE MATERIALIZED VIEW basket_mat_team_daily AS
+WITH spans AS (
+  SELECT v.user_id, COALESCE(v.team_id, 0) AS team_id,
+         v.created_at::date AS s,
+         (v.expires_at + INTERVAL '7 days')::date AS e
+  FROM basket_v_active_payments v
+  -- 977 Pagos carry an expires_at before their own created_at (some at epoch).
+  -- They are active on no day at all under the condition every other query
+  -- uses, so they must produce neither an alta nor a baja — without this guard
+  -- their baja lands decades before their alta and drags the level negative.
+  WHERE (v.expires_at + INTERVAL '7 days')::date >= v.created_at::date
+),
+ord AS (
+  SELECT user_id, team_id, s, e,
+         MAX(e) OVER (PARTITION BY user_id ORDER BY s
+                      ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS prev_max
+  FROM spans
+),
+grp AS (
+  SELECT user_id, team_id, s, e,
+         SUM(CASE WHEN prev_max IS NULL OR s > prev_max + 1 THEN 1 ELSE 0 END)
+           OVER (PARTITION BY user_id ORDER BY s) AS island
+  FROM ord
+),
+islands AS (
+  SELECT user_id, team_id, MIN(s) AS s, MAX(e) AS e
+  FROM grp GROUP BY user_id, team_id, island
+),
+ev AS (
+  SELECT team_id, s     AS d, 1 AS alta, 0 AS baja FROM islands
+  UNION ALL
+  SELECT team_id, e + 1 AS d, 0 AS alta, 1 AS baja FROM islands
+),
+mov AS (
+  SELECT team_id, d AS day, SUM(alta)::int AS altas, SUM(baja)::int AS bajas
+  FROM ev GROUP BY 1, 2
+),
+money AS (
+  SELECT COALESCE(team_id, 0) AS team_id, created_at::date AS day,
+         COUNT(*)::int AS payments, COALESCE(SUM(amount), 0) AS amount,
+         COUNT(DISTINCT user_id)::int AS unique_payers
+  FROM basket_v_active_payments GROUP BY 1, 2
+),
+joined AS (
+  SELECT
+    COALESCE(mov.team_id, money.team_id)     AS team_id,
+    COALESCE(mov.day, money.day)             AS day,
+    COALESCE(mov.altas, 0)                   AS altas,
+    COALESCE(mov.bajas, 0)                   AS bajas,
+    COALESCE(money.payments, 0)              AS payments,
+    COALESCE(money.amount, 0)                AS amount,
+    COALESCE(money.unique_payers, 0)         AS unique_payers
+  FROM mov
+  FULL OUTER JOIN money ON money.team_id = mov.team_id AND money.day = mov.day
+)
+SELECT
+  j.team_id                              AS team_id,
+  COALESCE(t.team_name, 'Sin equipo')    AS team_name,
+  COALESCE(t.league, 'N/A')              AS league,
+  COALESCE(t.country, 'N/A')             AS team_country,
+  j.day                                  AS day,
+  j.altas                                AS altas,
+  j.bajas                                AS bajas,
+  (j.altas - j.bajas)                    AS delta,
+  j.payments                             AS payments,
+  j.amount                               AS amount,
+  j.unique_payers                        AS unique_payers
+FROM joined j
+LEFT JOIN basket_teams t ON t.id = j.team_id;
+
+CREATE UNIQUE INDEX basket_mat_team_daily_pk_idx
+  ON basket_mat_team_daily(team_id, day);
+CREATE INDEX basket_mat_team_daily_day_idx
+  ON basket_mat_team_daily(day);
 
 -- ============================================================================
 -- basket_mat_revenue_daily
