@@ -32,7 +32,7 @@ export const DASHBOARDS: Dashboard[] = [
   {
     slug: 'financiero',
     title: 'Financiero',
-    description: 'Ingresos, MRR, cobros y reportes contables.',
+    description: 'Ingresos, MRR, pagos y reportes contables.',
     href: '/financiero',
     icon: '$',
     roles: ['admin', 'viewer'],

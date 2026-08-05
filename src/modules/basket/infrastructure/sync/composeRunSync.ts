@@ -30,7 +30,7 @@ import { streamCsvFile } from '@shared/lib/csvStream';
 import type { PaymentUploadRow } from '@basket/core/dtos/PaymentUploadDTO';
 
 export interface ComposeRunSyncOptions {
-  /** Path to a staged Cobros Export. Given, Cobros come from the file instead of
+  /** Path to a staged Pagos Export. Given, Pagos come from the file instead of
    *  the dead `/payments` endpoint. Omitted, the sync behaves exactly as before. */
   paymentsCsvPath?: string;
 }

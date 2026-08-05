@@ -1,4 +1,4 @@
--- Phase 11: Cobros Export uploads — provenance table + price-tier fallback data.
+-- Phase 11: Pagos Export uploads — provenance table + price-tier fallback data.
 -- See docs/adr/0003 (tier from price lookup table), docs/adr/0004 (who may upload).
 -- Idempotent: CREATE ... IF NOT EXISTS, seeds ON CONFLICT DO NOTHING. Safe to re-run.
 --
@@ -16,7 +16,7 @@
 
 -- ============================================================================
 -- 1. basket_payment_uploads
--- One row per confirmed Cobros Export upload: who, what file, what window,
+-- One row per confirmed Pagos Export upload: who, what file, what window,
 -- how many rows survived. Provenance only — never read by the metrics views.
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS basket_payment_uploads (
@@ -38,7 +38,7 @@ CREATE INDEX IF NOT EXISTS basket_payment_uploads_created_at_idx
 
 -- ============================================================================
 -- 2. basket_price_tiers
--- Tier fallback for uploaded Cobros, which carry no price_id.
+-- Tier fallback for uploaded Pagos, which carry no price_id.
 --
 -- A PRICE BOOK of exact current price points, not a range or threshold model.
 -- Ranges were tried and are provably wrong: checked against 510k rows that DO
@@ -60,7 +60,7 @@ CREATE INDEX IF NOT EXISTS basket_payment_uploads_created_at_idx
 -- Currency is stored LOWERCASE here; basket_payments.currency is UPPERCASE
 -- (the mapper uppercases it), so the view lowers it before joining.
 --
--- WHEN PRICING CHANGES this table must gain the new price points, or Cobros at
+-- WHEN PRICING CHANGES this table must gain the new price points, or Pagos at
 -- the new price silently classify as 'Otros'. Unmatched points are surfaced as
 -- an `unmapped_price_points` warning on upload, which is the signal that this
 -- table has gone stale.

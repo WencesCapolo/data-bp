@@ -209,7 +209,7 @@ export const basketSyncState = pgTable('basket_sync_state', {
   rowCount: integer('row_count'),
 });
 
-// Provenance for every confirmed Cobros Export upload. See docs/adr/0004.
+// Provenance for every confirmed Pagos Export upload. See docs/adr/0004.
 export const basketPaymentUploads = pgTable('basket_payment_uploads', {
   id: serial('id').primaryKey(),
   uploadedBy: text('uploaded_by').notNull(),
@@ -226,7 +226,7 @@ export const basketPaymentUploads = pgTable('basket_payment_uploads', {
   createdAtIdx: index('basket_payment_uploads_created_at_idx').on(table.createdAt),
 }));
 
-// Tier fallback for uploaded Cobros, which carry no price_id. A price book of
+// Tier fallback for uploaded Pagos, which carry no price_id. A price book of
 // exact current price points, mined from labelled rows — amount ranges cannot
 // be used, because ARS inflation pushed today's Básico price above yesterday's
 // Total price. Monthly only: the view resolves 365 and 0 without price.

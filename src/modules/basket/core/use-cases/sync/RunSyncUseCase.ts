@@ -63,9 +63,9 @@ export interface RunSyncDeps {
   matViews: IMaterializedViewRepository;
   mapUserRow: (row: Record<string, string>, knownTeamIds: Set<number>) => UserProps | null;
   mapPaymentRow: (row: Record<string, string>, knownUserIds: Set<number>) => PaymentProps | null;
-  /** Maps one Cobros Export row. Required only when `paymentsRows` is supplied. */
+  /** Maps one Pagos Export row. Required only when `paymentsRows` is supplied. */
   mapPaymentUploadRow?: (row: PaymentUploadRow, knownUserIds: Set<number>) => PaymentProps | null;
-  /** Rows of an Upload. When present, Cobros come from the file and the dead
+  /** Rows of an Upload. When present, Pagos come from the file and the dead
    *  `/payments` endpoint is not called at all. */
   paymentsRows?: AsyncIterable<PaymentUploadRow>;
   mapTournamentRow: (row: Record<string, string>) => TournamentProps | null;
@@ -90,7 +90,7 @@ export interface RunSyncResult {
   durationMs: number;
   syncedUsers: number;
   syncedPayments: number;
-  /** Cobros the mapper rejected — unknown Subscriber, unparseable date, bad id. */
+  /** Pagos the mapper rejected — unknown Subscriber, unparseable date, bad id. */
   skippedPayments: number;
   syncedTeams: number;
   syncedTournaments: number;
@@ -320,7 +320,7 @@ export class RunSyncUseCase {
     }
     // The endpoint now answers 200 with an empty body once the session lapses, so a
     // clean run with zero rows is a failure, not an honestly empty Window. Fail loudly
-    // instead of recording a Sync that quietly wrote no Cobros.
+    // instead of recording a Sync that quietly wrote no Pagos.
     if (rowsSeen === 0) {
       throw new Error('Expiró la Cookie: /payments respondió sin filas CSV');
     }

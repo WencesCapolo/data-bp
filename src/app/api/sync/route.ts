@@ -141,7 +141,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       {
         error: 'upload_required',
         message:
-          'La sincronización necesita un Export de Cobros cargado previamente. ' +
+          'La sincronización necesita un Export de Pagos cargado previamente. ' +
           'Subí el archivo desde el modal de Sync y volvé a intentar.',
       },
       { status: 400 },

@@ -4,7 +4,7 @@ status: accepted
 
 # Subscription expiry is derived from Period, not read from the Export
 
-The Cobros Export has no expiry column, but `basket_payments.expires_at` is `NOT NULL`
+The Pagos Export has no expiry column, but `basket_payments.expires_at` is `NOT NULL`
 and every active-subscriber and churn metric reads it. We derive it as
 `created_at + Period days` (30, 365, or 0) rather than making the column nullable or
 waiting for the Platform to add the field.

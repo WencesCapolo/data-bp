@@ -19,7 +19,7 @@ interface SyncState {
     upload?: UploadResultDTO | null;
     basket?: { syncedPayments?: number; skippedPayments?: number } | null;
   } | null;
-  /** Who handed over the last Cobros Export, and when. */
+  /** Who handed over the last Pagos Export, and when. */
   lastUpload?: LastUploadInfo | null;
 }
 
@@ -175,7 +175,7 @@ export function Header() {
           disabled={inFlight}
           aria-haspopup="dialog"
           aria-expanded={modalOpen}
-          title={syncErr ?? 'Subir el Cobros Export y sincronizar'}
+          title={syncErr ?? 'Subir el Pagos Export y sincronizar'}
           style={{
             background: inFlight ? 'transparent' : 'var(--bg3)',
             color: syncErr ? 'var(--red)' : 'var(--text2)',

@@ -31,7 +31,7 @@ SELECT
   t.team_name,
   t.league,
   t.country         AS team_country,
-  -- Uploaded Cobros carry no price_id (the Control Panel export omits it), so
+  -- Uploaded Pagos carry no price_id (the Control Panel export omits it), so
   -- monthly rows without one fall back to the basket_price_tiers price book.
   -- See docs/adr/0003. 365 and 0 never consult price at all.
   CASE
