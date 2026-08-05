@@ -11,9 +11,16 @@ import { FilterRow } from '@/components/ui/FilterRow';
 import { TabBoundary } from '@/components/ui/TabBoundary';
 import { UrlFilterSync } from '@/lib/client/UrlFilterSync';
 import { useFilters } from '@/lib/client/filterStore';
+// PROTOTYPE: ?variant=A|B|C swaps the Equipos tab for the teams-daily prototype.
+import { useEffect, useState } from 'react';
+import { TeamsDailyPrototype } from '@/components/prototype/teams-daily';
 
 export function BasketDashboard() {
   const tab = useFilters((s) => s.tab);
+  const [prototype, setPrototype] = useState(false);
+  useEffect(() => {
+    setPrototype(new URLSearchParams(window.location.search).has('variant'));
+  }, []);
 
   return (
     <>
@@ -36,7 +43,7 @@ export function BasketDashboard() {
         {tab === 'teams' && (
           <>
             <FilterRow showCountries showAccess showSubType />
-            <TabBoundary><TeamsTab /></TabBoundary>
+            <TabBoundary>{prototype ? <TeamsDailyPrototype /> : <TeamsTab />}</TabBoundary>
           </>
         )}
         {tab === 'finance' && (
