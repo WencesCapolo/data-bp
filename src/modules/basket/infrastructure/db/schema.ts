@@ -8,6 +8,7 @@ import {
   numeric,
   pgTable,
   primaryKey,
+  serial,
   smallint,
   text,
   timestamp,
@@ -207,3 +208,35 @@ export const basketSyncState = pgTable('basket_sync_state', {
   lastSync: timestamp('last_sync', { withTimezone: true }).notNull(),
   rowCount: integer('row_count'),
 });
+
+// Provenance for every confirmed Cobros Export upload. See docs/adr/0004.
+export const basketPaymentUploads = pgTable('basket_payment_uploads', {
+  id: serial('id').primaryKey(),
+  uploadedBy: text('uploaded_by').notNull(),
+  filename: text('filename').notNull(),
+  byteSize: integer('byte_size').notNull(),
+  rowTotal: integer('row_total').notNull(),
+  rowsIngested: integer('rows_ingested').notNull(),
+  rowsSkipped: integer('rows_skipped').notNull(),
+  windowFrom: timestamp('window_from', { withTimezone: true }),
+  windowTo: timestamp('window_to', { withTimezone: true }),
+  error: text('error'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().default(sql`NOW()`),
+}, (table) => ({
+  createdAtIdx: index('basket_payment_uploads_created_at_idx').on(table.createdAt),
+}));
+
+// Tier fallback for uploaded Cobros, which carry no price_id. A price book of
+// exact current price points, mined from labelled rows — amount ranges cannot
+// be used, because ARS inflation pushed today's Básico price above yesterday's
+// Total price. Monthly only: the view resolves 365 and 0 without price.
+// See docs/adr/0003.
+export const basketPriceTiers = pgTable('basket_price_tiers', {
+  currency: varchar('currency', { length: 10 }).notNull(),
+  recurrent: smallint('recurrent').notNull(),
+  amount: numeric('amount', { precision: 14, scale: 2 }).notNull(),
+  subType: text('sub_type').notNull(),
+  note: text('note'),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.currency, table.recurrent, table.amount] }),
+}));

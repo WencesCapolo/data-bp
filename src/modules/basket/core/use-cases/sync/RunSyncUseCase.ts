@@ -14,6 +14,7 @@ import type { PaymentProps } from '@basket/core/entities/Payment';
 import type { TournamentProps } from '@basket/core/entities/Tournament';
 import type { ContentProps } from '@basket/core/entities/Content';
 import type { FixtureMatchProps } from '@basket/core/entities/FixtureMatch';
+import type { PaymentUploadRow } from '@basket/core/dtos/PaymentUploadDTO';
 import { LoadUsersFromCsvUseCase } from './LoadUsersFromCsvUseCase';
 import { LoadPaymentsFromCsvUseCase } from './LoadPaymentsFromCsvUseCase';
 import { LoadTournamentsFromCsvUseCase } from './LoadTournamentsFromCsvUseCase';
@@ -62,6 +63,11 @@ export interface RunSyncDeps {
   matViews: IMaterializedViewRepository;
   mapUserRow: (row: Record<string, string>, knownTeamIds: Set<number>) => UserProps | null;
   mapPaymentRow: (row: Record<string, string>, knownUserIds: Set<number>) => PaymentProps | null;
+  /** Maps one Cobros Export row. Required only when `paymentsRows` is supplied. */
+  mapPaymentUploadRow?: (row: PaymentUploadRow, knownUserIds: Set<number>) => PaymentProps | null;
+  /** Rows of an Upload. When present, Cobros come from the file and the dead
+   *  `/payments` endpoint is not called at all. */
+  paymentsRows?: AsyncIterable<PaymentUploadRow>;
   mapTournamentRow: (row: Record<string, string>) => TournamentProps | null;
   mapTeamLiveRow: (row: Record<string, string>) => TeamLiveProps | null;
   mapContentRow: (row: Record<string, string>) => ContentProps | null;
@@ -84,6 +90,8 @@ export interface RunSyncResult {
   durationMs: number;
   syncedUsers: number;
   syncedPayments: number;
+  /** Cobros the mapper rejected — unknown Subscriber, unparseable date, bad id. */
+  skippedPayments: number;
   syncedTeams: number;
   syncedTournaments: number;
   syncedContent: number;
@@ -123,12 +131,16 @@ export class RunSyncUseCase {
     const usersResult = await new LoadUsersFromCsvUseCase(this.deps.users).execute({ rows: usersStream });
     await this.deps.syncState.updateLastSync('users', runAt, await this.deps.users.count());
 
-    // 4. Payments (depend on known user ids); optional
+    // 4. Payments (depend on known user ids); optional.
+    // Runs after step 3 either way so `getKnownIds()` reflects this run's Subscribers.
     let paymentsInserted = 0;
+    const skipped = { payments: 0 };
     if (paymentsEnabled) {
       const lastPayments = await this.deps.syncState.getLastSync('payments');
       const userIds = await this.deps.users.getKnownIds();
-      const paymentsStream = this.mapPayments(paymentsResource, lastPayments ?? undefined, userIds, this.deps.paymentsWindow ?? '-1month');
+      const paymentsStream = this.deps.paymentsRows
+        ? this.mapUploadedPayments(this.deps.paymentsRows, userIds, skipped)
+        : this.mapPayments(paymentsResource, lastPayments ?? undefined, userIds, this.deps.paymentsWindow ?? '-1month', skipped);
       const paymentsResult = await new LoadPaymentsFromCsvUseCase(this.deps.payments).execute({ rows: paymentsStream });
       paymentsInserted = paymentsResult.inserted;
       await this.deps.syncState.updateLastSync('payments', runAt, await this.deps.payments.count());
@@ -214,6 +226,7 @@ export class RunSyncUseCase {
       durationMs: finishedAt.getTime() - startedAt.getTime(),
       syncedUsers: usersResult.inserted,
       syncedPayments: paymentsInserted,
+      skippedPayments: skipped.payments,
       syncedTeams: teamsCount,
       syncedTournaments: tournamentsResult.inserted,
       syncedContent: contentInserted,
@@ -264,21 +277,39 @@ export class RunSyncUseCase {
     }
   }
 
+  private async *mapUploadedPayments(
+    rows: AsyncIterable<PaymentUploadRow>,
+    userIds: Set<number>,
+    skipped: { payments: number },
+  ): AsyncGenerator<PaymentProps> {
+    const map = this.deps.mapPaymentUploadRow;
+    if (!map) throw new Error('paymentsRows requires mapPaymentUploadRow');
+    for await (const row of rows) {
+      const mapped = map(row, userIds);
+      if (mapped) yield mapped;
+      else skipped.payments += 1;
+    }
+  }
+
   private async *mapPayments(
     resource: string,
     _since: Date | undefined,
     userIds: Set<number>,
     window: string,
+    skipped: { payments: number },
   ): AsyncGenerator<PaymentProps> {
     // `/payments` requires Control Panel session cookie (BP_SESSION_COOKIE).
     // Upsert idempotent via PK so rolling window stays cheap.
+    let rowsSeen = 0;
     try {
       for await (const row of this.deps.fetcher.streamRows<Record<string, string>>(resource, {
         omitSince: true,
         extraParams: { from: window },
       })) {
+        rowsSeen += 1;
         const mapped = this.deps.mapPaymentRow(row, userIds);
         if (mapped) yield mapped;
+        else skipped.payments += 1;
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -286,6 +317,12 @@ export class RunSyncUseCase {
         throw new Error('Expiró la Cookie');
       }
       throw err;
+    }
+    // The endpoint now answers 200 with an empty body once the session lapses, so a
+    // clean run with zero rows is a failure, not an honestly empty Window. Fail loudly
+    // instead of recording a Sync that quietly wrote no Cobros.
+    if (rowsSeen === 0) {
+      throw new Error('Expiró la Cookie: /payments respondió sin filas CSV');
     }
   }
 }

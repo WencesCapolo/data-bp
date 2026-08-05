@@ -31,10 +31,14 @@ SELECT
   t.team_name,
   t.league,
   t.country         AS team_country,
+  -- Uploaded Cobros carry no price_id (the Control Panel export omits it), so
+  -- monthly rows without one fall back to the basket_price_tiers price book.
+  -- See docs/adr/0003. 365 and 0 never consult price at all.
   CASE
     WHEN p.recurrent = 0                                     THEN 'Free'
     WHEN p.recurrent = 30  AND p.price_id = 100010           THEN 'Mensual_Basico'
     WHEN p.recurrent = 30  AND p.price_id IN (100030,100011) THEN 'Mensual_Total'
+    WHEN p.recurrent = 30  AND p.price_id IS NULL            THEN COALESCE(tier.sub_type, 'Otros')
     WHEN p.recurrent = 365                                   THEN 'Anual_Total'
     ELSE 'Otros'
   END AS sub_type,
@@ -52,6 +56,14 @@ SELECT
 FROM basket_payments p
 JOIN basket_users u ON u.id = p.user_id
 LEFT JOIN basket_teams t ON t.id = u.promo_team_id
+-- Exact price-point match, not a range: ARS inflation put today's Basico price
+-- above yesterday's Total price, so amount ranges misclassify across time.
+-- basket_payments.currency is UPPERCASE (the mapper normalises it); the price
+-- book is lowercase.
+LEFT JOIN basket_price_tiers tier
+  ON  tier.currency  = LOWER(p.currency)
+  AND tier.recurrent = p.recurrent
+  AND tier.amount    = p.amount
 WHERE p.status = 1;
 
 -- ============================================================================

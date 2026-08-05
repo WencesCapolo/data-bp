@@ -1,5 +1,6 @@
 import type { UserProps } from '@basket/core/entities/User';
 import type { PaymentProps } from '@basket/core/entities/Payment';
+import type { PaymentUploadRow } from '@basket/core/dtos/PaymentUploadDTO';
 
 export interface UserCsvRow {
   id: string;
@@ -54,6 +55,93 @@ function parseDateOrNull(v: string): Date | null {
 
 function emptyToNull(v: string): string | null {
   return v && v.length > 0 ? v : null;
+}
+
+/** Offset the Control Panel's wall clock runs on: -03:00 (Argentina/Uruguay, no DST). */
+const PANEL_UTC_OFFSET_MS = -3 * 3_600_000;
+
+const PANEL_DATE_RX = /^(\d{1,2})\/(\d{1,2})\/(\d{4})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?$/;
+
+/**
+ * Parses the `dd/mm/yyyy HH:MM` stamps the Control Panel writes into a Cobros Export.
+ *
+ * Timezone: the Export omits any offset, while the (now dead) API CSVs carried an
+ * explicit one — `2020-10-01T03:25:26-03:00` — which `new Date()` resolves to the
+ * right instant on its own. To keep both paths on one clock we pin Export stamps to
+ * that same `-03:00` instead of the host's local zone: the app runs on UTC servers,
+ * so relying on local time would shift every Cobro three hours later than it happened
+ * and slide rows across day and month boundaries in the dashboards.
+ */
+export function parsePanelDate(value: string): Date | null {
+  const m = (value ?? '').trim().match(PANEL_DATE_RX);
+  if (!m) return null;
+  const [, dd, mm, yyyy, hh, min, ss] = m;
+  const day = Number(dd);
+  const month = Number(mm);
+  const year = Number(yyyy);
+  const hour = Number(hh);
+  const minute = Number(min);
+  const second = ss ? Number(ss) : 0;
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  if (hour > 23 || minute > 59 || second > 59) return null;
+  // Wall-clock instant first, then shifted onto the panel's offset.
+  const wallMs = Date.UTC(year, month - 1, day, hour, minute, second);
+  const wall = new Date(wallMs);
+  // Rejects overflow like 31/02, which Date.UTC would roll into the next month.
+  if (wall.getUTCMonth() + 1 !== month || wall.getUTCDate() !== day) return null;
+  return new Date(wallMs - PANEL_UTC_OFFSET_MS);
+}
+
+const MS_PER_DAY = 86_400_000;
+
+/** Expiry the Cobros Export does not carry: `created + Period days`. See ADR 0002. */
+export function deriveExpiry(createdAt: Date, recurrentDays: number): Date {
+  return new Date(createdAt.getTime() + recurrentDays * MS_PER_DAY);
+}
+
+/**
+ * Maps one Cobros Export row (the hand-uploaded CSV) to a Payment.
+ *
+ * Differences from `mapPaymentRow`, which reads the old API CSV:
+ * - `created` is panel-formatted, not ISO (see `parsePanelDate`).
+ * - `expiresAt` is derived from Period, because the Export has no expiry column.
+ * - the payment e-mail lives in `email`.
+ * - `priceId`/`productId`/`contentId`/`idx`/`keycode` have no column here and stay
+ *   null rather than being guessed; Tier is derived downstream from amount+Period.
+ */
+export function mapPaymentUploadRow(
+  row: PaymentUploadRow,
+  knownUserIds: Set<number>,
+): PaymentProps | null {
+  const id = Number(row.id);
+  if (!Number.isFinite(id)) return null;
+  const userId = Number(row.user_id);
+  if (!Number.isFinite(userId) || !knownUserIds.has(userId)) return null;
+  const createdAt = parsePanelDate(row.created);
+  if (!createdAt) return null;
+  const recurrent = parseIntOrNull(row.recurrent) ?? 0;
+  const amount = parseFloat(row.amount);
+  return {
+    id,
+    userId,
+    paymentEmail: emptyToNull(row.email),
+    platformPaymentId: emptyToNull(row.platform_payment_id),
+    platform: parseIntOrNull(row.platform) ?? 0,
+    productId: null,
+    priceId: null,
+    contentId: null,
+    amount: Number.isFinite(amount) ? amount : 0,
+    currency: row.currency ? row.currency.toUpperCase().slice(0, 10) : null,
+    recurrent,
+    expiresAt: deriveExpiry(createdAt, recurrent),
+    createdAt,
+    status: parseIntOrNull(row.status) ?? 0,
+    statusDetail: emptyToNull(row.status_detail),
+    keycode: null,
+    // ISO-3166 numeric code as a string ('32', '858'); stored verbatim. Absent when
+    // the Export drops the trailing empty field, leaving the row 14 columns wide.
+    paymentCountry: emptyToNull(row.payment_country),
+  };
 }
 
 export function mapUserRow(row: UserCsvRow, knownTeamIds: Set<number>): UserProps | null {

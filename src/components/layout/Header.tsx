@@ -4,12 +4,37 @@ import useSWR, { useSWRConfig } from 'swr';
 import { fetcher } from '@/lib/client/fetcher';
 import { useSession, signOut } from '@/lib/auth/client';
 import { swapToPortal, buildPortalLoginUrl } from '@/lib/auth/portal';
+import { SyncModal, type LastUploadInfo } from '@/components/layout/SyncModal';
+import type { UploadResultDTO } from '@basket/core/dtos/PaymentUploadDTO';
 
 interface SyncState {
   sources: { source: string; lastSync: string; rowCount: number | null }[];
   inFlight: boolean;
   startedAt: string | null;
   lastError: string | null;
+  /** Present once an Upload has been ingested by a Sync. `upload` is the
+   *  explicit shape; `basket` is the raw sync result the endpoint already
+   *  reports, from which the same counts can be read. */
+  lastResult?: {
+    upload?: UploadResultDTO | null;
+    basket?: { syncedPayments?: number; skippedPayments?: number } | null;
+  } | null;
+  /** Who handed over the last Cobros Export, and when. */
+  lastUpload?: LastUploadInfo | null;
+}
+
+/** Ingested/skipped counts of the Upload the last Sync consumed, if any. */
+function uploadCounts(
+  last: SyncState['lastResult'],
+): { rowsIngested: number; rowsSkipped: number } | null {
+  if (last?.upload) {
+    return { rowsIngested: last.upload.rowsIngested, rowsSkipped: last.upload.rowsSkipped };
+  }
+  const b = last?.basket;
+  if (b && typeof b.syncedPayments === 'number') {
+    return { rowsIngested: b.syncedPayments, rowsSkipped: b.skippedPayments ?? 0 };
+  }
+  return null;
 }
 
 function relative(iso: string): string {
@@ -23,6 +48,12 @@ function relative(iso: string): string {
 
 export function Header() {
   const [syncErr, setSyncErr] = useState<string | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [uploadResult, setUploadResult] = useState<{
+    rowsIngested: number;
+    rowsSkipped: number;
+  } | null>(null);
+  const syncBtnRef = useRef<HTMLButtonElement>(null);
   const { data } = useSWR<SyncState>('/api/sync', fetcher, {
     refreshInterval: (d) => (d?.inFlight ? 3_000 : 60_000),
   });
@@ -42,19 +73,39 @@ export function Header() {
         { revalidate: true },
       );
       if (data?.lastError) setSyncErr(data.lastError);
+      const counts = uploadCounts(data?.lastResult);
+      if (counts) setUploadResult(counts);
     }
     wasInFlight.current = now;
-  }, [data?.inFlight, data?.lastError, mutate]);
+  }, [data?.inFlight, data?.lastError, data?.lastResult, mutate]);
 
-  async function runSync() {
+  /** POSTs /api/sync, optionally confirming a staged Upload. Throws on failure. */
+  async function runSync(uploadId?: string): Promise<'started' | 'already_running'> {
     setSyncErr(null);
+    setUploadResult(null);
+    const res = await fetch('/api/sync', {
+      method: 'POST',
+      ...(uploadId
+        ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ uploadId }) }
+        : {}),
+    });
+    const body = await res.json().catch(() => ({}) as Record<string, unknown>);
+    if (res.status !== 202 && !res.ok) throw new Error(String(body?.error ?? `HTTP ${res.status}`));
+    await mutate('/api/sync');
+    return res.status === 202 && body?.status === 'already_running' ? 'already_running' : 'started';
+  }
+
+  function closeModal() {
+    setModalOpen(false);
+    syncBtnRef.current?.focus();
+  }
+
+  async function confirmUpload(uploadId: string): Promise<'started' | 'already_running'> {
     try {
-      const res = await fetch('/api/sync', { method: 'POST' });
-      const body = await res.json().catch(() => ({}));
-      if (res.status !== 202 && !res.ok) throw new Error(body?.error ?? `HTTP ${res.status}`);
-      await mutate('/api/sync');
+      return await runSync(uploadId);
     } catch (e) {
       setSyncErr(e instanceof Error ? e.message : String(e));
+      throw e;
     }
   }
 
@@ -96,11 +147,35 @@ export function Header() {
             ⚠ Expiró la Cookie
           </span>
         )}
+        {uploadResult && (
+          <button
+            type="button"
+            onClick={() => setUploadResult(null)}
+            aria-live="polite"
+            title="Resultado del último Upload — clic para ocultar"
+            style={{
+              background: 'transparent',
+              color: 'var(--green)',
+              border: '1px solid color-mix(in srgb, var(--green) 40%, transparent)',
+              borderRadius: 6,
+              padding: '2px 10px',
+              fontSize: 11,
+              cursor: 'pointer',
+              fontFamily: "'DM Mono', monospace",
+            }}
+          >
+            ✓ {uploadResult.rowsIngested.toLocaleString('es-AR')} ingresados ·{' '}
+            {uploadResult.rowsSkipped.toLocaleString('es-AR')} omitidos
+          </button>
+        )}
         <button
+          ref={syncBtnRef}
           type="button"
-          onClick={runSync}
+          onClick={() => setModalOpen(true)}
           disabled={inFlight}
-          title={syncErr ?? 'Forzar sync ahora'}
+          aria-haspopup="dialog"
+          aria-expanded={modalOpen}
+          title={syncErr ?? 'Subir el Cobros Export y sincronizar'}
           style={{
             background: inFlight ? 'transparent' : 'var(--bg3)',
             color: syncErr ? 'var(--red)' : 'var(--text2)',
@@ -130,6 +205,14 @@ export function Header() {
           </span>
         )}
       </div>
+      {modalOpen && (
+        <SyncModal
+          onClose={closeModal}
+          onConfirm={confirmUpload}
+          lastUpload={data?.lastUpload ?? null}
+          syncInFlight={inFlight}
+        />
+      )}
     </header>
   );
 }

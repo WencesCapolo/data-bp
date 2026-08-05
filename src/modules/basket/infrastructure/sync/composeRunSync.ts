@@ -14,6 +14,7 @@ import { DrizzleMaterializedViewRepository } from '@basket/infrastructure/db/rep
 import {
   mapUserRow,
   mapPaymentRow,
+  mapPaymentUploadRow,
   mapTournamentRow,
   mapTeamLiveRow,
   mapContentRow,
@@ -25,6 +26,14 @@ import {
 } from '@basket/infrastructure/sync/csvMappers';
 import { mapFixtureMatchRow } from '@basket/infrastructure/sync/fixtureMappers';
 import { RunSyncUseCase } from '@basket/core/use-cases/sync/RunSyncUseCase';
+import { streamCsvFile } from '@shared/lib/csvStream';
+import type { PaymentUploadRow } from '@basket/core/dtos/PaymentUploadDTO';
+
+export interface ComposeRunSyncOptions {
+  /** Path to a staged Cobros Export. Given, Cobros come from the file instead of
+   *  the dead `/payments` endpoint. Omitted, the sync behaves exactly as before. */
+  paymentsCsvPath?: string;
+}
 
 const MONTH_TAB_RX = /^(Enero|Febrero|Marzo|Abril|Mayo|Junio|Julio|Agosto|Septiembre|Octubre|Noviembre|Diciembre)\s+\d{2,4}$/i;
 
@@ -82,7 +91,7 @@ function discoverFixtureSpecs(): FixtureSheetSpec[] {
   return specs;
 }
 
-export async function composeRunSync(): Promise<RunSyncUseCase> {
+export async function composeRunSync(opts: ComposeRunSyncOptions = {}): Promise<RunSyncUseCase> {
   const baseUrl = process.env.EXTERNAL_API_BASE;
   if (!baseUrl) throw new Error('EXTERNAL_API_BASE not set');
   const token = process.env.BP_TOKEN ?? process.env.EXTERNAL_API_KEY;
@@ -187,6 +196,12 @@ export async function composeRunSync(): Promise<RunSyncUseCase> {
     matViews,
     mapUserRow: (row, teamIds) => mapUserRow(row as unknown as UserCsvRow, teamIds),
     mapPaymentRow: (row, userIds) => mapPaymentRow(row as unknown as PaymentCsvRow, userIds),
+    mapPaymentUploadRow,
+    paymentsRows: opts.paymentsCsvPath
+      // The Export drops a trailing empty `payment_country`, so rows can be 14 fields
+      // wide; streamCsvFile already sets relax_column_count for exactly that.
+      ? streamCsvFile<PaymentUploadRow>(opts.paymentsCsvPath, { delimiter: ',', bom: true })
+      : undefined,
     mapTournamentRow: (row) => mapTournamentRow(row as unknown as TournamentCsvRow),
     mapTeamLiveRow: (row) => mapTeamLiveRow(row as unknown as TeamLiveCsvRow),
     mapContentRow: (row) => mapContentRow(row as unknown as ContentCsvRow),

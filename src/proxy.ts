@@ -11,6 +11,14 @@ export function proxy(req: NextRequest) {
   if (pathname.startsWith('/api/basket/sync')) return NextResponse.next();
   if (PUBLIC_API.has(pathname)) return NextResponse.next();
 
+  // Automation bypass for /api/sync: the route authenticates the same header
+  // itself, so this only lets the request reach it. A session is equally
+  // sufficient — this is an extra door, not the only one.
+  const syncToken = process.env.SYNC_TOKEN;
+  if (syncToken && req.headers.get('x-sync-token') === syncToken) {
+    return NextResponse.next();
+  }
+
   // Internal/smoke bypass: only honored when NODE_ENV !== 'production'
   // and INTERNAL_API_TOKEN is set + matches the header.
   const internal = process.env.INTERNAL_API_TOKEN;
@@ -47,5 +55,10 @@ export const config = {
     '/admin/:path*',
     '/api/basket/:path*',
     '/api/admin/:path*',
+    // Sync writes to the mirror and consumes an Upload; it must not be
+    // reachable unauthenticated. /api/basket/sync stays exempt above for the
+    // token-authenticated automation, /api/sync deliberately is not.
+    '/api/sync',
+    '/api/sync/:path*',
   ],
 };
