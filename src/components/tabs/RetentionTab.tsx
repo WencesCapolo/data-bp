@@ -9,6 +9,8 @@ import { ChartCanvas } from '@/components/charts/ChartCanvas';
 import { TabSkeleton } from '@/components/ui/Skeleton';
 import { ErrorBox } from '@/components/ui/ErrorBox';
 import type { RetentionDTO } from '@basket/core/dtos/RetentionDTO';
+import { bucketTitles } from '@/lib/client/bucketTitle';
+import { tooltipOpts } from '@/components/charts/tooltip';
 
 const COLORS = {
   newPayers: '#10b981',
@@ -58,7 +60,7 @@ export function RetentionTab() {
         interaction: { mode: 'index', intersect: false },
         plugins: {
           legend: { display: true, labels: { boxWidth: 10 } },
-          tooltip: { backgroundColor: '#0f1525', borderColor: '#2a3752', borderWidth: 1, padding: 10 },
+          tooltip: tooltipOpts(bucketTitles(labels, 'month')),
         },
         scales: {
           x: { grid: { color: '#1e2a42' }, ticks: { autoSkip: true, maxTicksLimit: 14 } },
@@ -109,6 +111,7 @@ export function RetentionTab() {
           <StackedBarChart
             height={320}
             labels={labels}
+            tooltipTitles={bucketTitles(labels, 'month')}
             series={[
               { label: 'Nuevos', data: data.rows.map((r) => r.newPayers), color: COLORS.newPayers },
               { label: 'Renovaciones', data: data.rows.map((r) => r.renewals), color: COLORS.renewals },

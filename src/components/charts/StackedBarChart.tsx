@@ -2,6 +2,7 @@
 import { useMemo } from 'react';
 import type { ChartConfiguration } from 'chart.js';
 import { ChartCanvas } from './ChartCanvas';
+import { tooltipOpts } from './tooltip';
 
 interface Series {
   label: string;
@@ -13,6 +14,7 @@ interface Props {
   labels: string[];
   series: Series[];
   height?: number;
+  tooltipTitles?: string[];
 }
 
 function fmt(n: number): string {
@@ -20,7 +22,7 @@ function fmt(n: number): string {
   return String(n);
 }
 
-export function StackedBarChart({ labels, series, height = 260 }: Props) {
+export function StackedBarChart({ labels, series, height = 260, tooltipTitles }: Props) {
   const config = useMemo<ChartConfiguration>(
     () => ({
       type: 'bar',
@@ -39,7 +41,7 @@ export function StackedBarChart({ labels, series, height = 260 }: Props) {
         maintainAspectRatio: false,
         plugins: {
           legend: { display: true, labels: { boxWidth: 10, font: { size: 11 } } },
-          tooltip: { backgroundColor: '#0f1525', borderColor: '#2a3752', borderWidth: 1, padding: 10 },
+          tooltip: tooltipOpts(tooltipTitles),
         },
         scales: {
           x: { stacked: true, grid: { color: '#1e2a42' }, ticks: { font: { size: 10 }, autoSkip: true, maxTicksLimit: 14 } },
@@ -47,7 +49,7 @@ export function StackedBarChart({ labels, series, height = 260 }: Props) {
         },
       },
     }),
-    [labels, series],
+    [labels, series, tooltipTitles],
   );
   return <ChartCanvas config={config} height={height} />;
 }

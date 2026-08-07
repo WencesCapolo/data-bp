@@ -2,15 +2,17 @@
 import { useMemo } from 'react';
 import type { ChartConfiguration } from 'chart.js';
 import { ChartCanvas } from './ChartCanvas';
+import { tooltipOpts } from './tooltip';
 
 interface Props {
   labels: string[];
   series: { label: string; data: number[]; color?: string; fill?: boolean }[];
   height?: number;
   yFormat?: 'number' | 'currency';
+  tooltipTitles?: string[];
 }
 
-export function LineChart({ labels, series, height = 220, yFormat = 'number' }: Props) {
+export function LineChart({ labels, series, height = 220, yFormat = 'number', tooltipTitles }: Props) {
   const config = useMemo<ChartConfiguration>(
     () => ({
       type: 'line',
@@ -33,7 +35,7 @@ export function LineChart({ labels, series, height = 220, yFormat = 'number' }: 
         interaction: { mode: 'index', intersect: false },
         plugins: {
           legend: { display: series.length > 1, labels: { boxWidth: 10 } },
-          tooltip: { backgroundColor: '#0f1525', borderColor: '#2a3752', borderWidth: 1, padding: 10 },
+          tooltip: tooltipOpts(tooltipTitles),
         },
         scales: {
           x: { ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 8 }, grid: { color: '#1e2a42' } },
@@ -47,7 +49,7 @@ export function LineChart({ labels, series, height = 220, yFormat = 'number' }: 
         },
       },
     }),
-    [labels, series, yFormat],
+    [labels, series, yFormat, tooltipTitles],
   );
   return <ChartCanvas config={config} height={height} />;
 }

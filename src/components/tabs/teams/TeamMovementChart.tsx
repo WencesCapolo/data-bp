@@ -2,15 +2,18 @@
 import { useMemo } from 'react';
 import type { ChartConfiguration } from 'chart.js';
 import { ChartCanvas } from '@/components/charts/ChartCanvas';
-import type { BucketedSeries } from './buckets';
+import type { Bucket, BucketedSeries } from './buckets';
+import { bucketTitles } from '@/lib/client/bucketTitle';
+import { tooltipOpts } from '@/components/charts/tooltip';
 
 const CHART_HEIGHT = 280;
 
 // Bars = altas (up) / bajas (down); line = active subscriptions at the close of
 // the period, on its own axis, so the movement is read against the base it moves.
-export function TeamMovementChart({ series }: { series: BucketedSeries }) {
-  const config = useMemo<ChartConfiguration>(
-    () => ({
+export function TeamMovementChart({ series, bucket }: { series: BucketedSeries; bucket: Bucket }) {
+  const config = useMemo<ChartConfiguration>(() => {
+    const dated = tooltipOpts(bucketTitles(series.keys, bucket));
+    return {
       type: 'bar',
       data: {
         labels: series.labels,
@@ -59,11 +62,9 @@ export function TeamMovementChart({ series }: { series: BucketedSeries }) {
         plugins: {
           legend: { display: true, labels: { boxWidth: 10, font: { size: 10 } } },
           tooltip: {
-            backgroundColor: '#0f1525',
-            borderColor: '#2a3752',
-            borderWidth: 1,
-            padding: 10,
+            ...dated,
             callbacks: {
+              ...dated.callbacks,
               label: (ctx) =>
                 `${ctx.dataset.label}: ${Math.abs(Number(ctx.parsed.y)).toLocaleString()}`,
             },
@@ -89,9 +90,8 @@ export function TeamMovementChart({ series }: { series: BucketedSeries }) {
           },
         },
       },
-    }),
-    [series],
-  );
+    };
+  }, [series, bucket]);
 
   // Fixed-height relative box: Chart.js with maintainAspectRatio:false sizes the
   // canvas from its parent, and an auto-height parent sized by the canvas grows a
