@@ -43,6 +43,8 @@ function yesterdayEndUtc(): Date {
 function trendFromDay(day: string, range?: DateRange): string {
   if (!range) return shiftDay(day, -29);
   if (range.kind === 'custom') return range.from;
+  if (range.kind === 'yesterday') return day;
+  if (range.kind === '7d') return shiftDay(day, -6);
   if (range.kind === '30d') return shiftDay(day, -29);
   if (range.kind === '90d') return shiftDay(day, -89);
   if (range.kind === 'ytd') return `${day.slice(0, 4)}-01-01`;
@@ -59,8 +61,10 @@ function rangeBounds(r: DateRange): { from: Date; to: Date } {
   if (r.kind === 'custom') {
     return { from: new Date(r.from), to: new Date(r.to) };
   }
+  // 'yesterday' is the single reference day: `from` stays on `to`'s day.
   const from = new Date(to);
-  if (r.kind === '30d') from.setUTCDate(from.getUTCDate() - 30);
+  if (r.kind === '7d') from.setUTCDate(from.getUTCDate() - 6);
+  else if (r.kind === '30d') from.setUTCDate(from.getUTCDate() - 30);
   else if (r.kind === '90d') from.setUTCDate(from.getUTCDate() - 90);
   else if (r.kind === 'ytd') from.setUTCMonth(0, 1);
   else from.setUTCFullYear(2020, 0, 1);

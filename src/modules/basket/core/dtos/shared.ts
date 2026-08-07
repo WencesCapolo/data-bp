@@ -1,5 +1,5 @@
 export type DateRange =
-  | { kind: '30d' | '90d' | 'ytd' | 'all' }
+  | { kind: 'yesterday' | '7d' | '30d' | '90d' | 'ytd' | 'all' }
   | { kind: 'custom'; from: string; to: string };
 
 export type AccessType = 'real' | 'voucher' | 'antel';

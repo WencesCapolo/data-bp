@@ -5,7 +5,8 @@ import { KpiCard } from '@/components/ui/KpiCard';
 import { LineChart } from '@/components/charts/LineChart';
 import { DoughnutChart } from '@/components/charts/DoughnutChart';
 import { BarChart } from '@/components/charts/BarChart';
-import { useFilters } from '@/lib/client/filterStore';
+import { useFilters, useFilterQS } from '@/lib/client/filterStore';
+import { bucketTitles } from '@/lib/client/bucketTitle';
 import { TabSkeleton } from '@/components/ui/Skeleton';
 import { ErrorBox } from '@/components/ui/ErrorBox';
 import type { OverviewDTO } from '@basket/core/dtos/OverviewDTO';
@@ -15,10 +16,13 @@ const SUBTYPE_COLORS = ['#94a3b8', '#4f8ef7', '#22d3ee', '#a78bfa', '#fb923c'];
 const COUNTRY_COLORS = ['#4f8ef7', '#22d3ee', '#f43f5e', '#a78bfa', '#34d399', '#fb923c', '#94a3b8'];
 
 function rangeLabel(r: string): string {
+  if (r === 'yesterday') return 'ayer';
+  if (r === '7d') return '7 días';
   if (r === '30d') return '30 días';
   if (r === '90d') return '90 días';
   if (r === 'ytd') return 'YTD';
   if (r === 'all') return 'todo';
+  if (r === 'custom') return 'rango personalizado';
   return r;
 }
 
@@ -30,26 +34,9 @@ function fmtCurrency(n: number, c: string): string {
   }
 }
 
-function buildOverviewUrl(s: {
-  range: string;
-  countries: string[];
-  accessType?: string;
-  subType?: string;
-}): string {
-  const p = new URLSearchParams();
-  p.set('range', s.range);
-  for (const c of s.countries) p.append('countries', c);
-  if (s.accessType) p.set('accessType', s.accessType);
-  if (s.subType) p.set('subType', s.subType);
-  return `/api/basket/overview?${p.toString()}`;
-}
-
 export function OverviewTab() {
   const range = useFilters((s) => s.range);
-  const countries = useFilters((s) => s.countries);
-  const accessType = useFilters((s) => s.accessType);
-  const subType = useFilters((s) => s.subType);
-  const url = buildOverviewUrl({ range, countries, accessType, subType });
+  const url = `/api/basket/overview?${useFilterQS()}`;
   const { data, error, isLoading } = useSWR<OverviewDTO>(url, fetcher, {
     refreshInterval: 300_000,
   });
@@ -79,6 +66,7 @@ export function OverviewTab() {
           <LineChart
             height={260}
             labels={trend.map((p) => p.day.slice(5))}
+            tooltipTitles={bucketTitles(trend.map((p) => p.day), 'day')}
             series={[
               { label: 'Total', data: trend.map((p) => p.allActive), color: '#06b6d4', fill: true },
               { label: 'Reales', data: trend.map((p) => p.realActive), color: '#10b981' },
