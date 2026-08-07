@@ -45,7 +45,12 @@ export function BasketDashboard() {
             <TabBoundary><FinanceTab /></TabBoundary>
           </>
         )}
-        {tab === 'retention' && <TabBoundary><RetentionTab /></TabBoundary>}
+        {tab === 'retention' && (
+          <>
+            <FilterRow showCountries showAccess showSubType />
+            <TabBoundary><RetentionTab /></TabBoundary>
+          </>
+        )}
         {tab === 'quality' && <TabBoundary><DataQualityTab /></TabBoundary>}
       </main>
     </>

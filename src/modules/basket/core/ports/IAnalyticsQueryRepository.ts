@@ -25,6 +25,6 @@ export interface IAnalyticsQueryRepository {
     filters?: CommonFilters,
   ): Promise<TeamDailyDTO>;
   getFinance(range: DateRange, filters?: CommonFilters): Promise<FinanceDTO>;
-  getRetention(): Promise<RetentionDTO>;
+  getRetention(range?: DateRange, filters?: CommonFilters): Promise<RetentionDTO>;
   getDataQuality(): Promise<DataQualityDTO>;
 }

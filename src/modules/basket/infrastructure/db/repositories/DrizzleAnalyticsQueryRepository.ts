@@ -67,9 +67,54 @@ function rangeBounds(r: DateRange): { from: Date; to: Date } {
   else if (r.kind === '30d') from.setUTCDate(from.getUTCDate() - 30);
   else if (r.kind === '90d') from.setUTCDate(from.getUTCDate() - 90);
   else if (r.kind === 'ytd') from.setUTCMonth(0, 1);
-  else from.setUTCFullYear(2020, 0, 1);
+  else if (r.kind === 'all') from.setUTCFullYear(2020, 0, 1);
   from.setUTCHours(0, 0, 0, 0);
   return { from, to };
+}
+
+// Lifecycle rows are monthly, so a range keeps every month it touches — a range
+// landing mid-month keeps that whole month rather than dropping it.
+function monthWindowWhere(r: DateRange | undefined): string {
+  if (!r || r.kind === 'all') return '';
+  const { from, to } = rangeBounds(r);
+  const f = from.toISOString().slice(0, 10);
+  const t = to.toISOString().slice(0, 10);
+  return `WHERE month BETWEEN DATE_TRUNC('month', '${f}'::date)::date
+                          AND DATE_TRUNC('month', '${t}'::date)::date`;
+}
+
+// The live lifecycle costs a pair of correlated counts per month, so the window
+// is generated rather than filtered afterwards: only the asked-for months run.
+function monthSeriesBounds(r: DateRange | undefined): string {
+  const firstPaymentMonth = `(SELECT DATE_TRUNC('month', MIN(created_at))::date FROM payments)`;
+  if (!r || r.kind === 'all') {
+    return `${firstPaymentMonth}, DATE_TRUNC('month', CURRENT_DATE)::date`;
+  }
+  const { from, to } = rangeBounds(r);
+  const f = from.toISOString().slice(0, 10);
+  const t = to.toISOString().slice(0, 10);
+  return `GREATEST(${firstPaymentMonth}, DATE_TRUNC('month', '${f}'::date)::date),
+                 DATE_TRUNC('month', '${t}'::date)::date`;
+}
+
+function toRetentionDTO(rows: unknown): RetentionDTO {
+  const arr = ((rows as unknown) as RowAny[]).map((r) => ({
+    month: d(r.month),
+    activeStart: n(r.active_start),
+    activeEnd: n(r.active_end),
+    newPayers: n(r.new_payers),
+    renewals: n(r.renewals),
+    reactivations: n(r.reactivations),
+    expirations: n(r.expirations),
+    churnRatePct: n(r.churn_rate_pct),
+    retentionRatePct: n(r.retention_rate_pct),
+  }));
+  const last = arr[arr.length - 1];
+  return {
+    rows: arr,
+    latestChurnRatePct: last?.churnRatePct ?? null,
+    latestRetentionRatePct: last?.retentionRatePct ?? null,
+  };
 }
 
 const TRUNC: Record<Granularity, string> = {
@@ -1008,32 +1053,130 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
   }
 
   // --------------------------------------------------------------------------
-  // RETENTION — full mat_monthly_lifecycle scan (small table)
+  // RETENTION — mat_monthly_lifecycle scan (small table), windowed by range.
+  // Filters can't be answered by the pre-aggregated view, so they fall through
+  // to live SQL that recomputes the same lifecycle over the filtered payments.
   // --------------------------------------------------------------------------
-  async getRetention(): Promise<RetentionDTO> {
+  async getRetention(range?: DateRange, filters?: CommonFilters): Promise<RetentionDTO> {
+    if (hasFilters(filters)) return this.getRetentionFiltered(range, filters!);
+
     const rows = await this.conn.execute(sql.raw(`
       SELECT month, active_start, active_end, new_payers, renewals,
              reactivations, expirations, churn_rate_pct, retention_rate_pct
       FROM basket_mat_monthly_lifecycle
+      ${monthWindowWhere(range)}
       ORDER BY month
     `));
-    const arr = ((rows as unknown) as RowAny[]).map((r) => ({
-      month: d(r.month),
-      activeStart: n(r.active_start),
-      activeEnd: n(r.active_end),
-      newPayers: n(r.new_payers),
-      renewals: n(r.renewals),
-      reactivations: n(r.reactivations),
-      expirations: n(r.expirations),
-      churnRatePct: n(r.churn_rate_pct),
-      retentionRatePct: n(r.retention_rate_pct),
-    }));
-    const last = arr[arr.length - 1];
-    return {
-      rows: arr,
-      latestChurnRatePct: last?.churnRatePct ?? null,
-      latestRetentionRatePct: last?.retentionRatePct ?? null,
-    };
+    return toRetentionDTO(rows);
+  }
+
+  // --------------------------------------------------------------------------
+  // RETENTION (filtered) — live SQL mirroring basket_mat_monthly_lifecycle.
+  // Every CTE reads the same filtered `payments`, so a user outside the filter
+  // never counts as active, as a renewal, or as an expiration.
+  // --------------------------------------------------------------------------
+  private async getRetentionFiltered(
+    range: DateRange | undefined,
+    filters: CommonFilters,
+  ): Promise<RetentionDTO> {
+    const fw = buildActiveFilterWhere(filters);
+    const rows = await this.conn.execute(sql.raw(`
+      -- MATERIALIZED: four CTEs read payments, and basket_v_active_payments
+      -- is a 3-way join over ~400k rows — without it Postgres re-runs that join
+      -- once per reference.
+      WITH payments AS MATERIALIZED (
+        SELECT user_id, created_at, expires_at
+        FROM basket_v_active_payments
+        WHERE 1=1 ${fw}
+      ),
+      per_user_payment AS (
+        SELECT
+          user_id,
+          created_at,
+          expires_at,
+          DATE_TRUNC('month', created_at)::date                      AS created_month,
+          DATE_TRUNC('month', expires_at + INTERVAL '7 days')::date  AS expire_month,
+          LAG(expires_at) OVER (PARTITION BY user_id ORDER BY created_at) AS prev_expires,
+          -- Earliest start among this user's payments that outlast the current
+          -- one. A self-join here is O(n^2) over the filtered set; the window
+          -- answers the same question in one sorted pass.
+          MIN(created_at) OVER (
+            PARTITION BY user_id ORDER BY expires_at
+            GROUPS BETWEEN 1 FOLLOWING AND UNBOUNDED FOLLOWING
+          ) AS next_cover_created
+        FROM payments
+      ),
+      first_payment AS (
+        SELECT user_id, DATE_TRUNC('month', MIN(created_at))::date AS first_month
+        FROM payments GROUP BY user_id
+      ),
+      months AS (
+        SELECT generate_series(${monthSeriesBounds(range)}, INTERVAL '1 month')::date AS m
+      ),
+      new_payers AS (
+        SELECT first_month AS m, COUNT(*) AS c FROM first_payment GROUP BY first_month
+      ),
+      renewals AS (
+        SELECT created_month AS m, COUNT(*) AS c
+        FROM per_user_payment
+        WHERE prev_expires IS NOT NULL
+          AND created_at <= prev_expires + INTERVAL '37 days'
+        GROUP BY created_month
+      ),
+      reactivations AS (
+        SELECT created_month AS m, COUNT(*) AS c
+        FROM per_user_payment
+        WHERE prev_expires IS NOT NULL
+          AND created_at > prev_expires + INTERVAL '37 days'
+        GROUP BY created_month
+      ),
+      -- A user expires in the month their access lapses with nothing taking over.
+      expirations AS (
+        SELECT expire_month AS m, COUNT(DISTINCT user_id) AS c
+        FROM per_user_payment
+        WHERE next_cover_created IS NULL
+           OR next_cover_created > expires_at + INTERVAL '7 days'
+        GROUP BY expire_month
+      ),
+      -- One pass over months × payments instead of two correlated scans per
+      -- month: same result as the mat view, an order of magnitude cheaper.
+      active_at_month AS (
+        SELECT
+          m.m,
+          COUNT(DISTINCT p.user_id) FILTER (
+            WHERE p.created_at::date <= m.m
+              AND (p.expires_at + INTERVAL '7 days')::date >= m.m
+          ) AS active_start,
+          COUNT(DISTINCT p.user_id) FILTER (
+            WHERE p.created_at::date <= (m.m + INTERVAL '1 month' - INTERVAL '1 day')::date
+              AND (p.expires_at + INTERVAL '7 days')::date
+                   >= (m.m + INTERVAL '1 month' - INTERVAL '1 day')::date
+          ) AS active_end
+        FROM months m LEFT JOIN payments p ON TRUE
+        GROUP BY m.m
+      )
+      SELECT
+        a.m AS month,
+        a.active_start,
+        a.active_end,
+        COALESCE(n.c, 0) AS new_payers,
+        COALESCE(r.c, 0) AS renewals,
+        COALESCE(x.c, 0) AS reactivations,
+        COALESCE(e.c, 0) AS expirations,
+        CASE WHEN a.active_start > 0
+             THEN ROUND(100.0 * COALESCE(e.c, 0) / a.active_start, 2)
+             ELSE 0 END AS churn_rate_pct,
+        CASE WHEN a.active_start > 0
+             THEN ROUND(100.0 * (a.active_start - COALESCE(e.c, 0)) / a.active_start, 2)
+             ELSE 0 END AS retention_rate_pct
+      FROM active_at_month a
+      LEFT JOIN new_payers    n ON n.m = a.m
+      LEFT JOIN renewals      r ON r.m = a.m
+      LEFT JOIN reactivations x ON x.m = a.m
+      LEFT JOIN expirations   e ON e.m = a.m
+      ORDER BY a.m
+    `));
+    return toRetentionDTO(rows);
   }
 
   // --------------------------------------------------------------------------

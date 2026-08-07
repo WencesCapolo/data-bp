@@ -121,6 +121,19 @@ export const FinanceQuerySchema = z
     filters: toFilters(v),
   }));
 
+export const RetentionQuerySchema = z
+  .object({
+    range: rangeKindSchema,
+    from: z.string().regex(ISO_DATE).optional(),
+    to: z.string().regex(ISO_DATE).optional(),
+    ...commonFiltersShape,
+  })
+  .superRefine(customRangeRefine)
+  .transform((v) => ({
+    range: toDateRange(v),
+    filters: toFilters(v),
+  }));
+
 export const TeamsQuerySchema = z
   .object({
     range: rangeKindSchema,

@@ -3,6 +3,7 @@ import { useMemo } from 'react';
 import useSWR from 'swr';
 import type { ChartConfiguration } from 'chart.js';
 import { fetcher } from '@/lib/client/fetcher';
+import { useFilterQS } from '@/lib/client/filterStore';
 import { KpiCard } from '@/components/ui/KpiCard';
 import { StackedBarChart } from '@/components/charts/StackedBarChart';
 import { ChartCanvas } from '@/components/charts/ChartCanvas';
@@ -20,7 +21,12 @@ const COLORS = {
 };
 
 export function RetentionTab() {
-  const { data, error, isLoading } = useSWR<RetentionDTO>('/api/basket/retention', fetcher);
+  const filterQS = useFilterQS();
+  const { data, error, isLoading } = useSWR<RetentionDTO>(
+    `/api/basket/retention?${filterQS}`,
+    fetcher,
+    { keepPreviousData: true },
+  );
 
   const churnLineConfig = useMemo<ChartConfiguration | null>(() => {
     if (!data || data.rows.length === 0) return null;
