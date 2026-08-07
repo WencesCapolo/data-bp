@@ -127,7 +127,9 @@ export function RetentionTab() {
           />
         </div>
         <div style={{ marginTop: 8, fontSize: 10, color: 'var(--text3)' }}>
-          Expiraciones mostradas como negativo para ver flujo neto.
+          Expiraciones mostradas como negativo para ver flujo neto. El mes en curso
+          se excluye hasta cerrar: sus expiraciones aún no vencieron y sus
+          renovaciones aún no ocurrieron.
         </div>
       </div>
 

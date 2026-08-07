@@ -86,16 +86,21 @@ function monthWindowWhere(r: DateRange | undefined): string {
 
 // The live lifecycle costs a pair of correlated counts per month, so the window
 // is generated rather than filtered afterwards: only the asked-for months run.
+// The upper bound is the last COMPLETE month, matching the mat view: the month
+// in progress would report a whole month of expirations against a handful of
+// days of renewals. A range that lies entirely inside the current month yields
+// no months at all, which the tab renders as "sin datos".
 function monthSeriesBounds(r: DateRange | undefined): string {
   const firstPaymentMonth = `(SELECT DATE_TRUNC('month', MIN(created_at))::date FROM payments)`;
+  const lastCompleteMonth = `(DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '1 month')::date`;
   if (!r || r.kind === 'all') {
-    return `${firstPaymentMonth}, DATE_TRUNC('month', CURRENT_DATE)::date`;
+    return `${firstPaymentMonth}, ${lastCompleteMonth}`;
   }
   const { from, to } = rangeBounds(r);
   const f = from.toISOString().slice(0, 10);
   const t = to.toISOString().slice(0, 10);
   return `GREATEST(${firstPaymentMonth}, DATE_TRUNC('month', '${f}'::date)::date),
-                 DATE_TRUNC('month', '${t}'::date)::date`;
+                 LEAST(DATE_TRUNC('month', '${t}'::date)::date, ${lastCompleteMonth})`;
 }
 
 function toRetentionDTO(rows: unknown): RetentionDTO {
