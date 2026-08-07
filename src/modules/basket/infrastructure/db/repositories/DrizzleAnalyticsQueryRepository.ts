@@ -16,6 +16,7 @@ import type { EvolutionDTO } from '@basket/core/dtos/EvolutionDTO';
 import type { TeamsDTO, TeamRankRow, TeamDailyDTO } from '@basket/core/dtos/TeamsDTO';
 import type { FinanceDTO } from '@basket/core/dtos/FinanceDTO';
 import type { RetentionDTO } from '@basket/core/dtos/RetentionDTO';
+import type { LifecycleDTO } from '@basket/core/dtos/LifecycleDTO';
 import type { DataQualityDTO } from '@basket/core/dtos/DataQualityDTO';
 import { META_ENUMS, type MetaDTO } from '@basket/core/dtos/MetaDTO';
 
@@ -1212,6 +1213,183 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
       ORDER BY a.m
     `));
     return toRetentionDTO(rows);
+  }
+
+  // --------------------------------------------------------------------------
+  // LIFECYCLE — user-base funnel + daily subscription movement.
+  // Live SQL only, no mat view: the filters redefine island boundaries (drop a
+  // sub_type and a user's uninterrupted access splits in two), so nothing can
+  // be pre-aggregated by day and sliced afterwards. Same reason
+  // basket_mat_team_daily only carries team_id.
+  // --------------------------------------------------------------------------
+  async getLifecycle(range: DateRange, filters?: CommonFilters): Promise<LifecycleDTO> {
+    const { from, to } = rangeBounds(range);
+    const f = d(from);
+    const t = d(to);
+
+    const [funnelRows, seriesRows] = await Promise.all([
+      this.lifecycleFunnel(t, filters),
+      this.lifecycleSeries(f, t, filters),
+    ]);
+
+    const fr = ((funnelRows as unknown) as RowAny[])[0] ?? {};
+    return {
+      range,
+      from: f,
+      to: t,
+      accessFilterIgnoredOnUsers: Boolean(filters?.accessType || filters?.subType),
+      funnel: {
+        totalUsers: n(fr.total_users),
+        verifiedUsers: n(fr.verified_users),
+        everSubscribed: n(fr.ever_subscribed),
+        activeNoSub: n(fr.active_no_sub),
+        neverSubscribed: n(fr.never_subscribed),
+      },
+      series: ((seriesRows as unknown) as RowAny[]).map((r) => ({
+        day: d(r.day),
+        nuevos: n(r.nuevos),
+        reactivaciones: n(r.reactivaciones),
+        renovaciones: n(r.renovaciones),
+        activeSubs: n(r.active_subs),
+      })),
+    };
+  }
+
+  // Payment source for the lifecycle queries. Unfiltered it reads the table
+  // directly: basket_v_active_payments is a 3-way join over ~435k rows and the
+  // window pass below has to sort all of them, so skipping the join is worth
+  // ~2s. Filters only exist on the view, so a filtered call pays for it.
+  private lifecycleSource(filters?: CommonFilters): string {
+    if (!hasFilters(filters)) {
+      return `SELECT user_id, created_at, expires_at FROM basket_payments WHERE status = 1`;
+    }
+    return `SELECT user_id, created_at, expires_at
+            FROM basket_v_active_payments WHERE 1=1 ${buildActiveFilterWhere(filters)}`;
+  }
+
+  // accessType/subType live on payments, so they cannot narrow a user who never
+  // paid. The user-side counts honour `countries` only — the DTO flags this so
+  // the UI can say the number is not filtered by access.
+  private countryWhere(filters?: CommonFilters): string {
+    if (!filters?.countries || filters.countries.length === 0) return '';
+    const list = filters.countries.map((c) => `'${escStr(c)}'`).join(',');
+    return ` AND u.country IN (${list})`;
+  }
+
+  private async lifecycleFunnel(t: string, filters?: CommonFilters): Promise<unknown> {
+    const cw = this.countryWhere(filters);
+    const src = this.lifecycleSource(filters);
+    // `login_at` is a single overwritten timestamp, so the two activity counts
+    // are as of NOW() whatever the range says. Coverage uses the same 7-day
+    // grace as every other basket query, so they tie out with Activos totales.
+    return this.conn.execute(sql.raw(`
+      WITH src AS MATERIALIZED (${src})
+      SELECT
+        (SELECT COUNT(*)::int FROM basket_users u
+          WHERE u.status = 1 AND u.created_at < '${t}'::date + 1 ${cw}) AS total_users,
+        (SELECT COUNT(*)::int FROM basket_users u
+          WHERE u.status = 1 AND u.email_verified
+            AND u.created_at < '${t}'::date + 1 ${cw}) AS verified_users,
+        (SELECT COUNT(DISTINCT v.user_id)::int FROM src v
+          WHERE v.created_at < '${t}'::date + 1) AS ever_subscribed,
+        (SELECT COUNT(*)::int FROM basket_users u
+          WHERE u.status = 1 AND u.login_at > NOW() - INTERVAL '30 days' ${cw}
+            AND NOT EXISTS (
+              SELECT 1 FROM basket_payments p
+              WHERE p.user_id = u.id AND p.status = 1
+                AND p.created_at <= NOW()
+                AND p.expires_at + INTERVAL '7 days' >= NOW())) AS active_no_sub,
+        (SELECT COUNT(*)::int FROM basket_users u
+          WHERE u.status = 1 AND u.login_at > NOW() - INTERVAL '30 days' ${cw}
+            AND NOT EXISTS (
+              SELECT 1 FROM basket_payments p
+              WHERE p.user_id = u.id AND p.status = 1)) AS never_subscribed
+    `));
+  }
+
+  // One window pass over every payment feeds both halves:
+  //   flows  — each payment classified nuevo (first ever) / reactivación
+  //            (created more than 37 days after the previous expiry, the
+  //            basket_mat_monthly_lifecycle rule) / renovación (the rest),
+  //            then collapsed to one row per user per day by that precedence.
+  //   stock  — payment spans merged into islands of uninterrupted access
+  //            (7-day grace, as everywhere else); ±1 at each island edge,
+  //            running-summed from a seed of everything before the window.
+  private async lifecycleSeries(
+    f: string,
+    t: string,
+    filters?: CommonFilters,
+  ): Promise<unknown> {
+    // Repeated verbatim in the DISTINCT ON key: Postgres requires the leading
+    // ORDER BY expressions to match the DISTINCT ON ones exactly.
+    const KIND = `CASE WHEN rn = 1 THEN 1
+                       WHEN created_at > prev_expires + INTERVAL '37 days' THEN 2
+                       ELSE 3 END`;
+    const rows = await this.conn.execute(sql.raw(`
+      WITH w AS MATERIALIZED (
+        SELECT user_id,
+               created_at,
+               created_at::date AS d,
+               expires_at,
+               ROW_NUMBER() OVER pu AS rn,
+               LAG(expires_at) OVER pu AS prev_expires,
+               MAX((expires_at + INTERVAL '7 days')::date) OVER (
+                 PARTITION BY user_id ORDER BY created_at
+                 ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS prev_max
+        FROM (${this.lifecycleSource(filters)}) p
+        WINDOW pu AS (PARTITION BY user_id ORDER BY created_at)
+      ),
+      dedup AS (
+        SELECT DISTINCT ON (user_id, d) user_id, d, ${KIND} AS k
+        FROM w
+        ORDER BY user_id, d, ${KIND}
+      ),
+      flows AS (
+        SELECT d,
+               COUNT(*) FILTER (WHERE k = 1)::int AS nuevos,
+               COUNT(*) FILTER (WHERE k = 2)::int AS reactivaciones,
+               COUNT(*) FILTER (WHERE k = 3)::int AS renovaciones
+        FROM dedup GROUP BY d
+      ),
+      grp AS (
+        SELECT user_id,
+               created_at::date AS s,
+               (expires_at + INTERVAL '7 days')::date AS e,
+               SUM(CASE WHEN prev_max IS NULL OR created_at::date > prev_max + 1
+                        THEN 1 ELSE 0 END) OVER (PARTITION BY user_id ORDER BY created_at) AS island
+        FROM w
+        -- See getTeams: a Pago expiring before it was created is active on no
+        -- day, and would otherwise put its baja decades before its alta.
+        WHERE (expires_at + INTERVAL '7 days')::date >= created_at::date
+      ),
+      islands AS (
+        SELECT MIN(s) AS s, MAX(e) AS e FROM grp GROUP BY user_id, island
+      ),
+      ev AS (
+        SELECT s AS d, 1 AS delta FROM islands
+        UNION ALL
+        SELECT e + 1, -1 FROM islands
+      ),
+      agg AS (SELECT d, SUM(delta)::int AS delta FROM ev GROUP BY d),
+      days AS (
+        SELECT generate_series('${f}'::date, '${t}'::date, INTERVAL '1 day')::date AS d
+      ),
+      seed AS (
+        SELECT COALESCE(SUM(delta), 0)::int AS base FROM agg WHERE d < '${f}'::date
+      )
+      SELECT days.d                            AS day,
+             COALESCE(fl.nuevos, 0)            AS nuevos,
+             COALESCE(fl.reactivaciones, 0)    AS reactivaciones,
+             COALESCE(fl.renovaciones, 0)      AS renovaciones,
+             (seed.base
+              + SUM(COALESCE(a.delta, 0)) OVER (ORDER BY days.d))::int AS active_subs
+      FROM days
+      CROSS JOIN seed
+      LEFT JOIN flows fl ON fl.d = days.d
+      LEFT JOIN agg a ON a.d = days.d
+      ORDER BY days.d
+    `));
+    return rows;
   }
 
   // --------------------------------------------------------------------------

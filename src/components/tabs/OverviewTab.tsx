@@ -9,6 +9,7 @@ import { useFilters, useFilterQS } from '@/lib/client/filterStore';
 import { bucketTitles } from '@/lib/client/bucketTitle';
 import { TabSkeleton } from '@/components/ui/Skeleton';
 import { ErrorBox } from '@/components/ui/ErrorBox';
+import { UserBaseSection } from './overview/UserBaseSection';
 import type { OverviewDTO } from '@basket/core/dtos/OverviewDTO';
 
 const ACCESS_COLORS = ['#10b981', '#06b6d4', '#fbbf24'];
@@ -36,10 +37,12 @@ function fmtCurrency(n: number, c: string): string {
 
 export function OverviewTab() {
   const range = useFilters((s) => s.range);
-  const url = `/api/basket/overview?${useFilterQS()}`;
-  const { data, error, isLoading } = useSWR<OverviewDTO>(url, fetcher, {
-    refreshInterval: 300_000,
-  });
+  const filterQS = useFilterQS();
+  const { data, error, isLoading } = useSWR<OverviewDTO>(
+    `/api/basket/overview?${filterQS}`,
+    fetcher,
+    { refreshInterval: 300_000 },
+  );
 
   if (isLoading) return <TabSkeleton kpis={8} blocks={[{ kind: 'full', height: 280 }, { kind: 'col2', height: 260 }]} />;
   if (error) return <ErrorBox message={error.message} />;
@@ -59,6 +62,8 @@ export function OverviewTab() {
         <KpiCard label="Anual total" value={kpis.activeAnualTotal} />
         <KpiCard label={`Nuevos pagadores ${rangeLabel(range)}`} value={kpis.newPayersInRange} variant="green" />
       </div>
+
+      <UserBaseSection filterQS={filterQS} />
 
       <div className="chart-full">
         <div className="chart-title">Tendencia ({rangeLabel(range)}) · activos por tipo de acceso</div>
