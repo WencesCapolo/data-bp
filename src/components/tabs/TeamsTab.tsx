@@ -2,22 +2,17 @@
 import { useMemo, useState } from 'react';
 import useSWR from 'swr';
 import { fetcher } from '@/lib/client/fetcher';
-import { buildFilterQS, useFilters } from '@/lib/client/filterStore';
+import { useFilterQS } from '@/lib/client/filterStore';
 import { TabSkeleton } from '@/components/ui/Skeleton';
 import { ErrorBox } from '@/components/ui/ErrorBox';
-import { TeamList } from './teams/TeamList';
+import { TeamList, TEAM_SORTS, type TeamSort } from './teams/TeamList';
 import { TeamDetail } from './teams/TeamDetail';
 import type { TeamsDTO } from '@basket/core/dtos/TeamsDTO';
 
 const LIST_LIMIT = 100;
 
 export function TeamsTab() {
-  const range = useFilters((s) => s.range);
-  const countries = useFilters((s) => s.countries);
-  const accessType = useFilters((s) => s.accessType);
-  const subType = useFilters((s) => s.subType);
-
-  const filterQS = buildFilterQS({ range, countries, accessType, subType });
+  const filterQS = useFilterQS();
   const { data, error, isLoading } = useSWR<TeamsDTO>(
     `/api/basket/teams?${filterQS}&limit=${LIST_LIMIT}`,
     fetcher,
@@ -26,6 +21,7 @@ export function TeamsTab() {
 
   const [selected, setSelected] = useState<number | null>(null);
   const [query, setQuery] = useState('');
+  const [sort, setSort] = useState<TeamSort>('followers');
 
   const list = useMemo(() => {
     if (!data) return [];
@@ -37,8 +33,8 @@ export function TeamsTab() {
           t.teamName.toLowerCase().includes(needle) ||
           t.league.toLowerCase().includes(needle),
       )
-      .sort((a, b) => b.followers - a.followers);
-  }, [data, query]);
+      .sort(TEAM_SORTS[sort]);
+  }, [data, query, sort]);
 
   if (isLoading && !data) {
     return <TabSkeleton kpis={5} blocks={[{ kind: 'full', height: 520 }]} />;
@@ -58,6 +54,8 @@ export function TeamsTab() {
         onSelect={setSelected}
         query={query}
         onQueryChange={setQuery}
+        sort={sort}
+        onSortChange={setSort}
       />
       {/* min-height keeps the skeleton → data swap from jumping the layout. */}
       <div style={{ minHeight: '70vh' }}>
