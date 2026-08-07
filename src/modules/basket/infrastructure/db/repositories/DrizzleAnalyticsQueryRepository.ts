@@ -423,7 +423,13 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
   }
 
   // --------------------------------------------------------------------------
-  // EVOLUTION (filtered) — live SQL with generate_series buckets
+  // EVOLUTION (filtered) — live SQL: coverage intervals -> running totals.
+  //
+  // "Active on day X" is a distinct-user count over overlapping payment
+  // intervals. Asking that per bucket means bucket x payment work; instead each
+  // user's payments are merged into gap-free coverage islands once, turned into
+  // +1/-1 events, and summed forward. Buckets then read the standing total at
+  // their first day, which is the same question the pre-aggregated view answers.
   // --------------------------------------------------------------------------
   private async getEvolutionFiltered(
     range: DateRange,
@@ -444,48 +450,77 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
                  '1 ${trunc}'::interval
                )::date AS b
       ),
+      -- ~1k payments (mostly Free) expire before they start. A per-bucket
+      -- predicate can never match them; an interval model would read them as
+      -- coverage running backwards, so they are dropped up front.
       payments AS (
         SELECT user_id, created_at, expires_at, access_type, sub_type
         FROM basket_v_active_payments
-        WHERE 1=1 ${fw}
+        WHERE created_at IS NOT NULL
+          AND expires_at IS NOT NULL
+          AND (expires_at + INTERVAL '7 days')::date >= created_at::date
+          -- Coverage is read inside the window only, so a payment that lapsed
+          -- before it or starts after it can't move any bucket.
+          AND (expires_at + INTERVAL '7 days')::date >= DATE_TRUNC('${trunc}', '${f}'::date)::date
+          AND created_at::date <= '${t}'::date
+          ${fw}
+      ),
+      -- One payment feeds the total and its two splits, so it is counted once
+      -- per series it belongs to. 'antel' and 'Otros' have no series of their
+      -- own: they reach the chart only through 'all'.
+      segmented AS (
+        SELECT seg, user_id,
+               created_at::date                      AS s,
+               (expires_at + INTERVAL '7 days')::date AS e
+        FROM payments p
+        CROSS JOIN LATERAL (VALUES ('all'), (p.access_type), (p.sub_type)) AS v(seg)
+      ),
+      -- Gaps-and-islands: a payment starting after the running max end + 1 day
+      -- opens a new island, anything else extends the current one.
+      marked AS (
+        SELECT seg, user_id, s, e,
+               MAX(e) OVER (
+                 PARTITION BY seg, user_id ORDER BY s
+                 ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+               ) AS prev_max_e
+        FROM segmented
+      ),
+      grouped AS (
+        SELECT seg, user_id, s, e,
+               SUM(CASE WHEN prev_max_e IS NULL OR s > prev_max_e + 1 THEN 1 ELSE 0 END)
+                 OVER (PARTITION BY seg, user_id ORDER BY s ROWS UNBOUNDED PRECEDING) AS island
+        FROM marked
+      ),
+      islands AS (
+        SELECT seg, MIN(s) AS s, MAX(e) AS e
+        FROM grouped GROUP BY seg, user_id, island
+      ),
+      events AS (
+        SELECT seg, s AS d,  1 AS delta FROM islands
+        UNION ALL
+        SELECT seg, e + 1   , -1        FROM islands
+      ),
+      timeline AS (
+        SELECT seg, d, SUM(SUM(delta)) OVER (PARTITION BY seg ORDER BY d) AS active
+        FROM events GROUP BY seg, d
       )
       SELECT
         b.b AS bucket,
-        COUNT(DISTINCT user_id) FILTER (
-          WHERE created_at::date <= b.b
-            AND (expires_at + INTERVAL '7 days')::date >= b.b
-        )::int AS all_active,
-        COUNT(DISTINCT user_id) FILTER (
-          WHERE access_type='real'
-            AND created_at::date <= b.b
-            AND (expires_at + INTERVAL '7 days')::date >= b.b
-        )::int AS real_active,
-        COUNT(DISTINCT user_id) FILTER (
-          WHERE access_type='voucher'
-            AND created_at::date <= b.b
-            AND (expires_at + INTERVAL '7 days')::date >= b.b
-        )::int AS voucher_active,
-        COUNT(DISTINCT user_id) FILTER (
-          WHERE sub_type='Free'
-            AND created_at::date <= b.b
-            AND (expires_at + INTERVAL '7 days')::date >= b.b
-        )::int AS free_active,
-        COUNT(DISTINCT user_id) FILTER (
-          WHERE sub_type='Mensual_Basico'
-            AND created_at::date <= b.b
-            AND (expires_at + INTERVAL '7 days')::date >= b.b
-        )::int AS mensual_basico_active,
-        COUNT(DISTINCT user_id) FILTER (
-          WHERE sub_type='Mensual_Total'
-            AND created_at::date <= b.b
-            AND (expires_at + INTERVAL '7 days')::date >= b.b
-        )::int AS mensual_total_active,
-        COUNT(DISTINCT user_id) FILTER (
-          WHERE sub_type='Anual_Total'
-            AND created_at::date <= b.b
-            AND (expires_at + INTERVAL '7 days')::date >= b.b
-        )::int AS anual_total_active
-      FROM buckets b LEFT JOIN payments ON TRUE
+        COALESCE(MAX(t.active) FILTER (WHERE t.seg = 'all'), 0)::int            AS all_active,
+        COALESCE(MAX(t.active) FILTER (WHERE t.seg = 'real'), 0)::int           AS real_active,
+        COALESCE(MAX(t.active) FILTER (WHERE t.seg = 'voucher'), 0)::int        AS voucher_active,
+        COALESCE(MAX(t.active) FILTER (WHERE t.seg = 'Free'), 0)::int           AS free_active,
+        COALESCE(MAX(t.active) FILTER (WHERE t.seg = 'Mensual_Basico'), 0)::int AS mensual_basico_active,
+        COALESCE(MAX(t.active) FILTER (WHERE t.seg = 'Mensual_Total'), 0)::int  AS mensual_total_active,
+        COALESCE(MAX(t.active) FILTER (WHERE t.seg = 'Anual_Total'), 0)::int    AS anual_total_active
+      FROM buckets b
+      -- The standing total per series at the bucket's first day.
+      LEFT JOIN LATERAL (
+        SELECT DISTINCT ON (tl.seg) tl.seg, tl.active
+        FROM timeline tl
+        WHERE tl.d <= b.b
+        ORDER BY tl.seg, tl.d DESC
+      ) t ON TRUE
       GROUP BY b.b
       ORDER BY b.b
     `));
