@@ -9,7 +9,9 @@ import type {
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-export const rangeKindSchema = z.enum(['30d', '90d', 'ytd', 'all', 'custom']).default('30d');
+export const rangeKindSchema = z
+  .enum(['yesterday', '7d', '30d', '90d', 'ytd', 'all', 'custom'])
+  .default('30d');
 export const granularitySchema = z.enum(['day', 'week', 'month']).default('day');
 export const accessTypeSchema = z.enum(['real', 'voucher', 'antel']);
 export const subTypeSchema = z.enum([
@@ -107,6 +109,32 @@ export const EvolutionQuerySchema = z
   }));
 
 export const FinanceQuerySchema = z
+  .object({
+    range: rangeKindSchema,
+    from: z.string().regex(ISO_DATE).optional(),
+    to: z.string().regex(ISO_DATE).optional(),
+    ...commonFiltersShape,
+  })
+  .superRefine(customRangeRefine)
+  .transform((v) => ({
+    range: toDateRange(v),
+    filters: toFilters(v),
+  }));
+
+export const RetentionQuerySchema = z
+  .object({
+    range: rangeKindSchema,
+    from: z.string().regex(ISO_DATE).optional(),
+    to: z.string().regex(ISO_DATE).optional(),
+    ...commonFiltersShape,
+  })
+  .superRefine(customRangeRefine)
+  .transform((v) => ({
+    range: toDateRange(v),
+    filters: toFilters(v),
+  }));
+
+export const LifecycleQuerySchema = z
   .object({
     range: rangeKindSchema,
     from: z.string().regex(ISO_DATE).optional(),

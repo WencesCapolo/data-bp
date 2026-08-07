@@ -2,6 +2,7 @@
 import { useMemo } from 'react';
 import type { ChartConfiguration } from 'chart.js';
 import { ChartCanvas } from './ChartCanvas';
+import { tooltipOpts } from './tooltip';
 
 interface Series {
   label: string;
@@ -13,6 +14,7 @@ interface Props {
   labels: string[];
   series: Series[];
   height?: number;
+  tooltipTitles?: string[];
 }
 
 function hexAlpha(hex: string, a: number): string {
@@ -27,7 +29,7 @@ function fmt(n: number): string {
   return String(n);
 }
 
-export function StackedAreaChart({ labels, series, height = 260 }: Props) {
+export function StackedAreaChart({ labels, series, height = 260, tooltipTitles }: Props) {
   const config = useMemo<ChartConfiguration>(
     () => ({
       type: 'line',
@@ -50,7 +52,7 @@ export function StackedAreaChart({ labels, series, height = 260 }: Props) {
         interaction: { mode: 'index', intersect: false },
         plugins: {
           legend: { display: true, labels: { boxWidth: 10, font: { size: 11 } } },
-          tooltip: { backgroundColor: '#0f1525', borderColor: '#2a3752', borderWidth: 1, padding: 10 },
+          tooltip: tooltipOpts(tooltipTitles),
         },
         scales: {
           x: { ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 10 }, grid: { color: '#1e2a42' }, stacked: true },
@@ -63,7 +65,7 @@ export function StackedAreaChart({ labels, series, height = 260 }: Props) {
         },
       },
     }),
-    [labels, series],
+    [labels, series, tooltipTitles],
   );
   return <ChartCanvas config={config} height={height} />;
 }

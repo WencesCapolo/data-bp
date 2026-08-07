@@ -3,12 +3,15 @@ import { useMemo } from 'react';
 import useSWR from 'swr';
 import type { ChartConfiguration } from 'chart.js';
 import { fetcher } from '@/lib/client/fetcher';
+import { useFilterQS } from '@/lib/client/filterStore';
 import { KpiCard } from '@/components/ui/KpiCard';
 import { StackedBarChart } from '@/components/charts/StackedBarChart';
 import { ChartCanvas } from '@/components/charts/ChartCanvas';
 import { TabSkeleton } from '@/components/ui/Skeleton';
 import { ErrorBox } from '@/components/ui/ErrorBox';
 import type { RetentionDTO } from '@basket/core/dtos/RetentionDTO';
+import { bucketTitles } from '@/lib/client/bucketTitle';
+import { tooltipOpts } from '@/components/charts/tooltip';
 
 const COLORS = {
   newPayers: '#10b981',
@@ -18,7 +21,12 @@ const COLORS = {
 };
 
 export function RetentionTab() {
-  const { data, error, isLoading } = useSWR<RetentionDTO>('/api/basket/retention', fetcher);
+  const filterQS = useFilterQS();
+  const { data, error, isLoading } = useSWR<RetentionDTO>(
+    `/api/basket/retention?${filterQS}`,
+    fetcher,
+    { keepPreviousData: true },
+  );
 
   const churnLineConfig = useMemo<ChartConfiguration | null>(() => {
     if (!data || data.rows.length === 0) return null;
@@ -58,7 +66,7 @@ export function RetentionTab() {
         interaction: { mode: 'index', intersect: false },
         plugins: {
           legend: { display: true, labels: { boxWidth: 10 } },
-          tooltip: { backgroundColor: '#0f1525', borderColor: '#2a3752', borderWidth: 1, padding: 10 },
+          tooltip: tooltipOpts(bucketTitles(labels, 'month')),
         },
         scales: {
           x: { grid: { color: '#1e2a42' }, ticks: { autoSkip: true, maxTicksLimit: 14 } },
@@ -109,6 +117,7 @@ export function RetentionTab() {
           <StackedBarChart
             height={320}
             labels={labels}
+            tooltipTitles={bucketTitles(labels, 'month')}
             series={[
               { label: 'Nuevos', data: data.rows.map((r) => r.newPayers), color: COLORS.newPayers },
               { label: 'Renovaciones', data: data.rows.map((r) => r.renewals), color: COLORS.renewals },
@@ -118,7 +127,9 @@ export function RetentionTab() {
           />
         </div>
         <div style={{ marginTop: 8, fontSize: 10, color: 'var(--text3)' }}>
-          Expiraciones mostradas como negativo para ver flujo neto.
+          Expiraciones mostradas como negativo para ver flujo neto. El mes en curso
+          se excluye hasta cerrar: sus expiraciones aún no vencieron y sus
+          renovaciones aún no ocurrieron.
         </div>
       </div>
 

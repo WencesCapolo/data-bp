@@ -24,5 +24,5 @@ export const META_ENUMS: MetaEnums = {
   accessTypes: ['real', 'voucher', 'antel'],
   platforms: ['MercadoPago', 'Manual', 'Voucher', 'PayPal', 'Stripe', 'Antel'],
   granularity: ['day', 'week', 'month'],
-  ranges: ['30d', '90d', 'ytd', 'all', 'custom'],
+  ranges: ['yesterday', '7d', '30d', '90d', 'ytd', 'all', 'custom'],
 };

@@ -132,7 +132,7 @@ export function TeamDetail({ team, filterQS, from, to }: Props) {
             ))}
           </span>
         </div>
-        <TeamMovementChart series={series} />
+        <TeamMovementChart series={series} bucket={bucket} />
       </div>
 
       <div className="chart-full" style={{ padding: 0, overflow: 'hidden' }}>

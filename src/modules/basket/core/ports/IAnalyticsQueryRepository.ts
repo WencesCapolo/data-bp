@@ -4,6 +4,7 @@ import type { EvolutionDTO } from '@basket/core/dtos/EvolutionDTO';
 import type { TeamsDTO, TeamDailyDTO } from '@basket/core/dtos/TeamsDTO';
 import type { FinanceDTO } from '@basket/core/dtos/FinanceDTO';
 import type { RetentionDTO } from '@basket/core/dtos/RetentionDTO';
+import type { LifecycleDTO } from '@basket/core/dtos/LifecycleDTO';
 import type { DataQualityDTO } from '@basket/core/dtos/DataQualityDTO';
 import type { MetaDTO } from '@basket/core/dtos/MetaDTO';
 
@@ -25,6 +26,7 @@ export interface IAnalyticsQueryRepository {
     filters?: CommonFilters,
   ): Promise<TeamDailyDTO>;
   getFinance(range: DateRange, filters?: CommonFilters): Promise<FinanceDTO>;
-  getRetention(): Promise<RetentionDTO>;
+  getRetention(range?: DateRange, filters?: CommonFilters): Promise<RetentionDTO>;
+  getLifecycle(range: DateRange, filters?: CommonFilters): Promise<LifecycleDTO>;
   getDataQuality(): Promise<DataQualityDTO>;
 }

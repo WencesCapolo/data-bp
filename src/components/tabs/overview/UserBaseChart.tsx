@@ -2,15 +2,18 @@
 import { useMemo } from 'react';
 import type { ChartConfiguration } from 'chart.js';
 import { ChartCanvas } from '@/components/charts/ChartCanvas';
-import type { Bucket, BucketedSeries } from './buckets';
 import { bucketTitles } from '@/lib/client/bucketTitle';
 import { tooltipOpts } from '@/components/charts/tooltip';
+import type { Bucket, Bucketed } from '@/lib/client/buckets';
 
-const CHART_HEIGHT = 280;
+const CHART_HEIGHT = 300;
 
-// Bars = altas (up) / bajas (down); line = active subscriptions at the close of
-// the period, on its own axis, so the movement is read against the base it moves.
-export function TeamMovementChart({ series, bucket }: { series: BucketedSeries; bucket: Bucket }) {
+export type MovementSeries = Bucketed<'nuevos' | 'reactivaciones' | 'renovaciones', 'activeSubs'>;
+
+// Stacked bars = the three ways a subscription starts or continues in the
+// period; line = subscribers active at its close, on its own axis, so movement
+// is read against the base it moves.
+export function UserBaseChart({ series, bucket }: { series: MovementSeries; bucket: Bucket }) {
   const config = useMemo<ChartConfiguration>(() => {
     const dated = tooltipOpts(bucketTitles(series.keys, bucket));
     return {
@@ -20,8 +23,8 @@ export function TeamMovementChart({ series, bucket }: { series: BucketedSeries; 
         datasets: [
           {
             type: 'line',
-            label: 'Suscripciones activas',
-            data: series.active,
+            label: 'Suscriptores activos',
+            data: series.stocks.activeSubs,
             borderColor: '#06b6d4',
             backgroundColor: 'rgba(6,182,212,.12)',
             borderWidth: 2,
@@ -33,8 +36,8 @@ export function TeamMovementChart({ series, bucket }: { series: BucketedSeries; 
           },
           {
             type: 'bar',
-            label: 'Altas',
-            data: series.altas,
+            label: 'Nuevos',
+            data: series.flows.nuevos,
             backgroundColor: '#10b981',
             borderRadius: 2,
             stack: 'mov',
@@ -43,9 +46,19 @@ export function TeamMovementChart({ series, bucket }: { series: BucketedSeries; 
           },
           {
             type: 'bar',
-            label: 'Bajas',
-            data: series.bajas.map((b) => -b),
-            backgroundColor: '#ef4444',
+            label: 'Reactivaciones',
+            data: series.flows.reactivaciones,
+            backgroundColor: '#a78bfa',
+            borderRadius: 2,
+            stack: 'mov',
+            yAxisID: 'y',
+            order: 1,
+          },
+          {
+            type: 'bar',
+            label: 'Renovaciones',
+            data: series.flows.renovaciones,
+            backgroundColor: '#4f8ef7',
             borderRadius: 2,
             stack: 'mov',
             yAxisID: 'y',
@@ -61,41 +74,36 @@ export function TeamMovementChart({ series, bucket }: { series: BucketedSeries; 
         interaction: { mode: 'index', intersect: false },
         plugins: {
           legend: { display: true, labels: { boxWidth: 10, font: { size: 10 } } },
-          tooltip: {
-            ...dated,
-            callbacks: {
-              ...dated.callbacks,
-              label: (ctx) =>
-                `${ctx.dataset.label}: ${Math.abs(Number(ctx.parsed.y)).toLocaleString()}`,
-            },
-          },
+          tooltip: dated,
         },
         scales: {
           x: {
+            stacked: true,
             grid: { display: false },
             ticks: { font: { size: 9 }, maxRotation: 0, autoSkipPadding: 12 },
           },
           y: {
+            stacked: true,
             position: 'left',
+            beginAtZero: true,
             grid: { color: '#1e2a42' },
-            ticks: { font: { size: 10 }, callback: (v) => Math.abs(Number(v)) },
-            title: { display: true, text: 'altas / bajas', font: { size: 9 } },
+            ticks: { font: { size: 10 } },
+            title: { display: true, text: 'altas del período', font: { size: 9 } },
           },
           y1: {
             position: 'right',
             grid: { display: false },
             beginAtZero: true,
             ticks: { font: { size: 10 }, color: '#06b6d4' },
-            title: { display: true, text: 'activas', color: '#06b6d4', font: { size: 9 } },
+            title: { display: true, text: 'activos', color: '#06b6d4', font: { size: 9 } },
           },
         },
       },
     };
   }, [series, bucket]);
 
-  // Fixed-height relative box: Chart.js with maintainAspectRatio:false sizes the
-  // canvas from its parent, and an auto-height parent sized by the canvas grows a
-  // few px on every resize tick — the chart (and the table under it) creep down.
+  // See TeamMovementChart: a fixed-height relative box, because an auto-height
+  // parent sized by the canvas creeps down a few px on every resize tick.
   return (
     <div style={{ position: 'relative', height: CHART_HEIGHT }}>
       <ChartCanvas config={config} height={CHART_HEIGHT} />

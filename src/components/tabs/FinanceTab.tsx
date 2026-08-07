@@ -2,7 +2,8 @@
 import { useMemo } from 'react';
 import useSWR from 'swr';
 import { fetcher } from '@/lib/client/fetcher';
-import { useFilters } from '@/lib/client/filterStore';
+import { useFilterQS } from '@/lib/client/filterStore';
+import { bucketTitles } from '@/lib/client/bucketTitle';
 import { KpiCard } from '@/components/ui/KpiCard';
 import { LineChart } from '@/components/charts/LineChart';
 import { DoughnutChart } from '@/components/charts/DoughnutChart';
@@ -36,27 +37,8 @@ function fmtCurrency(n: number, c: string): string {
   }).format(n);
 }
 
-function buildUrl(s: {
-  range: string;
-  countries: string[];
-  accessType?: string;
-  subType?: string;
-}): string {
-  const p = new URLSearchParams();
-  p.set('range', s.range);
-  for (const c of s.countries) p.append('countries', c);
-  if (s.accessType) p.set('accessType', s.accessType);
-  if (s.subType) p.set('subType', s.subType);
-  return `/api/basket/finance?${p.toString()}`;
-}
-
 export function FinanceTab() {
-  const range = useFilters((s) => s.range);
-  const countries = useFilters((s) => s.countries);
-  const accessType = useFilters((s) => s.accessType);
-  const subType = useFilters((s) => s.subType);
-
-  const url = buildUrl({ range, countries, accessType, subType });
+  const url = `/api/basket/finance?${useFilterQS()}`;
   const { data, error, isLoading } = useSWR<FinanceDTO>(url, fetcher);
 
   const dailyByCurrency = useMemo(() => {
@@ -127,6 +109,7 @@ export function FinanceTab() {
             <LineChart
               height={280}
               labels={dailyByCurrency.labels.map((d) => d.slice(5))}
+              tooltipTitles={bucketTitles(dailyByCurrency.labels, 'day')}
               series={dailyByCurrency.series}
               yFormat="currency"
             />
@@ -197,6 +180,7 @@ export function FinanceTab() {
             <StackedAreaChart
               height={260}
               labels={platformMonthlyStacked.labels}
+              tooltipTitles={bucketTitles(platformMonthlyStacked.labels, 'month')}
               series={platformMonthlyStacked.series}
             />
           )}

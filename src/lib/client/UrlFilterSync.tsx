@@ -4,7 +4,8 @@ import { useFilters, type RangeKind, type TabKey } from './filterStore';
 import type { AccessType, SubType, Granularity } from '@basket/core/dtos/shared';
 
 const TABS: TabKey[] = ['overview', 'evolution', 'teams', 'finance', 'retention', 'quality'];
-const RANGES: RangeKind[] = ['30d', '90d', 'ytd', 'all'];
+const RANGES: RangeKind[] = ['yesterday', '7d', '30d', '90d', 'ytd', 'all', 'custom'];
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const ACCESS: AccessType[] = ['real', 'voucher', 'antel'];
 const SUBTYPES: SubType[] = ['Free', 'Mensual_Basico', 'Mensual_Total', 'Anual_Total', 'Otros'];
 const GRAN: Granularity[] = ['day', 'week', 'month'];
@@ -31,6 +32,10 @@ export function UrlFilterSync() {
     const next: Partial<ReturnType<typeof useFilters.getState>> = {};
     if (tab) next.tab = tab;
     if (range) next.range = range;
+    const from = p.get('from');
+    const to = p.get('to');
+    if (from && ISO_DATE.test(from)) next.customFrom = from;
+    if (to && ISO_DATE.test(to)) next.customTo = to;
     if (countries.length) next.countries = countries;
     if (accessType) next.accessType = accessType;
     if (subType) next.subType = subType;
@@ -44,6 +49,10 @@ export function UrlFilterSync() {
     const p = new URLSearchParams();
     p.set('tab', state.tab);
     p.set('range', state.range);
+    if (state.range === 'custom') {
+      p.set('from', state.customFrom);
+      p.set('to', state.customTo);
+    }
     for (const c of state.countries) p.append('countries', c);
     if (state.accessType) p.set('accessType', state.accessType);
     if (state.subType) p.set('subType', state.subType);
@@ -53,7 +62,16 @@ export function UrlFilterSync() {
     if (url !== window.location.pathname + window.location.search) {
       window.history.replaceState(null, '', url);
     }
-  }, [state.tab, state.range, state.countries, state.accessType, state.subType, state.granularity]);
+  }, [
+    state.tab,
+    state.range,
+    state.customFrom,
+    state.customTo,
+    state.countries,
+    state.accessType,
+    state.subType,
+    state.granularity,
+  ]);
 
   return null;
 }

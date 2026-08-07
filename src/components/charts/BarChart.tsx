@@ -2,6 +2,7 @@
 import { useMemo } from 'react';
 import type { ChartConfiguration } from 'chart.js';
 import { ChartCanvas } from './ChartCanvas';
+import { tooltipOpts } from './tooltip';
 
 interface Props {
   labels: string[];
@@ -9,9 +10,17 @@ interface Props {
   color?: string;
   height?: number;
   horizontal?: boolean;
+  tooltipTitles?: string[];
 }
 
-export function BarChart({ labels, values, color = '#06b6d4', height = 220, horizontal = false }: Props) {
+export function BarChart({
+  labels,
+  values,
+  color = '#06b6d4',
+  height = 220,
+  horizontal = false,
+  tooltipTitles,
+}: Props) {
   const config = useMemo<ChartConfiguration>(
     () => ({
       type: 'bar',
@@ -25,7 +34,7 @@ export function BarChart({ labels, values, color = '#06b6d4', height = 220, hori
         indexAxis: horizontal ? 'y' : 'x',
         plugins: {
           legend: { display: false },
-          tooltip: { backgroundColor: '#0f1525', borderColor: '#2a3752', borderWidth: 1, padding: 10 },
+          tooltip: tooltipOpts(tooltipTitles),
         },
         scales: {
           x: { grid: { color: '#1e2a42' }, ticks: { font: { size: 10 } } },
@@ -33,7 +42,7 @@ export function BarChart({ labels, values, color = '#06b6d4', height = 220, hori
         },
       },
     }),
-    [labels, values, color, horizontal],
+    [labels, values, color, horizontal, tooltipTitles],
   );
   return <ChartCanvas config={config} height={height} />;
 }

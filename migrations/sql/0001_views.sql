@@ -132,10 +132,15 @@ first_payment AS (
   FROM basket_v_active_payments
   GROUP BY user_id
 ),
+-- Stops at the last COMPLETE month. The in-progress month would count every
+-- subscription expiring later this month as already churned while none of them
+-- has had its chance to renew yet — a full month of expirations against a few
+-- days of renewals, which reads as a collapse that never happened. The previous
+-- month is fully settled: its last expire event is expires_at + 7d < month end.
 months AS (
   SELECT generate_series(
     (SELECT DATE_TRUNC('month', MIN(created_at))::date FROM basket_v_active_payments),
-    DATE_TRUNC('month', CURRENT_DATE)::date,
+    (DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '1 month')::date,
     INTERVAL '1 month'
   )::date AS m
 ),

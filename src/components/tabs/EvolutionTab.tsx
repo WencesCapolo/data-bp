@@ -1,7 +1,8 @@
 'use client';
 import useSWR from 'swr';
 import { fetcher } from '@/lib/client/fetcher';
-import { useFilters } from '@/lib/client/filterStore';
+import { useFilters, useFilterQS } from '@/lib/client/filterStore';
+import { bucketTitles } from '@/lib/client/bucketTitle';
 import { KpiCard } from '@/components/ui/KpiCard';
 import { LineChart } from '@/components/charts/LineChart';
 import { StackedAreaChart } from '@/components/charts/StackedAreaChart';
@@ -17,30 +18,9 @@ const SUB_COLORS = {
   Anual_Total: '#a78bfa',
 };
 
-function buildUrl(s: {
-  range: string;
-  granularity: string;
-  countries: string[];
-  accessType?: string;
-  subType?: string;
-}): string {
-  const p = new URLSearchParams();
-  p.set('range', s.range);
-  p.set('granularity', s.granularity);
-  for (const c of s.countries) p.append('countries', c);
-  if (s.accessType) p.set('accessType', s.accessType);
-  if (s.subType) p.set('subType', s.subType);
-  return `/api/basket/evolution?${p.toString()}`;
-}
-
 export function EvolutionTab() {
-  const range = useFilters((s) => s.range);
   const granularity = useFilters((s) => s.granularity);
-  const countries = useFilters((s) => s.countries);
-  const accessType = useFilters((s) => s.accessType);
-  const subType = useFilters((s) => s.subType);
-
-  const url = buildUrl({ range, granularity, countries, accessType, subType });
+  const url = `/api/basket/evolution?${useFilterQS({ granularity: true })}`;
   const { data, error, isLoading } = useSWR<EvolutionDTO>(url, fetcher);
 
   if (isLoading) return <TabSkeleton kpis={4} blocks={[{ kind: 'full', height: 320 }, { kind: 'full', height: 300 }, { kind: 'full', height: 240 }]} />;
@@ -55,6 +35,7 @@ export function EvolutionTab() {
   const delta = last.allActive - first.allActive;
   const deltaPct = first.allActive > 0 ? (delta / first.allActive) * 100 : 0;
 
+  const tooltipTitles = bucketTitles(data.series.map((p) => p.bucket), granularity);
   const labels = data.series.map((p) =>
     granularity === 'month' ? p.bucket.slice(0, 7) : p.bucket.slice(5),
   );
@@ -79,6 +60,7 @@ export function EvolutionTab() {
           <StackedAreaChart
             height={300}
             labels={labels}
+            tooltipTitles={tooltipTitles}
             series={[
               { label: 'Real', data: data.series.map((p) => p.realActive), color: ACCESS_COLORS.real },
               { label: 'Voucher', data: data.series.map((p) => p.voucherActive), color: ACCESS_COLORS.voucher },
@@ -96,6 +78,7 @@ export function EvolutionTab() {
           <StackedAreaChart
             height={280}
             labels={labels}
+            tooltipTitles={tooltipTitles}
             series={[
               { label: 'Free', data: data.series.map((p) => p.freeActive), color: SUB_COLORS.Free },
               { label: 'Mensual básico', data: data.series.map((p) => p.mensualBasicoActive), color: SUB_COLORS.Mensual_Basico },
@@ -112,6 +95,7 @@ export function EvolutionTab() {
           <LineChart
             height={220}
             labels={labels}
+            tooltipTitles={tooltipTitles}
             series={[
               { label: 'Total activos', data: data.series.map((p) => p.allActive), color: '#06b6d4', fill: true },
             ]}
