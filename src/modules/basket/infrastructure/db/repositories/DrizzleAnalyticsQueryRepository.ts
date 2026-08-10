@@ -43,7 +43,9 @@ function yesterdayEndUtc(): Date {
 // Defaults to last 30 days. 'all' clamps at 2024-01-01 to keep generate_series sane.
 function trendFromDay(day: string, range?: DateRange): string {
   if (!range) return shiftDay(day, -29);
-  if (range.kind === 'custom') return range.from;
+  // Round-trip through Date: `from` is user input headed into raw SQL, so it
+  // must come out as a strict YYYY-MM-DD or not at all.
+  if (range.kind === 'custom') return shiftDay(range.from, 0);
   if (range.kind === 'yesterday') return day;
   if (range.kind === '7d') return shiftDay(day, -6);
   if (range.kind === '30d') return shiftDay(day, -29);
@@ -257,9 +259,9 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
     const [todayRows, trendRows, newPayersRows, revRows] = await Promise.all([
       this.conn.execute(sql.raw(`
         WITH active AS (
-          SELECT DISTINCT user_id, user_country, access_type, sub_type
+          SELECT user_id, user_country, access_type, sub_type
           FROM basket_v_active_payments
-          WHERE created_at::date <= '${day}'::date
+          WHERE created_at < '${day}'::date + 1
             AND (expires_at + INTERVAL '7 days')::date >= '${day}'::date
             ${fw}
         )
@@ -279,34 +281,86 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
                               OR user_country NOT IN ('Uruguay','Argentina','Chile'))::int AS other_active
         FROM active
       `)),
+      // Same islands -> ±1 events -> running-sum construction as
+      // getEvolutionFiltered, with only the 3 segments this trend charts.
       this.conn.execute(sql.raw(`
-        WITH f AS (
-          SELECT user_id, created_at::date AS start_d,
-                 (expires_at + INTERVAL '7 days')::date AS end_d,
-                 access_type
+        WITH days AS (
+          SELECT generate_series('${trendFrom}'::date, '${day}'::date, '1 day'::interval)::date AS d
+        ),
+        payments AS (
+          SELECT user_id, created_at, expires_at, access_type
           FROM basket_v_active_payments
-          WHERE created_at::date <= '${day}'::date
+          WHERE created_at IS NOT NULL
+            AND expires_at IS NOT NULL
+            AND (expires_at + INTERVAL '7 days')::date >= created_at::date
             AND (expires_at + INTERVAL '7 days')::date >= '${trendFrom}'::date
+            AND created_at < '${day}'::date + 1
             ${fw}
         ),
-        spans AS (
-          SELECT user_id, access_type,
-                 GREATEST(start_d, '${trendFrom}'::date) AS s,
-                 LEAST(end_d, '${day}'::date) AS e
-          FROM f
+        segmented AS (
+          SELECT seg, user_id,
+                 created_at::date                       AS s,
+                 (expires_at + INTERVAL '7 days')::date AS e
+          FROM payments p
+          CROSS JOIN LATERAL (VALUES ('all'), (p.access_type)) AS v(seg)
+          WHERE seg IN ('all', 'real', 'voucher')
         ),
-        per_user_day AS (
-          SELECT DISTINCT user_id, access_type, gs::date AS d
-          FROM spans, generate_series(s, e, '1 day'::interval) AS gs
+        -- Gaps-and-islands: a payment starting after the running max end + 1 day
+        -- opens a new island, anything else extends the current one.
+        marked AS (
+          SELECT seg, user_id, s, e,
+                 MAX(e) OVER (
+                   PARTITION BY seg, user_id ORDER BY s
+                   ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+                 ) AS prev_max_e
+          FROM segmented
+        ),
+        grouped AS (
+          SELECT seg, user_id, s, e,
+                 SUM(CASE WHEN prev_max_e IS NULL OR s > prev_max_e + 1 THEN 1 ELSE 0 END)
+                   OVER (PARTITION BY seg, user_id ORDER BY s ROWS UNBOUNDED PRECEDING) AS island
+          FROM marked
+        ),
+        islands AS (
+          SELECT seg, MIN(s) AS s, MAX(e) AS e
+          FROM grouped GROUP BY seg, user_id, island
+        ),
+        events AS (
+          SELECT seg, s AS d,  1 AS delta FROM islands
+          UNION ALL
+          SELECT seg, e + 1   , -1        FROM islands
+        ),
+        -- Deltas before the window seed each series so the level starts at
+        -- the real base instead of restarting at 0.
+        seed AS (
+          SELECT seg, SUM(delta)::int AS base
+          FROM events WHERE d < '${trendFrom}'::date GROUP BY seg
+        ),
+        daily AS (
+          SELECT seg, d, SUM(delta)::int AS delta
+          FROM events
+          WHERE d BETWEEN '${trendFrom}'::date AND '${day}'::date
+          GROUP BY seg, d
+        ),
+        segs AS (SELECT DISTINCT seg FROM events),
+        timeline AS (
+          SELECT sg.seg, days.d,
+                 COALESCE(se.base, 0)
+                 + SUM(COALESCE(dl.delta, 0)) OVER (PARTITION BY sg.seg ORDER BY days.d) AS active
+          FROM segs sg
+          CROSS JOIN days
+          LEFT JOIN seed  se ON se.seg = sg.seg
+          LEFT JOIN daily dl ON dl.seg = sg.seg AND dl.d = days.d
         )
         SELECT
-          d AS day,
-          COUNT(DISTINCT user_id)::int AS all_active,
-          COUNT(DISTINCT user_id) FILTER (WHERE access_type='real')::int    AS real_active,
-          COUNT(DISTINCT user_id) FILTER (WHERE access_type='voucher')::int AS voucher_active
-        FROM per_user_day
-        GROUP BY d
-        ORDER BY d
+          days.d AS day,
+          COALESCE(MAX(t.active) FILTER (WHERE t.seg = 'all'), 0)::int     AS all_active,
+          COALESCE(MAX(t.active) FILTER (WHERE t.seg = 'real'), 0)::int    AS real_active,
+          COALESCE(MAX(t.active) FILTER (WHERE t.seg = 'voucher'), 0)::int AS voucher_active
+        FROM days
+        LEFT JOIN timeline t ON t.d = days.d
+        GROUP BY days.d
+        ORDER BY days.d
       `)),
       this.conn.execute(sql.raw(`
         SELECT COUNT(*)::int AS c FROM (
@@ -321,7 +375,8 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
       this.conn.execute(sql.raw(`
         SELECT currency, SUM(amount)::numeric AS amount
         FROM basket_v_active_payments
-        WHERE created_at BETWEEN '${trendFrom}'::date AND '${day}'::date
+        WHERE created_at >= '${trendFrom}'::date
+          AND created_at < '${day}'::date + 1
           AND amount > 0
           ${fw}
         GROUP BY currency
@@ -769,7 +824,7 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
                COALESCE(SUM(amount), 0)     AS amount,
                COUNT(DISTINCT user_id)::int AS unique_payers
         FROM basket_v_active_payments
-        WHERE created_at::date BETWEEN '${f}'::date AND '${t}'::date ${fw} ${cf}
+        WHERE created_at >= '${f}'::date AND created_at < '${t}'::date + 1 ${fw} ${cf}
         GROUP BY 1
       ),
       universe AS (
@@ -1023,45 +1078,53 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
     const f = from.toISOString().slice(0, 10);
     const t = to.toISOString().slice(0, 10);
     const fw = buildActiveFilterWhere(filters);
-    const where = `WHERE created_at::date BETWEEN '${f}'::date AND '${t}'::date ${fw}`;
+    // Half-open range keeps the predicate sargable on created_at.
+    const where = `WHERE created_at >= '${f}'::date AND created_at < '${t}'::date + 1 ${fw}`;
 
-    const [byDayRows, byPlatRows, byCurRows, platMoRows] = await Promise.all([
-      this.conn.execute(sql.raw(`
-        SELECT created_at::date AS day, currency,
-               SUM(amount)::numeric AS total_amount,
-               SUM(CASE WHEN access_type='real' THEN amount ELSE 0 END)::numeric AS real_amount,
-               COUNT(*)::int AS payment_count
+    // One scan of the view (materialized CTE), then GROUPING SETS produces the
+    // four aggregations at once. grp is a GROUPING() bitmask over
+    // (day, month, currency, platform, platform_name) that tags each set
+    // unambiguously: 0 in a bit position means that column is grouped.
+    const rows = await this.conn.execute(sql.raw(`
+      WITH base AS MATERIALIZED (
+        SELECT created_at::date AS day,
+               DATE_TRUNC('month', created_at)::date AS month,
+               currency, platform, platform_name, access_type, amount
         FROM basket_v_active_payments ${where}
-        GROUP BY created_at::date, currency
-        ORDER BY created_at::date, currency
-      `)),
-      this.conn.execute(sql.raw(`
-        SELECT platform, platform_name,
-               COUNT(*)::int AS payment_count,
-               SUM(amount)::numeric AS total_amount,
-               COUNT(*) FILTER (WHERE access_type='real')::int AS real_count,
-               SUM(CASE WHEN access_type='real' THEN amount ELSE 0 END)::numeric AS real_amount
-        FROM basket_v_active_payments ${where}
-        GROUP BY platform, platform_name
-        ORDER BY total_amount DESC
-      `)),
-      this.conn.execute(sql.raw(`
-        SELECT currency,
-               SUM(amount)::numeric AS total_amount,
-               COUNT(*)::int AS payment_count
-        FROM basket_v_active_payments ${where}
-        GROUP BY currency
-        ORDER BY total_amount DESC
-      `)),
-      this.conn.execute(sql.raw(`
-        SELECT DATE_TRUNC('month', created_at)::date AS month,
-               platform_name,
-               SUM(amount)::numeric AS total_amount
-        FROM basket_v_active_payments ${where}
-        GROUP BY DATE_TRUNC('month', created_at), platform_name
-        ORDER BY month, platform_name
-      `)),
-    ]);
+      )
+      SELECT GROUPING(day, month, currency, platform, platform_name)::int AS grp,
+             day, month, currency, platform, platform_name,
+             COUNT(*)::int AS payment_count,
+             SUM(amount)::numeric AS total_amount,
+             COUNT(*) FILTER (WHERE access_type='real')::int AS real_count,
+             SUM(CASE WHEN access_type='real' THEN amount ELSE 0 END)::numeric AS real_amount
+      FROM base
+      GROUP BY GROUPING SETS (
+        (day, currency),
+        (platform, platform_name),
+        (currency),
+        (month, platform_name)
+      )
+    `));
+
+    // Bitmask values (bit set = column NOT grouped), for (day, month, currency, platform, platform_name):
+    //   (day, currency)            -> 01011 = 11
+    //   (platform, platform_name)  -> 11100 = 28
+    //   (currency)                 -> 11011 = 27
+    //   (month, platform_name)     -> 10110 = 22
+    const all = (rows as unknown) as RowAny[];
+    const byDayRows = all
+      .filter((r) => n(r.grp) === 11)
+      .sort((a, b) => (d(a.day) < d(b.day) ? -1 : d(a.day) > d(b.day) ? 1 : s(a.currency) < s(b.currency) ? -1 : s(a.currency) > s(b.currency) ? 1 : 0));
+    const byPlatRows = all
+      .filter((r) => n(r.grp) === 28)
+      .sort((a, b) => n(b.total_amount) - n(a.total_amount));
+    const byCurRows = all
+      .filter((r) => n(r.grp) === 27)
+      .sort((a, b) => n(b.total_amount) - n(a.total_amount));
+    const platMoRows = all
+      .filter((r) => n(r.grp) === 22)
+      .sort((a, b) => (d(a.month) < d(b.month) ? -1 : d(a.month) > d(b.month) ? 1 : s(a.platform_name) < s(b.platform_name) ? -1 : s(a.platform_name) > s(b.platform_name) ? 1 : 0));
 
     return {
       range,
@@ -1179,22 +1242,61 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
            OR next_cover_created > expires_at + INTERVAL '7 days'
         GROUP BY expire_month
       ),
-      -- One pass over months × payments instead of two correlated scans per
-      -- month: same result as the mat view, an order of magnitude cheaper.
+      -- Islands -> ±1 events -> running sum, as in getEvolutionFiltered: the
+      -- old months × payments cross join re-scanned every payment per month;
+      -- here coverage is merged once and each month reads the standing total.
+      spans AS (
+        SELECT user_id,
+               created_at::date                       AS s,
+               (expires_at + INTERVAL '7 days')::date AS e
+        FROM payments
+        -- See getTeams: a Pago expiring before it was created is active on no day.
+        WHERE (expires_at + INTERVAL '7 days')::date >= created_at::date
+      ),
+      marked AS (
+        SELECT user_id, s, e,
+               MAX(e) OVER (
+                 PARTITION BY user_id ORDER BY s
+                 ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+               ) AS prev_max_e
+        FROM spans
+      ),
+      grouped AS (
+        SELECT user_id, s, e,
+               SUM(CASE WHEN prev_max_e IS NULL OR s > prev_max_e + 1 THEN 1 ELSE 0 END)
+                 OVER (PARTITION BY user_id ORDER BY s ROWS UNBOUNDED PRECEDING) AS island
+        FROM marked
+      ),
+      islands AS (
+        SELECT MIN(s) AS s, MAX(e) AS e
+        FROM grouped GROUP BY user_id, island
+      ),
+      events AS (
+        SELECT s AS d,  1 AS delta FROM islands
+        UNION ALL
+        SELECT e + 1   , -1        FROM islands
+      ),
+      timeline AS (
+        SELECT d, SUM(SUM(delta)) OVER (ORDER BY d) AS active
+        FROM events GROUP BY d
+      ),
+      -- A user has at most one island covering any day, so the running sum is
+      -- exactly the COUNT(DISTINCT user_id) the cross join used to compute.
       active_at_month AS (
         SELECT
           m.m,
-          COUNT(DISTINCT p.user_id) FILTER (
-            WHERE p.created_at::date <= m.m
-              AND (p.expires_at + INTERVAL '7 days')::date >= m.m
-          ) AS active_start,
-          COUNT(DISTINCT p.user_id) FILTER (
-            WHERE p.created_at::date <= (m.m + INTERVAL '1 month' - INTERVAL '1 day')::date
-              AND (p.expires_at + INTERVAL '7 days')::date
-                   >= (m.m + INTERVAL '1 month' - INTERVAL '1 day')::date
-          ) AS active_end
-        FROM months m LEFT JOIN payments p ON TRUE
-        GROUP BY m.m
+          COALESCE(ts.active, 0) AS active_start,
+          COALESCE(te.active, 0) AS active_end
+        FROM months m
+        -- The standing total at the month's first and last day.
+        LEFT JOIN LATERAL (
+          SELECT active FROM timeline WHERE d <= m.m ORDER BY d DESC LIMIT 1
+        ) ts ON TRUE
+        LEFT JOIN LATERAL (
+          SELECT active FROM timeline
+          WHERE d <= (m.m + INTERVAL '1 month' - INTERVAL '1 day')::date
+          ORDER BY d DESC LIMIT 1
+        ) te ON TRUE
       )
       SELECT
         a.m AS month,
