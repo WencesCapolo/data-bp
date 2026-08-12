@@ -240,3 +240,58 @@ export const basketPriceTiers = pgTable('basket_price_tiers', {
 }, (table) => ({
   pk: primaryKey({ columns: [table.currency, table.recurrent, table.amount] }),
 }));
+
+// One row per gateway transaction, as the gateway reports it: commission, net
+// and the settlement-currency plane. Keyed by (platform, platformPaymentId) and
+// intentionally not FK'd to basketPayments — the gateways answer with
+// transactions this mirror may not have ingested. See docs/adr/0005.
+export const basketPaymentFees = pgTable('basket_payment_fees', {
+  platform: smallint('platform').notNull(),
+  platformPaymentId: text('platform_payment_id').notNull(),
+  grossAmount: numeric('gross_amount', { precision: 14, scale: 2 }).notNull(),
+  currency: varchar('currency', { length: 10 }).notNull(),
+  feeAmount: numeric('fee_amount', { precision: 14, scale: 2 }).notNull(),
+  netAmount: numeric('net_amount', { precision: 14, scale: 2 }).notNull(),
+  settlementCurrency: varchar('settlement_currency', { length: 10 }).notNull(),
+  settlementAmount: numeric('settlement_amount', { precision: 14, scale: 2 }).notNull(),
+  exchangeRate: numeric('exchange_rate', { precision: 20, scale: 10 }),
+  refundedAmount: numeric('refunded_amount', { precision: 14, scale: 2 }).notNull().default('0'),
+  gatewayStatus: text('gateway_status'),
+  capturedAt: timestamp('captured_at', { withTimezone: true }),
+  // charge -> invoice -> subscription. Both NULL for one-off charges, which
+  // have no invoice at all. See docs/adr/0005.
+  invoiceId: text('invoice_id'),
+  subscriptionId: text('subscription_id'),
+  syncedAt: timestamp('synced_at', { withTimezone: true }).notNull().default(sql`NOW()`),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.platform, table.platformPaymentId] }),
+  capturedAtIdx: index('basket_payment_fees_captured_at_idx').on(table.capturedAt),
+}));
+
+// One row per gateway subscription. The only source that states churn outright
+// (status, cancelAtPeriodEnd, canceledAt, endedAt) instead of inferring it from
+// the gap since the last payment. Refreshed in full each sync — a cancellation
+// today can belong to a subscription created years ago. See docs/adr/0005.
+export const basketGatewaySubscriptions = pgTable('basket_gateway_subscriptions', {
+  platform: smallint('platform').notNull(),
+  subscriptionId: text('subscription_id').notNull(),
+  customerId: text('customer_id'),
+  status: text('status').notNull(),
+  currency: varchar('currency', { length: 10 }),
+  amount: numeric('amount', { precision: 14, scale: 2 }),
+  interval: text('interval'),
+  intervalCount: smallint('interval_count'),
+  createdAt: timestamp('created_at', { withTimezone: true }),
+  currentPeriodStart: timestamp('current_period_start', { withTimezone: true }),
+  currentPeriodEnd: timestamp('current_period_end', { withTimezone: true }),
+  cancelAtPeriodEnd: boolean('cancel_at_period_end').notNull().default(false),
+  cancelAt: timestamp('cancel_at', { withTimezone: true }),
+  canceledAt: timestamp('canceled_at', { withTimezone: true }),
+  endedAt: timestamp('ended_at', { withTimezone: true }),
+  trialEnd: timestamp('trial_end', { withTimezone: true }),
+  syncedAt: timestamp('synced_at', { withTimezone: true }).notNull().default(sql`NOW()`),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.platform, table.subscriptionId] }),
+  statusIdx: index('basket_gateway_subscriptions_status_idx').on(table.status),
+  customerIdx: index('basket_gateway_subscriptions_customer_idx').on(table.customerId),
+}));

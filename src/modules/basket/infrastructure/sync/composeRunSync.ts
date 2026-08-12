@@ -26,6 +26,7 @@ import {
 } from '@basket/infrastructure/sync/csvMappers';
 import { mapFixtureMatchRow } from '@basket/infrastructure/sync/fixtureMappers';
 import { RunSyncUseCase } from '@basket/core/use-cases/sync/RunSyncUseCase';
+import { composeGatewayFeeSync } from '@basket/infrastructure/sync/composeGatewayFeeSync';
 import { streamCsvFile } from '@shared/lib/csvStream';
 import type { PaymentUploadRow } from '@basket/core/dtos/PaymentUploadDTO';
 
@@ -178,6 +179,18 @@ export async function composeRunSync(opts: ComposeRunSyncOptions = {}): Promise<
     }
   }
 
+  // Gateway sync rides the normal analytics sync and brings only the delta:
+  // fees resume from their own watermark, subscriptions refresh in full (a
+  // cancellation has no window to read). Disabled by flag or by absent
+  // credentials, in which case those steps are simply skipped.
+  const gatewayEnabled = process.env.SYNC_GATEWAYS_ENABLED !== 'false';
+  const gateways = gatewayEnabled ? composeGatewayFeeSync() : null;
+  if (gateways) {
+    for (const s of gateways.skipped) {
+      console.warn(`[sync] gateway ${s.slug} skipped: ${s.missing} not set`);
+    }
+  }
+
   return new RunSyncUseCase({
     fetcher,
     users,
@@ -215,5 +228,9 @@ export async function composeRunSync(opts: ComposeRunSyncOptions = {}): Promise<
     paymentsEnabled,
     paymentsWindow: process.env.SYNC_PAYMENTS_WINDOW ?? '-1month',
     contentEnabled: process.env.SYNC_CONTENT_ENABLED !== 'false',
+    gatewayFees: gateways?.slugs.length ? gateways.useCase : undefined,
+    gatewaySubscriptions: gateways?.subscriptionsUseCase ?? undefined,
+    gatewayFeeOverlapDays: Number(process.env.SYNC_GATEWAY_FEE_OVERLAP_DAYS ?? '14'),
+    gatewayFeeWindowDays: Number(process.env.SYNC_GATEWAY_FEE_WINDOW_DAYS ?? '7'),
   });
 }

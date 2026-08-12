@@ -24,6 +24,12 @@ import { LoadFixturesFromSheetUseCase } from './LoadFixturesFromSheetUseCase';
 import { LoadSheetDataMastersUseCase } from './LoadSheetDataMastersUseCase';
 import type { ISheetDataMasterRepository } from '@basket/core/ports/ISheetDataMasterRepository';
 import { RefreshMaterializedViewsUseCase } from './RefreshMaterializedViewsUseCase';
+import { SyncGatewayFeesUseCase, type GatewayFeeSyncResult } from './SyncGatewayFeesUseCase';
+import {
+  SyncGatewaySubscriptionsUseCase,
+  type GatewaySubscriptionSyncResult,
+} from './SyncGatewaySubscriptionsUseCase';
+import { ReconcilePaymentAmountsUseCase } from './ReconcilePaymentAmountsUseCase';
 
 export interface SheetSpec {
   sheetName: string;
@@ -61,6 +67,14 @@ export interface RunSyncDeps {
   dataSheetSpecs?: DataSheetSpec[];
   syncState: ISyncStateRepository;
   matViews: IMaterializedViewRepository;
+  /** Gateway fee/subscription sync. Omitted, those steps are skipped entirely —
+   *  a deploy without gateway credentials still syncs everything else. */
+  gatewayFees?: SyncGatewayFeesUseCase;
+  gatewaySubscriptions?: SyncGatewaySubscriptionsUseCase;
+  /** Days of trailing overlap re-read on each fee sync, so refunds and disputes
+   *  that land days after the charge are picked up. */
+  gatewayFeeOverlapDays?: number;
+  gatewayFeeWindowDays?: number;
   mapUserRow: (row: Record<string, string>, knownTeamIds: Set<number>) => UserProps | null;
   mapPaymentRow: (row: Record<string, string>, knownUserIds: Set<number>) => PaymentProps | null;
   /** Maps one Pagos Export row. Required only when `paymentsRows` is supplied. */
@@ -98,6 +112,10 @@ export interface RunSyncResult {
   syncedSheets: { sheet: string; inserted: number }[];
   syncedFixtures: { sheet: string; inserted: number }[];
   syncedDataMasters: { workbook: string; teams: number; cambios: number; dias: number }[];
+  gatewayFees: GatewayFeeSyncResult[];
+  gatewaySubscriptions: GatewaySubscriptionSyncResult[];
+  /** Pagos realigned to the gateway's amount this run. See docs/adr/0006. */
+  correctedAmounts: number;
   refreshes: RefreshResult[];
 }
 
@@ -216,7 +234,48 @@ export class RunSyncUseCase {
       }
     }
 
-    // 7. Refresh mat views
+    // 7. Gateway fees — delta only. The use case resumes from its own watermark
+    // minus an overlap, so a 6-hourly cron reads hours of ledger, not years.
+    // Never fatal: a gateway outage must not cost us the Pagos sync that already
+    // succeeded, so failures are recorded in the result and the run continues.
+    let gatewayFees: GatewayFeeSyncResult[] = [];
+    if (this.deps.gatewayFees) {
+      try {
+        gatewayFees = await this.deps.gatewayFees.execute({
+          overlapDays: this.deps.gatewayFeeOverlapDays,
+          windowDays: this.deps.gatewayFeeWindowDays,
+        });
+      } catch (err) {
+        console.error('gateway fee sync failed:', (err as Error).message);
+      }
+    }
+
+    // 8. Gateway subscriptions — full refresh, not a window. A cancellation is
+    // an update to an object created long ago, so there is no delta to read.
+    let gatewaySubscriptions: GatewaySubscriptionSyncResult[] = [];
+    if (this.deps.gatewaySubscriptions) {
+      try {
+        gatewaySubscriptions = await this.deps.gatewaySubscriptions.execute();
+      } catch (err) {
+        console.error('gateway subscription sync failed:', (err as Error).message);
+      }
+    }
+
+    // 9. Realign Pago amounts against the gateway. Must come AFTER the fee sync
+    // (it reads fees as truth) and BEFORE the mat view refresh (amount feeds
+    // tier classification, so a correction changes sub_type).
+    let correctedAmounts = 0;
+    try {
+      const reconciled = await new ReconcilePaymentAmountsUseCase(this.deps.payments).execute();
+      correctedAmounts = reconciled.corrected;
+      if (correctedAmounts > 0) {
+        console.log(`realigned ${correctedAmounts} Pago amounts to the gateway`);
+      }
+    } catch (err) {
+      console.error('amount reconciliation failed:', (err as Error).message);
+    }
+
+    // 10. Refresh mat views
     const refreshes = await new RefreshMaterializedViewsUseCase(this.deps.matViews).execute({ concurrent: true });
 
     const finishedAt = new Date();
@@ -233,6 +292,9 @@ export class RunSyncUseCase {
       syncedSheets,
       syncedFixtures,
       syncedDataMasters,
+      gatewayFees,
+      gatewaySubscriptions,
+      correctedAmounts,
       refreshes,
     };
   }
