@@ -22,7 +22,11 @@
     "db:verify": "tsx --env-file=.env scripts/db-verify.ts",
     "db:bootstrap": "bash scripts/db-bootstrap.sh",
     "db:backup": "bash scripts/db-backup.sh",
-    "backfill:payments": "tsx --env-file=.env scripts/backfill-payments.ts"
+    "backfill:payments": "tsx --env-file=.env scripts/backfill-payments.ts",
+    "backfill:fees": "tsx --env-file=.env scripts/backfill-gateway-fees.ts",
+    "smoke:fees": "tsx --env-file=.env scripts/smoke-gateway-fees.ts",
+    "backfill:subscriptions": "tsx --env-file=.env scripts/backfill-gateway-subscriptions.ts",
+    "fix:amounts": "tsx --env-file=.env scripts/fix-payment-amount-scale.ts"
   },
   "dependencies": {
     "better-auth": "^1.6.11",

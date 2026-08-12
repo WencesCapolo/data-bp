@@ -62,6 +62,35 @@ export class DrizzlePaymentRepository implements IPaymentRepository {
     return row?.value ?? 0;
   }
 
+  /**
+   * Only an exact 100x or 0.01x ratio is touched. Any other disagreement with
+   * the gateway is a different bug with a different cause, and rewriting it to
+   * the gateway's number would be guessing rather than correcting.
+   *
+   * Gated on matching currency so the comparison stays inside one currency
+   * plane: basket_payment_fees also carries a settlement amount, and comparing
+   * a presentment amount against a settled one would "correct" every converted
+   * charge into nonsense.
+   */
+  async reconcileAmountScale(): Promise<number> {
+    const rows = await this.database.execute<{ n: number }>(sql`
+      WITH updated AS (
+        UPDATE basket_payments p
+        SET amount = f.gross_amount, synced_at = NOW()
+        FROM basket_payment_fees f
+        WHERE f.platform            = p.platform
+          AND f.platform_payment_id = p.platform_payment_id
+          AND p.currency            = f.currency
+          AND p.amount <> f.gross_amount
+          AND f.gross_amount > 0
+          AND (p.amount = f.gross_amount * 100 OR p.amount * 100 = f.gross_amount)
+        RETURNING 1
+      )
+      SELECT COUNT(*)::int AS n FROM updated
+    `);
+    return Number((rows as unknown as { n: number }[])[0]?.n ?? 0);
+  }
+
   async countActiveOn(date: Date): Promise<number> {
     const [row] = await this.database
       .select({ value: sql<number>`COUNT(DISTINCT user_id)::int` })
