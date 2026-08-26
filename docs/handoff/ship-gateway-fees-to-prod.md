@@ -1,5 +1,49 @@
 # Handoff: ship the fee mirror, the FX plane and the SFTP inbox to prod
 
+> **SHIPPED 2026-08-26.** Production runs `dd3f9cb`; the rollback point was
+> `156f55d`. All seven migrations applied, six mat views rebuilt, `MP_SFTP_INBOX`
+> set, and all nine inbox files ingested — **589.546 MP fee rows, 25.721 reversals
+> worth 113.179.863,67 ARS, 460.947 carrying a subscription link**, matching dev to
+> the row. Steps 1–6 below are done; do not re-run them. Four corrections this
+> deploy made to the instructions above, kept because each cost real time:
+>
+> 1. **`public/dashboard.html` was gitignored**, not moved to `docs/prototype/` —
+>    the leak is closed either way, and this keeps 13,9 MB of revenue figures out of
+>    every clone and off the prod checkout. The docs that cite it now say it is
+>    local-only.
+> 2. **`0016` was rewritten as `CREATE INDEX CONCURRENTLY`** before shipping, so it
+>    never took the write lock this doc warns about. It built in 0.8s. That needed
+>    `scripts/apply-sql.ts` (new) — one statement per round trip, because
+>    CONCURRENTLY cannot run inside the implicit transaction a whole-file execute
+>    creates. There is still no psql on that box.
+> 3. **`pnpm backfill:fx --since=2023-10-01` is wrong now.** It predates the 2021
+>    history the six yearly exports added. `usdConversion` returns **null**, not a
+>    short number, unless *every* day in range has a rate — so Economía's USD column
+>    was absent until the blue history was reloaded with `--since=2011-01-01`
+>    (5.715 days). Use that. The `--since`-less form does not do it: with rows
+>    already present the use case goes incremental from the last stored day.
+> 4. **The deploy skill's `npm install` does not work on that box** and never did —
+>    its `node_modules` is a pnpm store layout. `.claude/skills/deploy-data-to-portal`
+>    now carries the install that does.
+>
+> **`/api/financiero/*` shipped unauthenticated** and was fixed in `dd3f9cb`. The
+> page guards itself with `requireDashboard`; its two endpoints did not, and they sit
+> outside the `/api/basket` prefix the proxy matcher covered, so
+> `GET /api/financiero/economia` answered 200 with ~50 KB of real revenue to anyone.
+> If you add an API route under a new prefix, add it to `src/proxy.ts` in the same
+> commit.
+>
+> **`smoke:gateway-net` reports 6 failures and `smoke:fx` 6 on prod. All twelve are
+> Stripe-shaped and none is a defect** — prod has no `STRIPE_SECRET_KEY`, so there
+> are no Stripe fee rows, no USD or EUR settlement plane, and no gateway
+> subscriptions. Note `fee coverage ≈ 95.7% → 0 / 183.098` reads like an MP failure
+> and is not: that check is `WHERE p.platform = 4`, which is Stripe. Every MP check
+> passes, including `charge kept 238` — the merge guard, exactly as predicted below.
+> These smokes will stay red until item 3 of *Owed by a human* is answered.
+>
+> Still open: `bp-ops-worker` was already `stopped` (12:27 UTC, ~3h before this
+> deploy) and was left alone — it is not this app.
+
 Everything below is **built, ingested and green in dev**. None of it is in
 production, and none of it is even committed. Your job is the deploy, in an
 order where each step is verifiable, and the first half of that job is git

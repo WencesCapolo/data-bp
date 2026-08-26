@@ -16,14 +16,34 @@ Facts that hold for every deploy:
 |---|---|
 | checkout | `/srv/data-bp`, branch `main`, root-owned |
 | pm2 app | `analytics` (port 3001) |
-| package manager **on the server** | `npm` |
+| package manager **on the server** | `npm` to run and build, `pnpm` to install — see below |
 | nginx vhost | `/etc/nginx/sites-available/analytics.conf` |
 | public URL | `https://analytics.basket-app.com` |
 
-`npm` on the server, `pnpm` locally. The server's pm2 entry runs `/usr/bin/npm start`,
-and `pnpm install` aborts there with `ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY`.
-`npm ci` also fails — the checkout has `pnpm-lock.yaml` and no `package-lock.json` — so
-installs are plain `npm install`.
+`npm` runs the app, **`pnpm` installs it.** The pm2 entry runs `/usr/bin/npm start`, and
+`npm run build` is right — but installs are not npm's. That box's `node_modules` is a
+pnpm store layout (`node_modules/.pnpm/…`, symlinks, owned by `wences` not root), so
+npm's arborist walks into a `Link` node it cannot resolve and dies with
+
+```
+npm error Cannot read properties of null (reading 'matches')
+```
+
+`npm ci` fails too — `pnpm-lock.yaml`, no `package-lock.json`. The install that works is
+
+```bash
+cd /srv/data-bp && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 \
+  corepack pnpm@10.20.0 install --frozen-lockfile --config.confirmModulesPurge=false
+```
+
+**Unprivileged, not sudo** — the tree and the 1.1 GB store belong to `wences`, and root
+would use a different store and reify the whole tree instead of adding what changed.
+Pin the version: bare `pnpm` on that box is corepack's latest, which needs Node ≥ 22.13
+for `node:sqlite` and the box is on Node 20, so it aborts with `ERR_UNKNOWN_BUILTIN_MODULE`.
+`--frozen-lockfile` is what keeps this incremental — it fails rather than drifting, so a
+running app never has its tree rebuilt under it.
+
+Skip it entirely when the diff touches no dependency.
 
 ## The prelude
 
@@ -73,18 +93,34 @@ and check whether it touches `migrations/sql/`. *Done when:* you can state eithe
 migrations" or the exact list of new files. If there are new migrations, **stop and ask**
 before continuing. Applying SQL to prod is a separate decision from shipping code, and
 this skill does not make it for you. If the answer is yes: `0001_views.sql` goes through
-`sudo npm run views:apply` (~190s, and it drops the five mat views before rebuilding them,
-so every tab reading them errors until it finishes), and anything else needs a tsx one-off
-— there is **no psql on the box**, and the script has to sit inside `/srv/data-bp` to
-resolve `node_modules`. The prod DB is that box's own local Postgres, *not* the `localhost`
-in your machine's `.env`: identical connection string, different database.
+`sudo npm run views:apply` (~160s in prod, and it drops **all six** mat views before
+rebuilding them, so every tab reading one errors until it finishes — that is downtime, not
+latency, and it belongs in a low-traffic window). Everything else goes through
+
+```bash
+sudo -S -p '' node_modules/.bin/tsx --env-file=.env scripts/apply-sql.ts \
+  migrations/sql/00NN_*.sql <<<"$PW"
+```
+
+There is **no psql on the box**, and the script has to sit inside `/srv/data-bp` to resolve
+`node_modules`. `apply-sql.ts` sends one statement per round trip, which is what lets
+`CREATE INDEX CONCURRENTLY` run at all — a whole-file execute wraps the file in an implicit
+transaction and CONCURRENTLY cannot live in one. It prints the database it actually reached
+before it writes anything, and you should read that line: the prod DB is that box's own
+local Postgres, *not* the `localhost` in your machine's `.env`. Identical connection string,
+different database. `scripts/_q.ts "<sql>"` is the read-only companion.
+
+Order the two: additive migrations first, then `views:apply` **after** the build, so the
+build's five-to-ten minutes do not sit inside the downtime window.
 
 **3. Pull.** `sudo git pull --ff-only origin main` — sudo, per the prelude, or it
 half-applies. Fast-forward only: a merge commit created on the prod box is a state that
 exists nowhere else. *Done when:* `sudo git log --oneline -1` shows the sha you expected
 from step 2.
 
-**4. Build, and check the exit code.**
+**4. Install if dependencies changed, then build and check the exit code.** Diff
+`package.json` first; if a dependency moved, run the pnpm install from **The prelude**
+above — *not* `npm install`, which cannot read this box's tree. Then
 `sudo -S -p '' npm run build <<<"$PW" > ~/deploy-build.log 2>&1; echo "BUILD_EXIT=$?"`.
 The log goes to your own home: a redirect into a root-owned path fails as your shell,
 which prints `BUILD_EXIT=1` while `tail` happily shows the *previous* deploy's route
@@ -95,7 +131,16 @@ the old `.next`; go to step 7 and report, do not restart.
 
 **5. Restart only `analytics`.** `sudo pm2 restart analytics --update-env`. pm2 runs as
 root here, so an unprivileged `pm2` talks to a different, empty daemon. Note the UTC
-clock before restarting — step 6 compares a log mtime against it. *Done when:*
+clock before restarting — step 6 compares a log mtime against it.
+
+`--update-env` reads the **calling shell's** environment, not `/srv/data-bp/.env`. A
+variable you appended to that file will not appear in `sudo pm2 env <id>` no matter how
+many times you restart with the flag. Next does load `.env` for the app itself, so the
+process usually still sees it — but if the done-when is "pm2 shows it", pass it through:
+
+```bash
+sudo -S -p '' env MY_VAR=value pm2 restart analytics --update-env <<<"$PW"
+``` *Done when:*
 `sudo pm2 list` shows `analytics` `online`, and `sudo pm2 logs analytics --lines 6
 --nostream` ends in `✓ Ready`.
 
