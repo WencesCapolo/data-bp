@@ -19,6 +19,11 @@ export interface GatewayFeeProps {
   grossAmount: number;
   currency: string;
   feeAmount: number;
+  /** Tax withheld at source by the gateway, in the settlement plane, or null
+   *  where the gateway withholds none. Kept apart from `feeAmount` because a
+   *  commission is spent and a withholding is a tax credit that comes back —
+   *  see migrations/sql/0015. Invariant: gross - fee - (tax ?? 0) = net. */
+  taxAmount: number | null;
   netAmount: number;
   settlementCurrency: string;
   settlementAmount: number;
@@ -39,6 +44,14 @@ export class GatewayFee {
 
   get platformPaymentId(): string { return this.props.platformPaymentId; }
   get feeAmount(): number { return this.props.feeAmount; }
+  get taxAmount(): number | null { return this.props.taxAmount; }
+
+  /** Everything the gateway kept, commission and withholding together. What
+   *  actually failed to arrive — use it for cash, never for comparing one
+   *  gateway's pricing against another's. */
+  get totalDeducted(): number {
+    return this.props.feeAmount + (this.props.taxAmount ?? 0);
+  }
   get netAmount(): number { return this.props.netAmount; }
 
   /** Commission as a share of settled gross. Null when gross is 0 (100% coupon,

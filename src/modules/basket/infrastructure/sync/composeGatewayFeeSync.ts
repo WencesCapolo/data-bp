@@ -8,6 +8,24 @@ import { SyncGatewaySubscriptionsUseCase } from '@basket/core/use-cases/sync/Syn
 import { MercadoPagoFeeFetcher } from '@basket/infrastructure/gateways/MercadoPagoFeeFetcher';
 import type { IGatewayFeeFetcher } from '@basket/core/ports/IGatewayFeeFetcher';
 import { SyncGatewayFeesUseCase } from '@basket/core/use-cases/sync/SyncGatewayFeesUseCase';
+import { StripeCustomerFetcher } from '@basket/infrastructure/gateways/StripeCustomerFetcher';
+import { StripeDisputeFetcher } from '@basket/infrastructure/gateways/StripeDisputeFetcher';
+import { StripePayoutFetcher } from '@basket/infrastructure/gateways/StripePayoutFetcher';
+import { DrizzleGatewayCustomerRepository } from '@basket/infrastructure/db/repositories/DrizzleGatewayCustomerRepository';
+import { DrizzleGatewayDisputeRepository } from '@basket/infrastructure/db/repositories/DrizzleGatewayDisputeRepository';
+import { DrizzleGatewayPayoutRepository } from '@basket/infrastructure/db/repositories/DrizzleGatewayPayoutRepository';
+import type { GatewayCustomerProps } from '@basket/core/entities/GatewayCustomer';
+import type { GatewayDisputeProps } from '@basket/core/entities/GatewayDispute';
+import type { GatewayPayoutProps } from '@basket/core/entities/GatewayPayout';
+import type { GatewayFullSource, GatewayWindowSource } from '@basket/core/ports/IGatewayMirror';
+import {
+  SyncGatewayFullMirrorUseCase,
+  SyncGatewayWindowMirrorUseCase,
+} from '@basket/core/use-cases/sync/SyncGatewayMirrorUseCase';
+import { SyncFxRatesUseCase } from '@basket/core/use-cases/sync/SyncFxRatesUseCase';
+import { ArgentinaDatosEurUsdFetcher } from '@basket/infrastructure/fx/ArgentinaDatosEurUsdFetcher';
+import { DolarApiBlueFetcher } from '@basket/infrastructure/fx/DolarApiBlueFetcher';
+import { DrizzleFxRateRepository } from '@basket/infrastructure/db/repositories/DrizzleFxRateRepository';
 
 export interface ComposeGatewayFeeSyncOptions {
   /** Restrict to specific gateways by slug. Omitted, every configured one runs. */
@@ -19,6 +37,13 @@ export interface ComposedGatewayFeeSync {
   /** Null when no gateway exposes subscriptions — MercadoPago preapprovals are
    *  not modelled here yet, so today this is Stripe or nothing. */
   subscriptionsUseCase: SyncGatewaySubscriptionsUseCase | null;
+  /** Customer mirror — the customer_id -> email bridge. Full refresh. Stripe
+   *  only today; MercadoPago's clientes Export arrives through the Upload. */
+  customersUseCase: SyncGatewayFullMirrorUseCase<GatewayCustomerProps> | null;
+  /** Chargebacks. Windowed on the dispute's creation, with a long overlap. */
+  disputesUseCase: SyncGatewayWindowMirrorUseCase<GatewayDisputeProps> | null;
+  /** Money leaving the Provider for the bank. Windowed on creation. */
+  payoutsUseCase: SyncGatewayWindowMirrorUseCase<GatewayPayoutProps> | null;
   /** Slugs that ended up wired, so callers can report an empty run honestly. */
   slugs: string[];
   /** Gateways skipped for want of a credential, and which env var was missing. */
@@ -40,6 +65,9 @@ export function composeGatewayFeeSync(
   const wanted = options.only?.length ? new Set(options.only) : null;
   const fetchers: IGatewayFeeFetcher[] = [];
   const subFetchers: IGatewaySubscriptionFetcher[] = [];
+  const customerFetchers: GatewayFullSource<GatewayCustomerProps>[] = [];
+  const disputeFetchers: GatewayWindowSource<GatewayDisputeProps>[] = [];
+  const payoutFetchers: GatewayWindowSource<GatewayPayoutProps>[] = [];
   const skipped: { slug: string; missing: string }[] = [];
 
   const logRetry = (slug: string) => (info: {
@@ -55,18 +83,21 @@ export function composeGatewayFeeSync(
   };
 
   if (!wanted || wanted.has('stripe')) {
-    const key = process.env.STRIPE_SECRET_KEY;
+    // Two names because the deployed environment holds the restricted key under
+    // STRIPE_SERVICE_KEY while every script and doc here says STRIPE_SECRET_KEY.
+    // Accepting both is cheaper than a rename that silently unwires the sync on
+    // whichever host is updated second.
+    const key = process.env.STRIPE_SECRET_KEY ?? process.env.STRIPE_SERVICE_KEY;
+    const stripe = {
+      apiVersion: process.env.STRIPE_API_VERSION,
+      onRetry: logRetry('stripe'),
+    };
     if (key) {
-      fetchers.push(new StripeFeeFetcher({
-        secretKey: key,
-        apiVersion: process.env.STRIPE_API_VERSION,
-        onRetry: logRetry('stripe'),
-      }));
-      subFetchers.push(new StripeSubscriptionFetcher({
-        secretKey: key,
-        apiVersion: process.env.STRIPE_API_VERSION,
-        onRetry: logRetry('stripe'),
-      }));
+      fetchers.push(new StripeFeeFetcher({ secretKey: key, ...stripe }));
+      subFetchers.push(new StripeSubscriptionFetcher({ secretKey: key, ...stripe }));
+      customerFetchers.push(new StripeCustomerFetcher({ secretKey: key, ...stripe }));
+      disputeFetchers.push(new StripeDisputeFetcher({ secretKey: key, ...stripe }));
+      payoutFetchers.push(new StripePayoutFetcher({ secretKey: key, ...stripe }));
     } else {
       skipped.push({ slug: 'stripe', missing: 'STRIPE_SECRET_KEY' });
     }
@@ -91,20 +122,84 @@ export function composeGatewayFeeSync(
     }
   }
 
+  const syncState = () => new DrizzleSyncStateRepository();
+
   return {
     useCase: new SyncGatewayFeesUseCase(
       fetchers,
       new DrizzleGatewayFeeRepository(),
-      new DrizzleSyncStateRepository(),
+      syncState(),
     ),
     subscriptionsUseCase: subFetchers.length
       ? new SyncGatewaySubscriptionsUseCase(
           subFetchers,
           new DrizzleGatewaySubscriptionRepository(),
-          new DrizzleSyncStateRepository(),
+          syncState(),
+        )
+      : null,
+    customersUseCase: customerFetchers.length
+      ? new SyncGatewayFullMirrorUseCase(
+          'customers',
+          customerFetchers,
+          new DrizzleGatewayCustomerRepository(),
+          syncState(),
+        )
+      : null,
+    disputesUseCase: disputeFetchers.length
+      ? new SyncGatewayWindowMirrorUseCase(
+          'disputes',
+          disputeFetchers,
+          new DrizzleGatewayDisputeRepository(),
+          syncState(),
+        )
+      : null,
+    payoutsUseCase: payoutFetchers.length
+      ? new SyncGatewayWindowMirrorUseCase(
+          'payouts',
+          payoutFetchers,
+          new DrizzleGatewayPayoutRepository(),
+          syncState(),
         )
       : null,
     slugs: fetchers.map((f) => f.slug),
     skipped,
   };
+}
+
+
+/**
+ * Wires the FX rate sync.
+ *
+ * Takes no credential and therefore has no skip: dolarapi is public, and the
+ * derived Stripe rows are read out of a table this repo already owns. It lives
+ * beside the gateway composition rather than in it because a rate is not a
+ * Provider object — nothing here has a `platform` — and folding it into
+ * `composeGatewayFeeSync` would have meant the blue rate stops being fetched
+ * whenever a Stripe key expires.
+ */
+export function composeFxRateSync(): SyncFxRatesUseCase {
+  return new SyncFxRatesUseCase(
+    [
+      new DolarApiBlueFetcher({
+        onRetry: (info) => {
+          console.warn(
+            `[fx:blue] retry ${info.attempt} after ${info.waitMs}ms ` +
+              `(status=${info.status ?? 'transport'}): ${info.reason.slice(0, 120)}`,
+          );
+        },
+      }),
+      // EUR→USD crossed through ARS off the same host. Not a fallback for the
+      // blue: a different pair, a different source, its own rows.
+      new ArgentinaDatosEurUsdFetcher({
+        onRetry: (info) => {
+          console.warn(
+            `[fx:eur] retry ${info.attempt} after ${info.waitMs}ms ` +
+              `(status=${info.status ?? 'transport'}): ${info.reason.slice(0, 120)}`,
+          );
+        },
+      }),
+    ],
+    new DrizzleFxRateRepository(),
+    new DrizzleSyncStateRepository(),
+  );
 }

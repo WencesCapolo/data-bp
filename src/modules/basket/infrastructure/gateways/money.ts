@@ -28,3 +28,28 @@ export function fromMinorUnits(amount: number, currency: string): number {
 export function round2(value: number): number {
   return Math.round(value * 100) / 100;
 }
+
+/**
+ * Stripe's `exchange_rate` is minor units per minor unit, not major per major.
+ *
+ * For UYU→USD the two are the same number and nothing notices. For CLP→USD they
+ * differ by exactly 100×, because CLP is zero-decimal: 1,000 CLP is 1,000 minor
+ * units, and `1000 * 0.1017` is 101.7 minor units of USD — $1.017, not $101.70.
+ * Multiplying our major-unit `gross_amount` by the stored rate therefore
+ * overstated every Chilean transaction a hundredfold, and only Chilean ones, so
+ * the total looked plausible until it was checked per currency.
+ *
+ *   settlement_major = gross_major × rate × divisor(presentment) / divisor(settlement)
+ *
+ * Any conversion that reads basket_payment_fees.exchange_rate must go through
+ * here. The derived rows in basket_fx_rates do not: they are computed as
+ * SUM(settlement_amount)/SUM(gross_amount), both already major, and are the safe
+ * thing for a caller to multiply by.
+ */
+export function majorUnitRate(
+  rate: number,
+  presentmentCurrency: string,
+  settlementCurrency: string,
+): number {
+  return rate * (minorUnitDivisor(presentmentCurrency) / minorUnitDivisor(settlementCurrency));
+}

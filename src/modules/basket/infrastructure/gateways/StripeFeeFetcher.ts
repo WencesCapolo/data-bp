@@ -187,6 +187,9 @@ function toFeeProps(
     // the charge currency. Dividing them by the charge's divisor would be wrong
     // whenever the two differ in decimal places.
     feeAmount: fromMinorUnits(bt.fee, bt.currency),
+    // Stripe withholds no tax at source; the plane has nothing to report, which
+    // is null rather than 0. See migrations/sql/0015.
+    taxAmount: null,
     netAmount: fromMinorUnits(bt.net, bt.currency),
     settlementCurrency: bt.currency.toUpperCase(),
     settlementAmount: fromMinorUnits(bt.amount, bt.currency),

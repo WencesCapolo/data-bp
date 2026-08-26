@@ -153,6 +153,11 @@ function toFeeProps(p: MpPayment): GatewayFeeProps {
     grossAmount: round2(gross),
     currency,
     feeAmount: fee,
+    // The API's fee_details do not separate the tax withheld at source — only
+    // the Cobros Export does, and only as the gap between gross and net. Null
+    // here says "this source cannot answer", which is true; the Export path
+    // fills it in. See migrations/sql/0015.
+    taxAmount: null,
     netAmount: net,
     // MercadoPago settles ARS into ARS and reports no conversion, so the
     // settlement plane collapses onto the presentment plane. ARS→USD is a
