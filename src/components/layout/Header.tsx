@@ -5,6 +5,7 @@ import { fetcher } from '@/lib/client/fetcher';
 import { useSession, signOut } from '@/lib/auth/client';
 import { swapToPortal, buildPortalLoginUrl } from '@/lib/auth/portal';
 import { SyncModal, type LastUploadInfo } from '@/components/layout/SyncModal';
+import { FeeUploadModal } from '@/components/layout/FeeUploadModal';
 import type { UploadResultDTO } from '@basket/core/dtos/PaymentUploadDTO';
 
 interface SyncState {
@@ -48,7 +49,10 @@ function relative(iso: string): string {
 
 export function Header() {
   const [syncErr, setSyncErr] = useState<string | null>(null);
-  const [modalOpen, setModalOpen] = useState(false);
+  // Which Upload is open. The two are one screen from the user's side and two
+  // flows underneath: a Pagos Export runs a Sync, a fee Export writes the fee
+  // mirror and rebuilds one view.
+  const [modal, setModal] = useState<'none' | 'pagos' | 'fees'>('none');
   const [uploadResult, setUploadResult] = useState<{
     rowsIngested: number;
     rowsSkipped: number;
@@ -96,7 +100,7 @@ export function Header() {
   }
 
   function closeModal() {
-    setModalOpen(false);
+    setModal('none');
     syncBtnRef.current?.focus();
   }
 
@@ -171,10 +175,10 @@ export function Header() {
         <button
           ref={syncBtnRef}
           type="button"
-          onClick={() => setModalOpen(true)}
+          onClick={() => setModal('pagos')}
           disabled={inFlight}
           aria-haspopup="dialog"
-          aria-expanded={modalOpen}
+          aria-expanded={modal !== 'none'}
           title={syncErr ?? 'Subir el Pagos Export y sincronizar'}
           style={{
             background: inFlight ? 'transparent' : 'var(--bg3)',
@@ -205,13 +209,17 @@ export function Header() {
           </span>
         )}
       </div>
-      {modalOpen && (
+      {modal === 'pagos' && (
         <SyncModal
           onClose={closeModal}
           onConfirm={confirmUpload}
           lastUpload={data?.lastUpload ?? null}
           syncInFlight={inFlight}
+          onSwitchToFees={() => setModal('fees')}
         />
+      )}
+      {modal === 'fees' && (
+        <FeeUploadModal onClose={closeModal} onSwitchToPagos={() => setModal('pagos')} />
       )}
     </header>
   );

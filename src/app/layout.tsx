@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { startSyncScheduler } from "@basket/infrastructure/cron/SyncScheduler";
 
@@ -7,6 +7,11 @@ startSyncScheduler();
 export const metadata: Metadata = {
   title: "Basket.tv — Analytics",
   description: "Dashboard de suscriptores",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({

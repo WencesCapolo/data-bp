@@ -121,6 +121,27 @@ export const FinanceQuerySchema = z
     filters: toFilters(v),
   }));
 
+// Contenido takes explicit days rather than a range kind, and its `country` is
+// the content's country — where the match was played — not the Subscriber's. It
+// deliberately does not reuse commonFiltersShape: `countries` there filters
+// Subscribers, and answering an audience question with it would be wrong while
+// still returning a number.
+export const ContenidoQuerySchema = z
+  .object({
+    from: z.string().regex(ISO_DATE).optional(),
+    to: z.string().regex(ISO_DATE).optional(),
+    country: z.string().min(1).max(64).optional(),
+  })
+  .superRefine((v, ctx) => {
+    if (v.from && v.to && v.from > v.to) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'from must not be after to',
+        path: ['from'],
+      });
+    }
+  });
+
 export const RetentionQuerySchema = z
   .object({
     range: rangeKindSchema,

@@ -15,6 +15,10 @@ export interface LastUploadInfo {
 }
 
 interface SyncModalProps {
+  /** Switch to the fee-Export flow. The Provider's own Export of what it charged
+   *  us is a different file with a different destination, but from the user's
+   *  side it is the same screen, so the two are one click apart. */
+  onSwitchToFees?: () => void;
   /** Close without doing anything; the Header returns focus to the Sync button. */
   onClose: () => void;
   /** Posts `{ uploadId }` to /api/sync and revalidates. Resolves with the sync
@@ -88,7 +92,7 @@ function fmtSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function SyncModal({ onClose, onConfirm, lastUpload, syncInFlight }: SyncModalProps) {
+export function SyncModal({ onClose, onConfirm, lastUpload, syncInFlight, onSwitchToFees }: SyncModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -322,6 +326,24 @@ export function SyncModal({ onClose, onConfirm, lastUpload, syncInFlight }: Sync
                   </>
                 )}
               </button>
+
+              {onSwitchToFees && (
+                <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 12, lineHeight: 1.6 }}>
+                  ¿Es el Export de <strong>comisiones</strong> de un Provider (Cobros de
+                  MercadoPago)?{' '}
+                  <button
+                    type="button"
+                    onClick={onSwitchToFees}
+                    style={{
+                      background: 'transparent', border: 'none', padding: 0,
+                      color: 'var(--blue)', cursor: 'pointer', fontSize: 11, textDecoration: 'underline',
+                    }}
+                  >
+                    Subilo por acá
+                  </button>
+                  : ese archivo no dispara un Sync, escribe las comisiones.
+                </p>
+              )}
 
               {lastUpload?.uploadedAt && (
                 <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 12, fontFamily: "'DM Mono', monospace" }}>

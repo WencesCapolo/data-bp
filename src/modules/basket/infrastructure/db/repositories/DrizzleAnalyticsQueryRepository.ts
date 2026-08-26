@@ -15,6 +15,19 @@ import type {
 import type { EvolutionDTO } from '@basket/core/dtos/EvolutionDTO';
 import type { TeamsDTO, TeamRankRow, TeamDailyDTO } from '@basket/core/dtos/TeamsDTO';
 import type { FinanceDTO } from '@basket/core/dtos/FinanceDTO';
+import type { GatewayNetDTO, NetDailyPoint } from '@basket/core/dtos/GatewayNetDTO';
+import {
+  indexRates,
+  usdByMonth,
+  usdTotals,
+  type DailyRate,
+} from '@basket/core/services/usdConversion';
+import type { EconomiaDTO } from '@basket/core/dtos/EconomiaDTO';
+import type {
+  ContenidoDTO,
+  ContenidoEventDayRow,
+  ContenidoTopRow,
+} from '@basket/core/dtos/ContenidoDTO';
 import type { RetentionDTO } from '@basket/core/dtos/RetentionDTO';
 import type { LifecycleDTO } from '@basket/core/dtos/LifecycleDTO';
 import type { DataQualityDTO } from '@basket/core/dtos/DataQualityDTO';
@@ -57,6 +70,26 @@ function shiftDay(day: string, deltaDays: number): string {
   const d = new Date(`${day}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + deltaDays);
   return d.toISOString().slice(0, 10);
+}
+
+// ── Contenido ───────────────────────────────────────────────────────────────
+// The prototype's catalogue filter, and the two labels it needs. A row averaging
+// under a minute of watching per view is a trailer, a test emission or an
+// aborted stream; counting it as published content drags every average down.
+const MIN_AVG_SECONDS_PER_VIEW = 60;
+const CONTENT_NO_COUNTRY = 'OTROS';
+// The first published match. Also the floor for an unbounded `from`, so one row
+// mis-dated 2004 in the source cannot stretch every axis by sixteen years.
+const CATALOGUE_FLOOR = '2020-10-01';
+const TOP_TEAMS = 15;
+const TOP_CONTENT = 15;
+const TOP_EVENT_DAYS = 12;
+
+/** A day headed into raw SQL: YYYY-MM-DD or nothing. */
+function safeDay(v: string | undefined): string | null {
+  if (!v || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return null;
+  const parsed = new Date(`${v}T00:00:00Z`);
+  return Number.isNaN(parsed.getTime()) ? null : v;
 }
 
 function rangeBounds(r: DateRange): { from: Date; to: Date } {
@@ -143,6 +176,41 @@ function buildActiveFilterWhere(f?: CommonFilters): string {
   if (f!.accessType) parts.push(`access_type = '${escStr(f!.accessType)}'`);
   if (f!.subType) parts.push(`sub_type = '${escStr(f!.subType)}'`);
   return ` AND ${parts.join(' AND ')}`;
+}
+
+// The seam. These are the Providers whose fee mirror has rows: MercadoPago,
+// whose Cobros Export is ingested from file, and Stripe, whose API is read on
+// the cron. A Provider outside the list is absent from every net figure rather
+// than present at zero — PayPal takes real money and has no fee feed at all, so
+// including it would read as "PayPal costs nothing" instead of "we do not know".
+//
+// This list and `basket_mat_gateway_net_daily`'s own predicate must agree. They
+// are two lines in two files, and a Provider added to one and not the other
+// produces a total that is right on one path and wrong on the other.
+const GATEWAY_PLATFORMS = [0, 4] as const;
+const GATEWAY_PLATFORM_NAMES: Record<number, string> = { 0: 'MercadoPago', 4: 'Stripe' };
+const GATEWAY_PLATFORM_LIST = GATEWAY_PLATFORMS.join(', ');
+const gatewayName = (platform: number): string =>
+  GATEWAY_PLATFORM_NAMES[platform] ?? `Platform ${platform}`;
+
+// Subscriptions are Stripe's alone. MercadoPago's preapprovals are a different
+// object with a different id shape (the 143,577 hex32 ids in basket_payments)
+// and no fetcher yet, so widening the money seam above must NOT widen this one:
+// counting MP subscriptions as zero would understate churn, not report it.
+const SUBSCRIPTION_PLATFORM = 4;
+const SUBSCRIPTION_PLATFORM_NAME = 'Stripe';
+
+// GROUPING(day, month) bitmasks: bit set = column IS grouped away.
+const GRP_DAY = 1; // day kept, month grouped   -> 01
+const GRP_MONTH = 2; // day grouped, month kept -> 10
+const GRP_TOTAL = 3; // both grouped            -> 11
+
+// fee_amount / settlement_amount — same plane. Dividing a fee by a presentment
+// gross reads 0.16% on a UYU row because the two numbers are in different
+// currencies; that ratio is never computed anywhere.
+function feePct(fees: number, grossSettlement: number): number {
+  if (grossSettlement === 0) return 0;
+  return Math.round((fees / grossSettlement) * 10000) / 100;
 }
 
 export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepository {
@@ -993,10 +1061,17 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
   // --------------------------------------------------------------------------
   // FINANCE — 4 aggregations against mat_revenue_daily in parallel
   // --------------------------------------------------------------------------
+  // Gross only, unchanged: /financiero owns the net half and asks for it
+  // separately, so the /basket tab keeps paying for exactly the four queries it
+  // renders.
   async getFinance(range: DateRange, filters?: CommonFilters): Promise<FinanceDTO> {
     if (hasFilters(filters)) {
       return this.getFinanceFiltered(range, filters!);
     }
+    return this.getFinanceGross(range);
+  }
+
+  private async getFinanceGross(range: DateRange): Promise<FinanceDTO> {
     const { from, to } = rangeBounds(range);
     const f = from.toISOString().slice(0, 10);
     const t = to.toISOString().slice(0, 10);
@@ -1154,6 +1229,771 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
         totalAmount: n(r.total_amount),
       })),
     };
+  }
+
+  // --------------------------------------------------------------------------
+  // ECONOMÍA (/financiero) — gross off our own Pagos, net off the gateway
+  // mirrors. Two independent halves of the same page, so they run in parallel.
+  //
+  // The gross half reads basket_v_active_payments rather than the pre-aggregated
+  // view for everything that needs a distinct payer count or a price point,
+  // because the view aggregates both away. monthlyGross still comes off the view
+  // when no filter is active — it is the one query here that is asked on every
+  // range and the view answers it for free.
+  // --------------------------------------------------------------------------
+  async getEconomia(range: DateRange, filters?: CommonFilters): Promise<EconomiaDTO> {
+    const { from, to } = rangeBounds(range);
+    const f = from.toISOString().slice(0, 10);
+    const t = to.toISOString().slice(0, 10);
+    const fw = buildActiveFilterWhere(filters);
+    // Half-open on created_at keeps the predicate sargable.
+    const live = `WHERE created_at >= '${f}'::date AND created_at < '${t}'::date + 1 ${fw}`;
+
+    // Sporting season, Sep→Aug: a Pago in Jan 2026 belongs to season 2025/26.
+    // The prototype labels seasons by their opening year; this keeps both halves
+    // of the label so nobody has to know that convention to read the chart.
+    const season = `
+      CASE WHEN EXTRACT(MONTH FROM created_at) >= 9
+        THEN EXTRACT(YEAR FROM created_at)::int || '/' || RIGHT((EXTRACT(YEAR FROM created_at)::int + 1)::text, 2)
+        ELSE (EXTRACT(YEAR FROM created_at)::int - 1) || '/' || RIGHT(EXTRACT(YEAR FROM created_at)::text, 2)
+      END`;
+
+    // Country, month-detail and catálogo all need a distinct payer count or a
+    // price point, which the pre-aggregated view has aggregated away — so they
+    // read the live view. One scan, three grains: as three separate queries this
+    // walked 400k rows three times and cost 5s on range=all.
+    //
+    // grp is GROUPING(month, country, price): a bit set means that column is
+    // grouped away, which tags each set unambiguously.
+    //   (country, currency)                        -> 101 = 5
+    //   (month, currency)                          -> 011 = 3
+    //   (family, frequency, country, ccy, season, price) -> 100 = 4
+    const groupedLive = this.conn.execute(sql.raw(`
+      WITH base AS MATERIALIZED (
+        SELECT
+          DATE_TRUNC('month', created_at)::date AS month,
+          -- 'N/A' rather than NULL for a Pago whose Subscriber has no country,
+          -- matching basket_mat_revenue_daily so the two paths label it the same.
+          COALESCE(user_country, 'N/A')         AS country,
+          -- Matches basket_mat_revenue_daily, which coalesces the same way: a
+          -- Pago with no currency is a voucher, and 'NONE' says so.
+          COALESCE(currency, 'NONE')            AS currency,
+          user_id,
+          amount,
+          CASE
+            WHEN sub_type = 'Mensual_Basico' THEN 'Básico'
+            WHEN sub_type IN ('Mensual_Total', 'Anual_Total') THEN 'Total'
+            ELSE sub_type
+          END                                   AS plan_family,
+          CASE
+            WHEN sub_type LIKE 'Mensual%' THEN 'Mensual'
+            WHEN sub_type LIKE 'Anual%'   THEN 'Anual'
+            WHEN recurrent = 0            THEN 'Free'
+            ELSE 'Otros'
+          END                                   AS plan_frequency,
+          ${season}                             AS season
+        FROM basket_v_active_payments ${live}
+      )
+      SELECT GROUPING(month, country, amount)::int AS grp,
+             month, country, currency, plan_family, plan_frequency, season,
+             amount::numeric              AS price,
+             SUM(amount)::numeric         AS gross,
+             COUNT(*)::int                AS tx_count,
+             COUNT(DISTINCT user_id)::int AS payers
+      FROM base
+      GROUP BY GROUPING SETS (
+        (country, currency),
+        (month, currency),
+        (plan_family, plan_frequency, country, currency, season, amount)
+      )
+    `));
+
+    const [grossRows, liveRows, gateway] = await Promise.all([
+      hasFilters(filters)
+        ? this.conn.execute(sql.raw(`
+            SELECT DATE_TRUNC('month', created_at)::date AS month,
+                   currency, platform_name,
+                   SUM(amount)::numeric AS gross,
+                   COUNT(*)::int        AS tx_count
+            FROM basket_v_active_payments ${live}
+            GROUP BY 1, 2, 3 ORDER BY 1, 2, 3
+          `))
+        : this.conn.execute(sql.raw(`
+            SELECT DATE_TRUNC('month', day)::date AS month,
+                   currency, platform_name,
+                   SUM(total_amount)::numeric  AS gross,
+                   SUM(payment_count)::int     AS tx_count
+            FROM basket_mat_revenue_daily
+            WHERE day BETWEEN '${f}'::date AND '${t}'::date
+            GROUP BY 1, 2, 3 ORDER BY 1, 2, 3
+          `)),
+      groupedLive,
+      this.getGatewayNet(range, filters),
+    ]);
+
+    const platformsWithGross = new Set(
+      ((grossRows as unknown) as RowAny[]).map((r) => s(r.platform_name)),
+    );
+    const all = (liveRows as unknown) as RowAny[];
+    const GRP_COUNTRY = 5;
+    const GRP_MONTH = 3;
+    const GRP_CATALOG = 4;
+    return {
+      range,
+      // Anything we took money through but hold no fee rows for. Derived from
+      // the range's own platforms, so a range with no MercadoPago Pagos does not
+      // warn about MercadoPago.
+      // Against the LIST, not the joined label: `platformName` is
+      // 'MercadoPago · Stripe' once more than one Provider has fee rows, and
+      // comparing a single name against that joined string matches nothing —
+      // which would report every netted Provider as gross-only.
+      grossOnlyPlatforms: [...platformsWithGross].filter(
+        (p) => !gateway.platformNames.includes(p) && p !== 'Voucher' && p !== 'Manual',
+      ),
+      monthlyGross: ((grossRows as unknown) as RowAny[]).map((r) => ({
+        month: d(r.month),
+        currency: s(r.currency),
+        platformName: s(r.platform_name),
+        gross: n(r.gross),
+        txCount: n(r.tx_count),
+      })),
+      byCountry: all
+        .filter((r) => n(r.grp) === GRP_COUNTRY)
+        .sort((a, b) => n(b.gross) - n(a.gross))
+        .map((r) => ({
+        country: s(r.country),
+        currency: s(r.currency),
+        gross: n(r.gross),
+        txCount: n(r.tx_count),
+        payers: n(r.payers),
+      })),
+      catalog: all
+        .filter((r) => n(r.grp) === GRP_CATALOG)
+        .sort((a, b) => n(b.tx_count) - n(a.tx_count))
+        .map((r) => ({
+        planFamily: s(r.plan_family),
+        planFrequency: s(r.plan_frequency),
+        market: s(r.country),
+        currency: s(r.currency),
+        season: s(r.season),
+        price: n(r.price),
+        txCount: n(r.tx_count),
+      })),
+      monthlyDetail: all
+        .filter((r) => n(r.grp) === GRP_MONTH)
+        .sort((a, b) => (d(a.month) < d(b.month) ? -1 : d(a.month) > d(b.month) ? 1 : s(a.currency) < s(b.currency) ? -1 : 1))
+        .map((r) => ({
+        month: d(r.month),
+        currency: s(r.currency),
+        gross: n(r.gross),
+        txCount: n(r.tx_count),
+        payers: n(r.payers),
+      })),
+      gateway,
+    };
+  }
+
+  // --------------------------------------------------------------------------
+  // CONTENIDO — the catalogue and its audience, off basket_content.
+  //
+  // Two clocks meet here and only one of them is ours. `basket_content.date` is
+  // the match's own kickoff, and `basket_payments.created_at` is Argentina local
+  // time stored as UTC (a 3-hour skew). The two are bucketed by month side by
+  // side in the audience-vs-subscribers series, so a match played late on the
+  // last night of a month can land a month away from the Pagos it drove. Named
+  // here rather than corrected: shifting one clock to match the other would make
+  // every figure disagree with the tables they came from.
+  //
+  // The catalogue filter is the prototype's, reproduced: published rows only,
+  // and only those averaging at least a minute of watching per view. Without it
+  // the row count is 25% higher and every average is dragged down by trailers
+  // and aborted streams.
+  // --------------------------------------------------------------------------
+  async getContenido(opts: {
+    from?: string;
+    to?: string;
+    country?: string;
+  }): Promise<ContenidoDTO> {
+    // Dates arrive from the query string, so they go through a strict parse
+    // before reaching raw SQL. Absent means the whole catalogue.
+    const f = safeDay(opts.from) ?? CATALOGUE_FLOOR;
+    const t = safeDay(opts.to) ?? d(new Date());
+    const country = opts.country?.trim() || null;
+    const countryWhere = country
+      ? `AND COALESCE(NULLIF(c.country, ''), '${CONTENT_NO_COUNTRY}') = '${country.replace(/'/g, "''")}'`
+      : '';
+
+    // Half-open on the upper bound keeps `date` sargable against
+    // basket_content_date_idx.
+    const scoped = `
+      FROM basket_content c
+      WHERE c.date >= '${f}'::date AND c.date < '${t}'::date + 1
+      ${countryWhere}`;
+    const KEPT = `c.status = 1 AND c.views > 0
+                  AND c.views_seconds::numeric / c.views >= ${MIN_AVG_SECONDS_PER_VIEW}`;
+    const IS_MATCH = `COALESCE(c.team_1_name, '') <> '' AND COALESCE(c.team_2_name, '') <> ''`;
+
+    const base = `
+      WITH base AS MATERIALIZED (
+        SELECT c.date::date                                        AS day,
+               DATE_TRUNC('month', c.date)::date                    AS month,
+               COALESCE(NULLIF(c.country, ''), '${CONTENT_NO_COUNTRY}') AS country,
+               COALESCE(c.tournament_id, 0)                         AS tournament_id,
+               COALESCE(c.team_1_name, '')                          AS t1,
+               COALESCE(c.team_2_name, '')                          AS t2,
+               COALESCE(c.views, 0)                                 AS views,
+               COALESCE(c.views_users, 0)                           AS users,
+               -- Negative view-seconds are dropped, not clamped per row: 435
+               -- rows carry one and every last of them is a source artefact.
+               GREATEST(COALESCE(c.views_seconds, 0), 0)            AS seconds,
+               (${IS_MATCH})                                        AS is_match
+        ${scoped} AND ${KEPT}
+      )`;
+
+    const [countRows, grainRows, teamRows, topRows, activeRows, countryRows] =
+      await Promise.all([
+        // The filter reports itself: one scan yields both what survived and what
+        // each rule cost, so the tab can say 3,094 short rows rather than imply
+        // the catalogue is 3,094 rows smaller than it is.
+        this.conn.execute(sql.raw(`
+          SELECT COUNT(*)::int                                          AS rows_in_range,
+                 COUNT(*) FILTER (WHERE c.status <> 1)::int             AS dropped_status,
+                 COUNT(*) FILTER (WHERE c.status = 1 AND NOT (${KEPT}))::int AS dropped_short,
+                 COUNT(*) FILTER (WHERE ${KEPT})::int                   AS rows_kept,
+                 COUNT(*) FILTER (WHERE ${KEPT} AND ${IS_MATCH})::int    AS matches_complete,
+                 COALESCE(SUM(c.views)      FILTER (WHERE ${KEPT}), 0)::bigint AS views,
+                 COALESCE(SUM(c.views_users) FILTER (WHERE ${KEPT}), 0)::bigint AS users,
+                 COALESCE(SUM(GREATEST(c.views_seconds, 0)) FILTER (WHERE ${KEPT}), 0)::bigint AS seconds,
+                 MIN(c.date) FILTER (WHERE ${KEPT})                     AS date_min,
+                 MAX(c.date) FILTER (WHERE ${KEPT})                     AS date_max
+          ${scoped}
+        `)),
+        // Three grains, one scan. grp is GROUPING(month, country, tournament_id):
+        //   (month)         -> 011 = 3
+        //   (country)       -> 101 = 5
+        //   (tournament_id) -> 110 = 6
+        // The tournament set carries both totals and match-only totals, because
+        // "top leagues by audience" and "matches per league" are the same
+        // grouping asked two ways — the second excludes programmes and
+        // highlights, which have no two teams.
+        this.conn.execute(sql.raw(`
+          ${base}
+          SELECT GROUPING(b.month, b.country, b.tournament_id)::int AS grp,
+                 b.month, b.country, b.tournament_id,
+                 COALESCE(tt.name, CASE WHEN b.tournament_id = 0 THEN 'Sin torneo'
+                                        ELSE 'Torneo ' || b.tournament_id END) AS name,
+                 COALESCE(tt.country, '')      AS country_master,
+                 SUM(b.views)::bigint          AS views,
+                 SUM(b.users)::bigint          AS users,
+                 SUM(b.seconds)::bigint        AS seconds,
+                 COUNT(*)::int                 AS cnt,
+                 COUNT(*) FILTER (WHERE b.is_match)::int              AS matches,
+                 COALESCE(SUM(b.views) FILTER (WHERE b.is_match), 0)::bigint AS match_views,
+                 COALESCE(SUM(b.users) FILTER (WHERE b.is_match), 0)::bigint AS match_users
+          FROM base b
+          LEFT JOIN basket_tournaments tt ON tt.id = b.tournament_id
+          GROUP BY GROUPING SETS ((b.month), (b.country), (b.tournament_id, tt.name, tt.country))
+        `)),
+        // A match counts for both its teams, so the two name columns are unioned
+        // rather than joined — a team's row is every match it appeared in, home
+        // or away, which is what the prototype's ranking measures.
+        this.conn.execute(sql.raw(`
+          ${base}
+          SELECT team,
+                 SUM(views)::bigint  AS views,
+                 SUM(users)::bigint  AS users,
+                 COUNT(*)::int       AS cnt
+          FROM (
+            SELECT t1 AS team, views, users FROM base WHERE t1 <> ''
+            UNION ALL
+            SELECT t2 AS team, views, users FROM base WHERE t2 <> ''
+          ) x
+          GROUP BY team
+          ORDER BY views DESC
+          LIMIT ${TOP_TEAMS}
+        `)),
+        this.conn.execute(sql.raw(`
+          ${base}
+          SELECT b.day, b.views, b.users, b.t1, b.t2, b.country,
+                 COALESCE(tt.name, '') AS name
+          FROM base b
+          LEFT JOIN basket_tournaments tt ON tt.id = b.tournament_id
+          ORDER BY b.views DESC
+          LIMIT ${TOP_CONTENT}
+        `)),
+        // Active at the close of the month, so the last day the view holds for
+        // that month — not the month's average, and not today's number carried
+        // backwards.
+        this.conn.execute(sql.raw(`
+          SELECT month, all_active::int AS active
+          FROM (
+            SELECT DATE_TRUNC('month', day)::date AS month,
+                   all_active,
+                   ROW_NUMBER() OVER (PARTITION BY DATE_TRUNC('month', day)
+                                      ORDER BY day DESC) AS rn
+            FROM basket_mat_daily_active
+            WHERE day >= '${f}'::date AND day < '${t}'::date + 1
+          ) x
+          WHERE rn = 1
+          ORDER BY month
+        `)),
+        // The picker lists every country the catalogue has ever carried, not the
+        // range's — otherwise narrowing the range removes the option that would
+        // widen it again.
+        this.conn.execute(sql.raw(`
+          SELECT DISTINCT COALESCE(NULLIF(c.country, ''), '${CONTENT_NO_COUNTRY}') AS country
+          FROM basket_content c
+          WHERE ${KEPT}
+          ORDER BY 1
+        `)),
+      ]);
+
+    const c0 = ((countRows as unknown) as RowAny[])[0] ?? {};
+    const grains = (grainRows as unknown) as RowAny[];
+    const GRP_MONTH = 3;
+    const GRP_COUNTRY = 5;
+    const GRP_TOURNAMENT = 6;
+
+    const tournamentRows = grains.filter((r) => n(r.grp) === GRP_TOURNAMENT);
+    const topViews = ((topRows as unknown) as RowAny[]).map((r) => ({
+      date: d(r.day),
+      title: '',
+      team1: s(r.t1),
+      team2: s(r.t2),
+      tournamentName: s(r.name),
+      country: s(r.country),
+      views: n(r.views),
+      users: n(r.users),
+    }));
+
+    return {
+      from: f,
+      to: t,
+      country,
+      catalogue: {
+        status: 1,
+        minAvgSecondsPerView: MIN_AVG_SECONDS_PER_VIEW,
+        rowsInRange: n(c0.rows_in_range),
+        rowsKept: n(c0.rows_kept),
+        rowsDroppedStatus: n(c0.dropped_status),
+        rowsDroppedShort: n(c0.dropped_short),
+      },
+      totals: {
+        contentCount: n(c0.rows_kept),
+        matchesComplete: n(c0.matches_complete),
+        views: n(c0.views),
+        users: n(c0.users),
+        seconds: n(c0.seconds),
+        dateMin: d(c0.date_min),
+        dateMax: d(c0.date_max),
+      },
+      monthly: grains
+        .filter((r) => n(r.grp) === GRP_MONTH)
+        .map((r) => ({
+          month: d(r.month),
+          views: n(r.views),
+          users: n(r.users),
+          seconds: n(r.seconds),
+          count: n(r.cnt),
+          matches: n(r.matches),
+        }))
+        .sort((a, b) => (a.month < b.month ? -1 : 1)),
+      byCountry: grains
+        .filter((r) => n(r.grp) === GRP_COUNTRY)
+        .map((r) => ({
+          country: s(r.country),
+          views: n(r.views),
+          users: n(r.users),
+          count: n(r.cnt),
+          matches: n(r.matches),
+        }))
+        .sort((a, b) => b.views - a.views),
+      byTournament: tournamentRows
+        .map((r) => ({
+          tournamentId: n(r.tournament_id),
+          name: s(r.name),
+          countryMaster: s(r.country_master),
+          views: n(r.views),
+          users: n(r.users),
+          count: n(r.cnt),
+          matches: n(r.matches),
+        }))
+        .sort((a, b) => b.views - a.views),
+      byLeague: tournamentRows
+        .filter((r) => n(r.matches) > 0)
+        .map((r) => ({
+          tournamentId: n(r.tournament_id),
+          name: s(r.name),
+          countryMaster: s(r.country_master),
+          views: n(r.match_views),
+          users: n(r.match_users),
+          count: n(r.matches),
+          matches: n(r.matches),
+        }))
+        .sort((a, b) => b.matches - a.matches),
+      byTeam: ((teamRows as unknown) as RowAny[]).map((r) => ({
+        team: s(r.team),
+        views: n(r.views),
+        users: n(r.users),
+        count: n(r.cnt),
+      })),
+      topViews,
+      topEventDays: await this.contentEventDays(topViews.slice(0, TOP_EVENT_DAYS)),
+      monthlyActive: ((activeRows as unknown) as RowAny[]).map((r) => ({
+        month: d(r.month),
+        active: n(r.active),
+      })),
+      countries: ((countryRows as unknown) as RowAny[]).map((r) => s(r.country)),
+    };
+  }
+
+  // Altas on the days the biggest content landed. A Pago is an alta when it is
+  // the Subscriber's first, or when their previous one had already lapsed —
+  // the same two buckets basket_mat_monthly_lifecycle counts, asked per day.
+  //
+  // Restricted to the Subscribers who paid on one of those days before the
+  // window function runs: the LAG needs a whole Subscriber's history, but it
+  // does not need everybody's.
+  private async contentEventDays(
+    top: ContenidoTopRow[],
+  ): Promise<ContenidoEventDayRow[]> {
+    const days = [...new Set(top.map((r) => r.date).filter(Boolean))];
+    if (days.length === 0) return [];
+    const list = days.map((x) => `'${x}'::date`).join(', ');
+    const rows = (await this.conn.execute(sql.raw(`
+      WITH touched AS (
+        SELECT DISTINCT user_id
+        FROM basket_v_active_payments
+        WHERE created_at::date IN (${list})
+      ),
+      hist AS (
+        SELECT p.user_id, p.created_at,
+               ROW_NUMBER() OVER (PARTITION BY p.user_id ORDER BY p.created_at) AS rn,
+               LAG(p.expires_at) OVER (PARTITION BY p.user_id ORDER BY p.created_at) AS prev_expires
+        FROM basket_v_active_payments p
+        JOIN touched t ON t.user_id = p.user_id
+      )
+      SELECT created_at::date AS day,
+             COUNT(*) FILTER (WHERE rn = 1)::int AS new_subs,
+             COUNT(*) FILTER (WHERE rn > 1
+                              AND prev_expires + INTERVAL '7 days' < created_at)::int AS reactivated
+      FROM hist
+      WHERE created_at::date IN (${list})
+      GROUP BY 1
+    `)) as unknown) as RowAny[];
+    const byDay = new Map(rows.map((r) => [d(r.day), r]));
+    return top.map((r) => ({
+      ...r,
+      newSubs: n(byDay.get(r.date)?.new_subs),
+      reactivated: n(byDay.get(r.date)?.reactivated),
+    }));
+  }
+
+  // --------------------------------------------------------------------------
+  // GATEWAY NET — fees, net and refunds off basket_payment_fees, plus
+  // subscription churn off basket_gateway_subscriptions. Stripe only.
+  //
+  // Everything money-shaped here is bucketed on captured_at (true UTC), the
+  // clock basket_mat_gateway_net_daily picked; basket_payments.created_at is
+  // Argentina local time stored as UTC and is never mixed in.
+  // --------------------------------------------------------------------------
+  async getGatewayNet(
+    range: DateRange,
+    filters?: CommonFilters,
+  ): Promise<GatewayNetDTO> {
+    const { from, to } = rangeBounds(range);
+    const f = from.toISOString().slice(0, 10);
+    const t = to.toISOString().slice(0, 10);
+    const filtered = hasFilters(filters);
+
+    const [moneyRows, statusRows, subMonthRows, coverageRows, fxRows] = await Promise.all([
+      filtered
+        ? this.gatewayMoneyFiltered(f, t, filters!)
+        : this.gatewayMoneyUnfiltered(f, t),
+      // Status is a current-state snapshot, so it is deliberately not windowed
+      // by the range: "how many subscriptions are canceled today" has no
+      // meaningful restriction to a past month. Churn reads status, never
+      // canceled_at — 15,636 canceled rows carry no canceled_at.
+      this.conn.execute(sql.raw(`
+        SELECT status,
+               COUNT(*)::int           AS c,
+               COUNT(canceled_at)::int AS with_canceled_at
+        FROM basket_gateway_subscriptions
+        WHERE platform = ${SUBSCRIPTION_PLATFORM}
+        GROUP BY status
+        ORDER BY c DESC
+      `)),
+      // The monthly shape is the datable subset only: a cancellation without a
+      // canceled_at cannot be placed on a timeline at all, and the status
+      // counts above are what covers those rows.
+      this.conn.execute(sql.raw(`
+        WITH created AS (
+          SELECT DATE_TRUNC('month', created_at)::date AS m, COUNT(*)::int AS n
+          FROM basket_gateway_subscriptions
+          WHERE platform = ${SUBSCRIPTION_PLATFORM}
+            AND created_at >= '${f}'::date AND created_at < '${t}'::date + 1
+          GROUP BY 1
+        ),
+        canceled AS (
+          SELECT DATE_TRUNC('month', canceled_at)::date AS m, COUNT(*)::int AS n
+          FROM basket_gateway_subscriptions
+          WHERE platform = ${SUBSCRIPTION_PLATFORM}
+            AND canceled_at >= '${f}'::date AND canceled_at < '${t}'::date + 1
+          GROUP BY 1
+        )
+        SELECT COALESCE(c.m, x.m)   AS month,
+               COALESCE(c.n, 0)     AS created,
+               COALESCE(x.n, 0)     AS canceled
+        FROM created c
+        FULL OUTER JOIN canceled x ON x.m = c.m
+        ORDER BY 1
+      `)),
+      // All-time on purpose: coverage moves when Pagos are ingested, not only
+      // when fees are, so a range-windowed figure reads as a coverage
+      // regression when it is really just new Pagos.
+      // Bucketed by id SHAPE as well as currency, because MercadoPago has two.
+      // Its numeric ids are payments and can carry a fee; its 143,577 hex32 ids
+      // are preapprovals — subscription objects that never had a fee to report.
+      // One coverage number over both would sit near 73% forever and read as a
+      // permanent data loss instead of as two populations, one of which is not
+      // supposed to be here.
+      this.conn.execute(sql.raw(`
+        SELECT p.platform                        AS platform,
+               p.currency                        AS currency,
+               CASE WHEN p.platform_payment_id ~ '^[0-9a-f]{32}$'
+                    THEN 'preapproval' ELSE 'payment' END AS id_shape,
+               COUNT(*)::int                     AS successful,
+               COUNT(f.platform_payment_id)::int AS with_fee
+        FROM basket_payments p
+        LEFT JOIN basket_payment_fees f
+          ON f.platform = p.platform AND f.platform_payment_id = p.platform_payment_id
+        WHERE p.platform IN (${GATEWAY_PLATFORM_LIST})
+          AND p.status = 1
+          AND p.platform_payment_id IS NOT NULL
+        GROUP BY p.platform, p.currency, id_shape
+        ORDER BY successful DESC
+      `)),
+      // The FX plane, day by day over the range. Only the fetched sources are
+      // read here: the derived 'stripe' rows are provenance for a conversion
+      // Stripe already did, and using them to convert a settlement figure that
+      // is already USD would apply a rate twice. See docs/adr/0007.
+      this.conn.execute(sql.raw(`
+        SELECT day::text AS day, quote_currency, source, rate::float8 AS rate
+        FROM basket_fx_rates
+        WHERE base_currency = 'USD'
+          -- Both fetched sources, and they cannot collide: 'blue' quotes ARS,
+          -- 'oficial_cross' quotes EUR, and the index below is keyed by the
+          -- quote currency. A second source for one pair would need a choice;
+          -- two sources for two pairs need none.
+          AND source IN ('blue', 'oficial_cross')
+          AND day BETWEEN '${f}'::date AND '${t}'::date
+      `)),
+    ]);
+
+    const money = (moneyRows as unknown) as RowAny[];
+    const settlement = money.filter((r) => s(r.grain) === 'settlement');
+    const refunds = money.filter((r) => s(r.grain) === 'refund');
+
+    // The Providers actually present in this range, not the whole seam: a range
+    // with no MercadoPago Pagos should not label itself as covering MercadoPago.
+    const presentPlatforms = [...new Set(settlement.map((r) => n(r.platform)))].sort();
+
+    // USD is computed from the DAY grain and never from the month or the total:
+    // the blue rate moves every day and ARS inflation makes a month-rate
+    // conversion wrong by whole percent, not by rounding. The day rows are
+    // already in hand for both the filtered and unfiltered paths, so the two
+    // convert identically and neither needs its own SQL.
+    const netByDay: NetDailyPoint[] = settlement
+      .filter((r) => n(r.grp) === GRP_DAY)
+      .map((r) => ({
+        day: d(r.day),
+        platform: n(r.platform),
+        platformName: gatewayName(n(r.platform)),
+        settlementCurrency: s(r.ccy),
+        grossSettlement: n(r.gross),
+        fees: n(r.fees),
+        taxes: n(r.taxes),
+        net: n(r.net),
+        txCount: n(r.tx_count),
+      }))
+      .sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : a.settlementCurrency < b.settlementCurrency ? -1 : 1));
+
+    const rates = indexRates(((fxRows as unknown) as RowAny[]).map((r): DailyRate => ({
+      day: d(r.day),
+      quoteCurrency: s(r.quote_currency),
+      source: s(r.source),
+      rate: n(r.rate),
+    })));
+
+    return {
+      platformName: presentPlatforms.map(gatewayName).join(' · ') || GATEWAY_PLATFORM_NAMES[4],
+      platformNames: presentPlatforms.map(gatewayName),
+      subscriptionPlatformName: SUBSCRIPTION_PLATFORM_NAME,
+      settlementTotals: settlement
+        .filter((r) => n(r.grp) === GRP_TOTAL)
+        .map((r) => ({
+          platform: n(r.platform),
+          platformName: gatewayName(n(r.platform)),
+          settlementCurrency: s(r.ccy),
+          grossSettlement: n(r.gross),
+          fees: n(r.fees),
+          taxes: n(r.taxes),
+          net: n(r.net),
+          txCount: n(r.tx_count),
+          feePct: feePct(n(r.fees), n(r.gross)),
+          taxPct: feePct(n(r.taxes), n(r.gross)),
+        }))
+        .sort((a, b) => b.grossSettlement - a.grossSettlement),
+      netByDay,
+      netByMonth: settlement
+        .filter((r) => n(r.grp) === GRP_MONTH)
+        .map((r) => ({
+          month: d(r.month),
+          platform: n(r.platform),
+          platformName: gatewayName(n(r.platform)),
+          settlementCurrency: s(r.ccy),
+          grossSettlement: n(r.gross),
+          fees: n(r.fees),
+          taxes: n(r.taxes),
+          net: n(r.net),
+          txCount: n(r.tx_count),
+        }))
+        .sort((a, b) => (a.month < b.month ? -1 : a.month > b.month ? 1 : a.settlementCurrency < b.settlementCurrency ? -1 : 1)),
+      refundsByCurrency: refunds
+        .filter((r) => n(r.grp) === GRP_TOTAL)
+        .map((r) => ({
+          platform: n(r.platform),
+          platformName: gatewayName(n(r.platform)),
+          currency: s(r.ccy),
+          refundedAmount: n(r.refunded),
+          refundCount: n(r.refund_count),
+        }))
+        .sort((a, b) => b.refundCount - a.refundCount),
+      subscriptionsByStatus: ((statusRows as unknown) as RowAny[]).map((r) => ({
+        status: s(r.status),
+        count: n(r.c),
+        withCanceledAt: n(r.with_canceled_at),
+      })),
+      subscriptionsByMonth: ((subMonthRows as unknown) as RowAny[]).map((r) => ({
+        month: d(r.month),
+        created: n(r.created),
+        canceled: n(r.canceled),
+      })),
+      coverage: ((coverageRows as unknown) as RowAny[]).map((r) => ({
+        platform: n(r.platform),
+        platformName: gatewayName(n(r.platform)),
+        currency: s(r.currency),
+        idShape: s(r.id_shape) === 'preapproval' ? ('preapproval' as const) : ('payment' as const),
+        successful: n(r.successful),
+        withFee: n(r.with_fee),
+        coveragePct: n(r.successful) === 0
+          ? 0
+          : Math.round((n(r.with_fee) / n(r.successful)) * 1000) / 10,
+      })),
+      usdTotals: usdTotals(netByDay, rates),
+      netUsdByMonth: usdByMonth(netByDay, rates),
+      subscriptionsIgnoreFilters: filtered,
+      netExcludesUnmatchedFees: filtered,
+    };
+  }
+
+  // One scan of the pre-aggregated view, split by GROUPING SETS into the day,
+  // month and total grains. `grain` is already a column of the view — the two
+  // currency planes never share a row, so grouping by it keeps them apart.
+  private gatewayMoneyUnfiltered(f: string, t: string): Promise<unknown> {
+    return this.conn.execute(sql.raw(`
+      WITH base AS (
+        SELECT grain, day, DATE_TRUNC('month', day)::date AS month, platform, ccy,
+               gross, fees, taxes, net, tx_count, refunded, refund_count
+        FROM basket_mat_gateway_net_daily
+        WHERE day BETWEEN '${f}'::date AND '${t}'::date
+      )
+      SELECT GROUPING(day, month)::int AS grp,
+             grain, day, month, platform, ccy,
+             SUM(gross)::numeric        AS gross,
+             SUM(fees)::numeric         AS fees,
+             SUM(taxes)::numeric        AS taxes,
+             SUM(net)::numeric          AS net,
+             SUM(tx_count)::int         AS tx_count,
+             SUM(refunded)::numeric     AS refunded,
+             SUM(refund_count)::int     AS refund_count
+      FROM base
+      -- Platform is part of every grouping set, never summed away. Two
+      -- Providers can settle the same currency (they do not today, and the
+      -- moment one does, a total that had grouped them together would silently
+      -- merge two fee structures into one ratio).
+      GROUP BY GROUPING SETS (
+        (grain, platform, ccy, day),
+        (grain, platform, ccy, month),
+        (grain, platform, ccy)
+      )
+    `));
+  }
+
+  // Filtered path. basket_payment_fees carries no user dimension, so the filter
+  // is applied to the payments and the mirror is joined by the gateway id — the
+  // same (platform, platform_payment_id) pair the mirror is keyed on. The range
+  // is applied to captured_at, matching the view's clock, so the two paths
+  // bucket identically.
+  //
+  // They do NOT cover the same population, and cannot: joining to payments
+  // drops the 8,675 fee rows (4.7%) whose Pago was never ingested or whose
+  // Subscriber is unknown. Reported as netExcludesUnmatchedFees rather than
+  // papered over by making the unfiltered path join too — the headline total
+  // should be the whole mirror.
+  private gatewayMoneyFiltered(f: string, t: string, filters: CommonFilters): Promise<unknown> {
+    const fw = buildActiveFilterWhere(filters);
+    return this.conn.execute(sql.raw(`
+      WITH pay AS MATERIALIZED (
+        SELECT platform, platform_payment_id
+        FROM basket_v_active_payments
+        WHERE platform IN (${GATEWAY_PLATFORM_LIST})
+          AND platform_payment_id IS NOT NULL
+          ${fw}
+      ),
+      base AS MATERIALIZED (
+        SELECT f.captured_at::date                        AS day,
+               DATE_TRUNC('month', f.captured_at)::date   AS month,
+               f.platform                                 AS platform,
+               f.settlement_currency                      AS s_ccy,
+               f.currency                                 AS p_ccy,
+               f.settlement_amount, f.fee_amount,
+               COALESCE(f.tax_amount, 0)                  AS tax_amount,
+               f.net_amount, f.refunded_amount
+        FROM basket_payment_fees f
+        JOIN pay ON pay.platform = f.platform
+                AND pay.platform_payment_id = f.platform_payment_id
+        WHERE f.platform IN (${GATEWAY_PLATFORM_LIST})
+          AND f.captured_at >= '${f}'::date
+          AND f.captured_at <  '${t}'::date + 1
+      )
+      SELECT 'settlement'::text          AS grain,
+             GROUPING(day, month)::int   AS grp,
+             day, month, platform, s_ccy AS ccy,
+             SUM(settlement_amount)::numeric AS gross,
+             SUM(fee_amount)::numeric       AS fees,
+             SUM(tax_amount)::numeric       AS taxes,
+             SUM(net_amount)::numeric       AS net,
+             COUNT(*)::int                  AS tx_count,
+             0::numeric                     AS refunded,
+             0::int                         AS refund_count
+      FROM base
+      GROUP BY GROUPING SETS (
+        (platform, s_ccy, day),
+        (platform, s_ccy, month),
+        (platform, s_ccy)
+      )
+      UNION ALL
+      -- Presentment plane, totals only: a refund series per day carries no
+      -- signal the totals do not, and mixing planes in one series would invite
+      -- exactly the cross-plane sum this shape exists to prevent.
+      SELECT 'refund'::text, ${GRP_TOTAL}, NULL::date, NULL::date, platform, p_ccy,
+             0::numeric, 0::numeric, 0::numeric, 0::numeric, 0::int,
+             SUM(refunded_amount)::numeric, COUNT(*)::int
+      FROM base
+      WHERE refunded_amount <> 0
+      GROUP BY platform, p_ccy
+    `));
   }
 
   // --------------------------------------------------------------------------

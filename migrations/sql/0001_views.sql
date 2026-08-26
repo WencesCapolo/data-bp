@@ -2,6 +2,7 @@
 -- Each mat view feeds 1+ BFF endpoints with NO further joins/aggregations needed.
 -- Idempotent: drop then recreate. Safe to re-run.
 
+DROP MATERIALIZED VIEW IF EXISTS basket_mat_gateway_net_daily CASCADE;
 DROP MATERIALIZED VIEW IF EXISTS basket_mat_revenue_daily CASCADE;
 DROP MATERIALIZED VIEW IF EXISTS basket_mat_team_daily CASCADE;
 DROP MATERIALIZED VIEW IF EXISTS basket_mat_team_monthly CASCADE;
@@ -20,6 +21,10 @@ SELECT
   p.id,
   p.user_id,
   p.platform,
+  -- The gateway id, carried so the fee mirror can be joined to *filtered*
+  -- payments: basket_payment_fees is keyed (platform, platform_payment_id) and
+  -- has no user dimension of its own. NULL for Manual, Voucher and Antel.
+  p.platform_payment_id,
   p.price_id,
   p.amount,
   p.currency,
@@ -350,3 +355,93 @@ CREATE INDEX basket_mat_revenue_daily_day_idx
   ON basket_mat_revenue_daily(day);
 CREATE INDEX basket_mat_revenue_daily_platform_idx
   ON basket_mat_revenue_daily(platform);
+
+-- ============================================================================
+-- basket_mat_gateway_net_daily
+-- Grain: grain × day × platform × ccy, where `grain` names which currency plane
+--        the row belongs to. Two planes cannot share a row: a settlement fee
+--        and a presentment refund are denominated in different currencies.
+--          'settlement' -> ccy = settlement_currency; gross/fees/net/tx_count
+--          'refund'     -> ccy = currency (presentment); refunded/refund_count
+--        The columns of the other plane are zero, never NULL, so a SUM over a
+--        filtered subset needs no COALESCE.
+-- Feeds: FinanceTab (net revenue, fee ratio, refunds).
+--
+-- CLOCK: captured_at, true UTC. basket_payments.created_at is Argentina local
+-- time stored as UTC — a 3-hour skew. Nothing in this view reads created_at, so
+-- every bucket here is on the one clock. Do not add a column bucketed on the
+-- other one; put it in its own view instead.
+--
+-- SEAM: `WHERE platform IN (0, 4)` — MercadoPago and Stripe, the two Providers
+-- whose fee mirror has rows. It was Stripe alone until MercadoPago's Cobros
+-- Export was ingested; widening it was the one-line change the original shape
+-- was built for, and grouping by settlement_currency from the start is what
+-- made it additive: MP settles ARS into ARS, so its rows land in their own ccy
+-- bucket rather than polluting a USD total.
+--
+-- The predicate stays a whitelist rather than becoming `platform IS NOT NULL`.
+-- PayPal takes real money and has no fee feed at all (90 Subscriptions, no
+-- source), so an un-gated view would render every PayPal transaction as zero
+-- revenue — which reads as "cost us nothing" instead of "we do not know".
+--
+-- TAX: `taxes` exists because MercadoPago withholds tax at source and reports
+-- no column for it — see migrations/sql/0015. It is NOT part of `fees`: a
+-- commission is spent, a withholding is a tax credit. Stripe's rows carry 0.
+-- The invariant every consumer may rely on is gross - fees - taxes = net.
+--
+-- No FX IN THIS VIEW, by choice rather than for want of a table. basket_fx_rates
+-- exists (migration 0017) and the USD conversion happens one layer up, in
+-- core/services/usdConversion.ts, off this view's DAY grain: a rate is a day's
+-- rate, and pre-aggregating a converted total here would freeze it at whatever
+-- rates were loaded the last time the view was refreshed. So there is still no
+-- all-currency total anywhere in this view, and every row stays in the currency
+-- the Provider settled.
+-- ============================================================================
+CREATE MATERIALIZED VIEW basket_mat_gateway_net_daily AS
+WITH settlement AS (
+  SELECT
+    'settlement'::text          AS grain,
+    captured_at::date           AS day,
+    platform                    AS platform,
+    settlement_currency         AS ccy,
+    SUM(settlement_amount)      AS gross,
+    SUM(fee_amount)             AS fees,
+    SUM(COALESCE(tax_amount,0)) AS taxes,
+    SUM(net_amount)             AS net,
+    COUNT(*)                    AS tx_count,
+    0::numeric                  AS refunded,
+    0::bigint                   AS refund_count
+  FROM basket_payment_fees
+  WHERE platform IN (0, 4) AND captured_at IS NOT NULL
+  GROUP BY captured_at::date, platform, settlement_currency
+),
+-- Presentment plane. refunded_amount lives next to the settlement columns but
+-- is denominated in `currency`, not `settlement_currency` — the single easiest
+-- thing to get wrong in this table.
+refunds AS (
+  SELECT
+    'refund'::text              AS grain,
+    captured_at::date           AS day,
+    platform                    AS platform,
+    currency                    AS ccy,
+    0::numeric                  AS gross,
+    0::numeric                  AS fees,
+    0::numeric                  AS taxes,
+    0::numeric                  AS net,
+    0::bigint                   AS tx_count,
+    SUM(refunded_amount)        AS refunded,
+    COUNT(*)                    AS refund_count
+  FROM basket_payment_fees
+  WHERE platform IN (0, 4) AND captured_at IS NOT NULL AND refunded_amount <> 0
+  GROUP BY captured_at::date, platform, currency
+)
+SELECT * FROM settlement
+UNION ALL
+SELECT * FROM refunds;
+
+-- REFRESH ... CONCURRENTLY needs a unique index; the grain discriminator is
+-- part of the key because the same (day, platform, ccy) can appear in both.
+CREATE UNIQUE INDEX basket_mat_gateway_net_daily_pk_idx
+  ON basket_mat_gateway_net_daily(grain, day, platform, ccy);
+CREATE INDEX basket_mat_gateway_net_daily_day_idx
+  ON basket_mat_gateway_net_daily(day);

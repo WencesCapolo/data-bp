@@ -108,6 +108,7 @@ export function AdminUsersClient({ initialRows, currentEmail }: Props) {
         </div>
       )}
 
+      <div className="table-wrap" style={{ border: 'none', background: 'transparent' }}>
       <table className="admin-table">
         <thead>
           <tr>
@@ -150,6 +151,7 @@ export function AdminUsersClient({ initialRows, currentEmail }: Props) {
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }

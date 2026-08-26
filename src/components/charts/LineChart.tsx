@@ -6,7 +6,9 @@ import { tooltipOpts } from './tooltip';
 
 interface Props {
   labels: string[];
-  series: { label: string; data: number[]; color?: string; fill?: boolean }[];
+  /** `null` is a gap, not a zero: Chart.js leaves the line broken there, which
+   *  is what a month with no exchange rate has to look like. */
+  series: { label: string; data: (number | null)[]; color?: string; fill?: boolean }[];
   height?: number;
   yFormat?: 'number' | 'currency';
   tooltipTitles?: string[];
