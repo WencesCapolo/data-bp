@@ -55,6 +55,11 @@ export const config = {
     '/admin/:path*',
     '/api/basket/:path*',
     '/api/admin/:path*',
+    // /financiero guards itself with requireDashboard, but its API did not and
+    // is not under /api/basket — so it answered 200 with the whole Economía DTO
+    // to anyone who asked. The page being protected says nothing about the
+    // endpoint behind it.
+    '/api/financiero/:path*',
     // Sync writes to the mirror and consumes an Upload; it must not be
     // reachable unauthenticated. /api/basket/sync stays exempt above for the
     // token-authenticated automation, /api/sync deliberately is not.
