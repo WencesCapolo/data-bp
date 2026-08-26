@@ -46,6 +46,55 @@ be quietly wrong at any size.
 `status=all` is mandatory on that endpoint. Its default returns live
 subscriptions only, which would hide every cancelled one.
 
+## 8b. Customers, disputes, payouts — the same two shapes again
+
+The three later mirrors added nothing new to this decision, which is the point.
+Each one is read in whichever of the two shapes above its data allows, and the
+choice is a fact about the object rather than a preference:
+
+| mirror | shape | why |
+|---|---|---|
+| clientes | full refresh | the email is edited long after creation, and the list endpoint filters on `created` only — the same trap as cancellation |
+| disputadas | window + overlap | a dispute is opened once and closes within weeks |
+| transferencias | window + overlap | a payout's status settles within days |
+
+So there are exactly two use cases behind all five mirrors —
+`SyncGatewayWindowMirrorUseCase` and `SyncGatewayFullMirrorUseCase`, generic over
+the row type — instead of five near-identical ones. `SyncGatewayFeesUseCase` and
+`SyncGatewaySubscriptionsUseCase` predate them and were left alone: they are
+working code with their own tests and comments, and rewriting them to prove a
+point would risk the one mirror everything else already reads.
+
+The window mirrors take a **30-day** overlap rather than the fee sync's 14. A
+dispute's evidence window alone is 21 days, so a fortnight would freeze cases
+mid-flight in whatever status they held two weeks in. Their window slices are
+30 days wide for the opposite reason: disputes and payouts number in the
+hundreds a year, and a 7-day slice would spend most of its requests on empty
+windows.
+
+The payout window is over `created`, not `arrival_date`, even though arrival is
+the date a reconciliation is done against. An arrival date *moves* while the
+payout is in transit — a bank holiday pushes it — so a window over it re-reads a
+moving target and can skip a payout that jumped past a window already closed.
+Creation never moves.
+
+## 8c. FX rates — a third shape, because a rate feed has neither of the two
+
+Added 2026-08-24 with the FX plane (ADR 0007). It is not a mirror use case and
+deliberately not forced into one: the blue history endpoint takes no parameters
+and answers with all 5,700 days at once, so there is no window to slice and no
+page to walk, and a rate is not a Provider object — it has no `platform` at all,
+so calling it a gateway mirror would have meant inventing a platform number for
+dolarapi. `SyncFxRatesUseCase` keeps what does transfer: resume from a
+`fx:<source>` watermark, advance it only on a clean run, never be fatal.
+
+Two things about its position in the order. It runs **after** the fee sync,
+because the derived `'stripe'` rows are read out of `basket_payment_fees` and
+running first would name a rate from before this run's charges landed. And it is
+**not gated on `SYNC_GATEWAYS_ENABLED`**: the feed needs no credential, so a
+deploy with no gateway keys still keeps its rates current. `SYNC_FX_ENABLED=false`
+switches it off on its own.
+
 ## 9. Amount reconciliation
 
 The Control Panel export encodes some CLP amounts with two decimal places, and
@@ -87,6 +136,11 @@ real fix belongs in whatever generates the export's CLP column.
   therefore `COALESCE`s `subscription_id` rather than overwriting it. Letting a
   null from a boundary miss replace a link already stored would erase good data on
   every overlap pass. The trailing overlap recovers these.
+- **The Stripe credential is read under two names.** The deployed environment
+  holds the restricted key as `STRIPE_SERVICE_KEY`; every script and doc here
+  says `STRIPE_SECRET_KEY`. Both are accepted, secret first. Renaming one side
+  would unwire the whole gateway sync on whichever host was updated second, and
+  it would do so silently — a missing credential is a skip, not a throw.
 - **MercadoPago has no subscription link.** Its payments do not carry the
   preapproval id, so tying an MP charge to its subscription needs the preapproval
   search — a separate fetcher, not yet built. The column is honestly null rather

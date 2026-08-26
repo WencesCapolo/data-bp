@@ -30,6 +30,16 @@ import {
   type GatewaySubscriptionSyncResult,
 } from './SyncGatewaySubscriptionsUseCase';
 import { ReconcilePaymentAmountsUseCase } from './ReconcilePaymentAmountsUseCase';
+import {
+  SyncGatewayFullMirrorUseCase,
+  SyncGatewayWindowMirrorUseCase,
+  type GatewayMirrorSyncResult,
+} from './SyncGatewayMirrorUseCase';
+import { SyncFxRatesUseCase, type FxRateSyncResult } from './SyncFxRatesUseCase';
+import type { IngestExportInboxUseCase, InboxIngestResult } from './IngestExportInboxUseCase';
+import type { GatewayCustomerProps } from '@basket/core/entities/GatewayCustomer';
+import type { GatewayDisputeProps } from '@basket/core/entities/GatewayDispute';
+import type { GatewayPayoutProps } from '@basket/core/entities/GatewayPayout';
 
 export interface SheetSpec {
   sheetName: string;
@@ -71,6 +81,23 @@ export interface RunSyncDeps {
    *  a deploy without gateway credentials still syncs everything else. */
   gatewayFees?: SyncGatewayFeesUseCase;
   gatewaySubscriptions?: SyncGatewaySubscriptionsUseCase;
+  /** The three later mirrors — clientes, disputadas, transferencias. Each is
+   *  independently optional so a Provider that exposes only some of them, or a
+   *  credential scoped to only some of them, still contributes what it has. */
+  gatewayCustomers?: SyncGatewayFullMirrorUseCase<GatewayCustomerProps>;
+  gatewayDisputes?: SyncGatewayWindowMirrorUseCase<GatewayDisputeProps>;
+  gatewayPayouts?: SyncGatewayWindowMirrorUseCase<GatewayPayoutProps>;
+  /** Daily FX rates — the blue ARS series plus the derived Stripe rows. Needs
+   *  no credential, so it is omitted only to switch the step off. */
+  fxRates?: SyncFxRatesUseCase;
+  /** Provider Exports that arrive by themselves, in a directory MercadoPago's
+   *  report centre writes over SFTP. Omitted — `MP_SFTP_INBOX` unset — the step
+   *  is skipped entirely and nothing about the run changes. */
+  exportInbox?: IngestExportInboxUseCase;
+  /** Overlap for the dispute and payout windows. Longer than the fee overlap by
+   *  default: a dispute's evidence window alone is 21 days. */
+  gatewayMirrorOverlapDays?: number;
+  gatewayMirrorWindowDays?: number;
   /** Days of trailing overlap re-read on each fee sync, so refunds and disputes
    *  that land days after the charge are picked up. */
   gatewayFeeOverlapDays?: number;
@@ -114,6 +141,12 @@ export interface RunSyncResult {
   syncedDataMasters: { workbook: string; teams: number; cambios: number; dias: number }[];
   gatewayFees: GatewayFeeSyncResult[];
   gatewaySubscriptions: GatewaySubscriptionSyncResult[];
+  /** Customers, disputes and payouts, each tagged with its `mirror` name. */
+  gatewayMirrors: GatewayMirrorSyncResult[];
+  /** One row per rate source, plus one for the derived Stripe rows. */
+  fxRates: FxRateSyncResult[];
+  /** Per-file outcomes of the SFTP inbox, or null when that step is off. */
+  exportInbox: InboxIngestResult | null;
   /** Pagos realigned to the gateway's amount this run. See docs/adr/0006. */
   correctedAmounts: number;
   refreshes: RefreshResult[];
@@ -168,8 +201,11 @@ export class RunSyncUseCase {
     let contentInserted = 0;
     if (this.deps.contentEnabled !== false) {
       const windowDays = this.deps.contentWindowDays ?? 30;
-      const to = new Date();
-      const from = new Date(to.getTime() - windowDays * 86400_000);
+      const now = new Date();
+      // The endpoint's `to` is exclusive, so asking to=today never returns
+      // today's matches. Ask for tomorrow and the tail of the window arrives.
+      const to = new Date(now.getTime() + 86400_000);
+      const from = new Date(now.getTime() - windowDays * 86400_000);
       const contentResource = this.deps.contentResource ?? 'content';
       const contentStream = this.mapContent(contentResource, from, to);
       const contentResult = await new LoadContentFromCsvUseCase(this.deps.content).execute({ rows: contentStream });
@@ -261,6 +297,73 @@ export class RunSyncUseCase {
       }
     }
 
+    // 8b. The three later mirrors. Same never-fatal contract as the two above:
+    // each is caught on its own, so a credential scoped without dispute access
+    // costs the disputes and nothing else.
+    //
+    // Customers run before disputes and payouts only because they are the
+    // slowest and the most likely to be interrupted; nothing here depends on
+    // anything else here.
+    const gatewayMirrors: GatewayMirrorSyncResult[] = [];
+    const mirrorWindow = {
+      overlapDays: this.deps.gatewayMirrorOverlapDays,
+      windowDays: this.deps.gatewayMirrorWindowDays,
+    };
+    const runMirror = async (label: string, run: () => Promise<GatewayMirrorSyncResult[]>) => {
+      try {
+        gatewayMirrors.push(...(await run()));
+      } catch (err) {
+        console.error(`gateway ${label} sync failed:`, (err as Error).message);
+      }
+    };
+    if (this.deps.gatewayCustomers) {
+      await runMirror('customer', () => this.deps.gatewayCustomers!.execute());
+    }
+    if (this.deps.gatewayDisputes) {
+      await runMirror('dispute', () => this.deps.gatewayDisputes!.execute(mirrorWindow));
+    }
+    if (this.deps.gatewayPayouts) {
+      await runMirror('payout', () => this.deps.gatewayPayouts!.execute(mirrorWindow));
+    }
+
+    // 8c. FX rates. After the fee sync because the derived Stripe rows are read
+    // out of the fee mirror, so running it first would name a rate from before
+    // this run's charges landed. Never fatal, like every step above it: a
+    // dolarapi outage must not cost the Pagos sync that already succeeded.
+    let fxRates: FxRateSyncResult[] = [];
+    if (this.deps.fxRates) {
+      try {
+        fxRates = await this.deps.fxRates.execute();
+        for (const r of fxRates) {
+          if (r.error) console.error(`fx ${r.source} failed: ${r.error}`);
+        }
+      } catch (err) {
+        console.error('fx rate sync failed:', (err as Error).message);
+      }
+    }
+
+    // 8d. Provider Exports waiting in the SFTP inbox. Before the reconciliation
+    // below, which reads the fee mirror as truth, and before the view refresh,
+    // which is the only thing that makes these rows visible. Never fatal, and
+    // never fatal per *file* too: the use case isolates each one, so a malformed
+    // Export costs that Export and nothing else.
+    let exportInbox: InboxIngestResult | null = null;
+    if (this.deps.exportInbox) {
+      try {
+        exportInbox = await this.deps.exportInbox.execute();
+        if (exportInbox.error) console.error(`export inbox failed: ${exportInbox.error}`);
+        for (const f of exportInbox.files) {
+          if (f.outcome === 'ingested') {
+            console.log(`inbox ${f.filename}: ${f.rows} rows, ${f.upserted} upserted`);
+          } else if (f.outcome !== 'skipped') {
+            console.error(`inbox ${f.filename} ${f.outcome}: ${f.error}`);
+          }
+        }
+      } catch (err) {
+        console.error('export inbox sync failed:', (err as Error).message);
+      }
+    }
+
     // 9. Realign Pago amounts against the gateway. Must come AFTER the fee sync
     // (it reads fees as truth) and BEFORE the mat view refresh (amount feeds
     // tier classification, so a correction changes sub_type).
@@ -294,6 +397,9 @@ export class RunSyncUseCase {
       syncedDataMasters,
       gatewayFees,
       gatewaySubscriptions,
+      gatewayMirrors,
+      fxRates,
+      exportInbox,
       correctedAmounts,
       refreshes,
     };

@@ -26,7 +26,8 @@ import {
 } from '@basket/infrastructure/sync/csvMappers';
 import { mapFixtureMatchRow } from '@basket/infrastructure/sync/fixtureMappers';
 import { RunSyncUseCase } from '@basket/core/use-cases/sync/RunSyncUseCase';
-import { composeGatewayFeeSync } from '@basket/infrastructure/sync/composeGatewayFeeSync';
+import { composeFxRateSync, composeGatewayFeeSync } from '@basket/infrastructure/sync/composeGatewayFeeSync';
+import { composeExportInboxIngest } from '@basket/infrastructure/sync/composeExportInbox';
 import { streamCsvFile } from '@shared/lib/csvStream';
 import type { PaymentUploadRow } from '@basket/core/dtos/PaymentUploadDTO';
 
@@ -92,22 +93,25 @@ function discoverFixtureSpecs(): FixtureSheetSpec[] {
   return specs;
 }
 
-export async function composeRunSync(opts: ComposeRunSyncOptions = {}): Promise<RunSyncUseCase> {
+/** The one place the external CSV API's shape is configured. The cron reads it
+ *  through composeRunSync; backfills that walk a single resource read it here. */
+export function createCsvApiFetcher(): CsvApiFetcher {
   const baseUrl = process.env.EXTERNAL_API_BASE;
   if (!baseUrl) throw new Error('EXTERNAL_API_BASE not set');
-  const token = process.env.BP_TOKEN ?? process.env.EXTERNAL_API_KEY;
-  const authMode = process.env.BP_TOKEN ? 'query-token' : 'bearer';
-  const paymentsEnabled = process.env.SYNC_PAYMENTS_ENABLED !== 'false';
-
-  const fetcher = new CsvApiFetcher({
+  return new CsvApiFetcher({
     baseUrl,
-    authMode,
-    apiKey: token,
+    authMode: process.env.BP_TOKEN ? 'query-token' : 'bearer',
+    apiKey: process.env.BP_TOKEN ?? process.env.EXTERNAL_API_KEY,
     tokenParam: 'token',
     delimiter: ';',
     sinceParam: process.env.EXTERNAL_SINCE_PARAM ?? 'since',
     cookie: process.env.BP_SESSION_COOKIE,
   });
+}
+
+export async function composeRunSync(opts: ComposeRunSyncOptions = {}): Promise<RunSyncUseCase> {
+  const paymentsEnabled = process.env.SYNC_PAYMENTS_ENABLED !== 'false';
+  const fetcher = createCsvApiFetcher();
 
   const users = new DrizzleUserRepository();
   const payments = new DrizzlePaymentRepository();
@@ -232,5 +236,21 @@ export async function composeRunSync(opts: ComposeRunSyncOptions = {}): Promise<
     gatewaySubscriptions: gateways?.subscriptionsUseCase ?? undefined,
     gatewayFeeOverlapDays: Number(process.env.SYNC_GATEWAY_FEE_OVERLAP_DAYS ?? '14'),
     gatewayFeeWindowDays: Number(process.env.SYNC_GATEWAY_FEE_WINDOW_DAYS ?? '7'),
+    gatewayCustomers: gateways?.customersUseCase ?? undefined,
+    gatewayDisputes: gateways?.disputesUseCase ?? undefined,
+    gatewayPayouts: gateways?.payoutsUseCase ?? undefined,
+    // Wider windows than fees because both mirrors are sparse — disputes and
+    // payouts number in the hundreds a year, not the hundred-thousands — so a
+    // 7-day slice would spend requests on empty windows.
+    gatewayMirrorOverlapDays: Number(process.env.SYNC_GATEWAY_MIRROR_OVERLAP_DAYS ?? '30'),
+    gatewayMirrorWindowDays: Number(process.env.SYNC_GATEWAY_MIRROR_WINDOW_DAYS ?? '30'),
+    // Not gated on SYNC_GATEWAYS_ENABLED: the rate feed needs no credential and
+    // the derived Stripe rows are read from a table, so this step keeps working
+    // in an environment with no gateway keys at all.
+    fxRates: process.env.SYNC_FX_ENABLED === 'false' ? undefined : composeFxRateSync(),
+    // MercadoPago's report centre pushes its Exports to a jailed SFTP account on
+    // the box; this walks what has arrived. Unset `MP_SFTP_INBOX` and the step
+    // does not exist. See docs/handoff/mercadopago-sftp-all-transactions.md.
+    exportInbox: composeExportInboxIngest('cron:sync') ?? undefined,
   });
 }
