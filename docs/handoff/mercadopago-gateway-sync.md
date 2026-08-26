@@ -195,7 +195,9 @@ WHERE p.platform = 0 AND p.platform_payment_id ~ '^[0-9a-f]{32}$';
   uncovered rows before investigating.
 - **Never `git add -A` in this repo.** The working tree carries customer CSV
   exports with emails and names, `.xlsx` files, and a 12.9MB `public/dashboard.html`
-  with embedded customer data — all untracked and none of it gitignored.
+  with embedded customer data. All of it is gitignored as of the prod deploy, but
+  the patterns are name-shaped — a differently-named export is untracked and
+  unignored, so still never `git add -A` here.
 
 ---
 

@@ -45,3 +45,16 @@ next-env.d.ts
 /data/payments(1).csv
 /data/users.csvdump.pgc
 dump.pgc
+# local agent config (skills are committed, machine-local settings are not)
+.claude/settings.local.json
+
+# one-off exports left in the working tree — Provider ledgers, never committed
+/payments*.csv
+/subscriptions*.csv
+/reporte_ligas_*.csv
+/public/judicializaciones-*.xlsx
+/public/juicios-por-provincia-*.xlsx
+
+# the dashboard prototype — 13,9 MB of real revenue figures, and public/ is served
+# unauthenticated. Local-only artifact; the docs/handoff/ files cite it by path.
+/public/dashboard.html
