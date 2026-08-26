@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import {
   bigint,
   boolean,
+  date,
   index,
   integer,
   jsonb,
@@ -251,6 +252,9 @@ export const basketPaymentFees = pgTable('basket_payment_fees', {
   grossAmount: numeric('gross_amount', { precision: 14, scale: 2 }).notNull(),
   currency: varchar('currency', { length: 10 }).notNull(),
   feeAmount: numeric('fee_amount', { precision: 14, scale: 2 }).notNull(),
+  // Tax withheld at source. NULL where the gateway withholds none (Stripe), not
+  // 0 — 0 would claim we know there was none. See migrations/sql/0015.
+  taxAmount: numeric('tax_amount', { precision: 14, scale: 2 }),
   netAmount: numeric('net_amount', { precision: 14, scale: 2 }).notNull(),
   settlementCurrency: varchar('settlement_currency', { length: 10 }).notNull(),
   settlementAmount: numeric('settlement_amount', { precision: 14, scale: 2 }).notNull(),
@@ -294,4 +298,94 @@ export const basketGatewaySubscriptions = pgTable('basket_gateway_subscriptions'
   pk: primaryKey({ columns: [table.platform, table.subscriptionId] }),
   statusIdx: index('basket_gateway_subscriptions_status_idx').on(table.status),
   customerIdx: index('basket_gateway_subscriptions_customer_idx').on(table.customerId),
+}));
+
+// One row per gateway customer. Exists for customer_id -> email, the only
+// bridge between a gateway object (subscription, dispute) and a Subscriber.
+// Refreshed in full each sync: email and country change long after creation and
+// the list endpoint filters on `created` only. See migrations/sql/0014.
+export const basketGatewayCustomers = pgTable('basket_gateway_customers', {
+  platform: smallint('platform').notNull(),
+  customerId: text('customer_id').notNull(),
+  email: text('email'),
+  name: text('name'),
+  country: varchar('country', { length: 2 }),
+  currency: varchar('currency', { length: 10 }),
+  delinquent: boolean('delinquent'),
+  description: text('description'),
+  createdAt: timestamp('created_at', { withTimezone: true }),
+  syncedAt: timestamp('synced_at', { withTimezone: true }).notNull().default(sql`NOW()`),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.platform, table.customerId] }),
+}));
+
+// One row per dispute (chargeback). amount/currency are PRESENTMENT — the
+// disputed amount as the Subscriber was charged — while feeAmount is the
+// gateway's non-refundable case fee in the SETTLEMENT plane. The two must never
+// be added. platformPaymentId is the same join key basketPaymentFees uses.
+export const basketGatewayDisputes = pgTable('basket_gateway_disputes', {
+  platform: smallint('platform').notNull(),
+  disputeId: text('dispute_id').notNull(),
+  platformPaymentId: text('platform_payment_id').notNull(),
+  chargeId: text('charge_id'),
+  amount: numeric('amount', { precision: 14, scale: 2 }).notNull(),
+  currency: varchar('currency', { length: 10 }).notNull(),
+  status: text('status').notNull(),
+  reason: text('reason'),
+  feeAmount: numeric('fee_amount', { precision: 14, scale: 2 }),
+  settlementCurrency: varchar('settlement_currency', { length: 10 }),
+  isChargeRefundable: boolean('is_charge_refundable'),
+  evidenceDueBy: timestamp('evidence_due_by', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }),
+  syncedAt: timestamp('synced_at', { withTimezone: true }).notNull().default(sql`NOW()`),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.platform, table.disputeId] }),
+  paymentIdx: index('basket_gateway_disputes_payment_idx').on(table.platform, table.platformPaymentId),
+  createdAtIdx: index('basket_gateway_disputes_created_at_idx').on(table.createdAt),
+}));
+
+// One row per payout — money leaving the gateway for the bank. Pure SETTLEMENT
+// plane; it has no presentment side. arrivalDate is the bank's date and the one
+// a reconciliation is done against; createdAt is when the payout was scheduled.
+export const basketGatewayPayouts = pgTable('basket_gateway_payouts', {
+  platform: smallint('platform').notNull(),
+  payoutId: text('payout_id').notNull(),
+  amount: numeric('amount', { precision: 14, scale: 2 }).notNull(),
+  currency: varchar('currency', { length: 10 }).notNull(),
+  status: text('status').notNull(),
+  type: text('type'),
+  method: text('method'),
+  automatic: boolean('automatic'),
+  arrivalDate: timestamp('arrival_date', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }),
+  description: text('description'),
+  statementDescriptor: text('statement_descriptor'),
+  failureCode: text('failure_code'),
+  balanceTransactionId: text('balance_transaction_id'),
+  syncedAt: timestamp('synced_at', { withTimezone: true }).notNull().default(sql`NOW()`),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.platform, table.payoutId] }),
+  arrivalDateIdx: index('basket_gateway_payouts_arrival_date_idx').on(table.arrivalDate),
+}));
+
+// One row per (day, pair, source). `rate` is quote units per one base unit —
+// (USD, ARS, 'blue') is ARS per USD, (UYU, USD, 'stripe') is USD per UYU — so
+// the direction is read off the key and never inferred from the magnitude.
+// `source` is in the key because two rates for one day are both correct and
+// disagree: Stripe converted at its own rate, ARS converts at the blue rate.
+// See migrations/sql/0017 and docs/adr/0007.
+export const basketFxRates = pgTable('basket_fx_rates', {
+  day: date('day').notNull(),
+  baseCurrency: varchar('base_currency', { length: 10 }).notNull(),
+  quoteCurrency: varchar('quote_currency', { length: 10 }).notNull(),
+  source: text('source').notNull(),
+  rate: numeric('rate', { precision: 20, scale: 10 }).notNull(),
+  /** The compra side of the same quote. Carried for audit, never converted with. */
+  buyRate: numeric('buy_rate', { precision: 20, scale: 10 }),
+  syncedAt: timestamp('synced_at', { withTimezone: true }).notNull().default(sql`NOW()`),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.day, table.baseCurrency, table.quoteCurrency, table.source] }),
+  pairIdx: index('basket_fx_rates_pair_idx').on(
+    table.baseCurrency, table.quoteCurrency, table.source, table.day,
+  ),
 }));
