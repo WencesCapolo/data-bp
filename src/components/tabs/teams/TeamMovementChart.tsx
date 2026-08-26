@@ -93,12 +93,7 @@ export function TeamMovementChart({ series, bucket }: { series: BucketedSeries; 
     };
   }, [series, bucket]);
 
-  // Fixed-height relative box: Chart.js with maintainAspectRatio:false sizes the
-  // canvas from its parent, and an auto-height parent sized by the canvas grows a
-  // few px on every resize tick — the chart (and the table under it) creep down.
-  return (
-    <div style={{ position: 'relative', height: CHART_HEIGHT }}>
-      <ChartCanvas config={config} height={CHART_HEIGHT} />
-    </div>
-  );
+  // The fixed-height relative box this used to wrap by hand now lives inside
+  // ChartCanvas, so every chart gets it rather than only this one.
+  return <ChartCanvas config={config} height={CHART_HEIGHT} />;
 }

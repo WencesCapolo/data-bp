@@ -23,5 +23,21 @@ export function ChartCanvas({ config, height = 220 }: Props) {
     };
   }, [config]);
 
-  return <canvas ref={ref} height={height} />;
+  // Fixed-height relative box, and the canvas carries no height of its own.
+  //
+  // Every chart here runs `maintainAspectRatio: false`, which makes Chart.js size
+  // the canvas from its *parent*. Passing `height` as a canvas attribute sets the
+  // bitmap size, not the CSS box — so the parent stayed auto-height, took its
+  // height from the canvas, and Chart.js then re-read that taller parent on the
+  // next resize tick. Each pass added a few pixels and the chart crept down the
+  // page forever.
+  //
+  // The parent has to be the thing that owns the height, and the canvas has to be
+  // free to fill it. That is also why the box is `position: relative` — it is what
+  // Chart.js's own responsive guidance asks for.
+  return (
+    <div style={{ position: 'relative', height, width: '100%' }}>
+      <canvas ref={ref} />
+    </div>
+  );
 }
