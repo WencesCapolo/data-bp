@@ -11,6 +11,7 @@ const MAT_VIEWS = [
   'basket_mat_team_monthly',
   'basket_mat_team_daily',
   'basket_mat_revenue_daily',
+  'basket_mat_gateway_net_daily',
 ] as const;
 
 async function applyAndVerify(): Promise<void> {
