@@ -215,6 +215,31 @@ async function mergeGuard() {
     check('it does not re-date the capture', got.captured === '2024-07-04', `${got.captured}`);
     check('it does not erase the subscription link', got.subscription_id === 'sub-from-the-charge', `${got.subscription_id}`);
     check('applying it twice changes nothing', Number(got.refunded_amount) === 71500, 'idempotent');
+
+    // A second source on the same rows that cannot report withholding at all.
+    // This is exactly the shape of MercadoPagoFeeFetcher, which hardcodes
+    // `taxAmount: null` because the MercadoPago API does not expose retenciones —
+    // so it describes a real charge (gross > 0, which clears the reversal guard)
+    // while knowing nothing about the tax. Per migration 0015, NULL on this
+    // column means "the gateway never spoke to the question", so it must not win
+    // over a source that did. Before the COALESCE guard this nulled the
+    // withholding on every MP charge such a source re-read.
+    await fees.upsertMany([charge]);
+    await fees.upsertMany([{ ...charge, taxAmount: null }]);
+    const after = (await db.execute<Record<string, string>>(sql`
+      SELECT tax_amount, fee_amount FROM basket_payment_fees
+      WHERE platform = 0 AND platform_payment_id = ${id}
+    `) as unknown as Record<string, string>[])[0];
+    check(
+      'a source that cannot report withholding does not erase it',
+      Number(after.tax_amount) === 3646.5,
+      `tax ${after.tax_amount}`,
+    );
+    check(
+      'and it still updates what it does know',
+      Number(after.fee_amount) === 1287,
+      `fee ${after.fee_amount}`,
+    );
   } finally {
     await db.execute(sql`DELETE FROM basket_payment_fees WHERE platform = 0 AND platform_payment_id = ${id}`);
     await connection.end({ timeout: 5 });

@@ -50,6 +50,28 @@ function keepOnReversal(column: AnyPgColumn, excludedName: string) {
   return sql`CASE WHEN ${NO_CHARGE} THEN ${column} ELSE ${sql.raw(`excluded.${excludedName}`)} END`;
 }
 
+/**
+ * As `keepOnReversal`, but a NULL from the incoming row never overwrites a value
+ * already there.
+ *
+ * For `tax_amount` specifically, migration 0015 defines NULL as "the gateway
+ * never spoke to the question" rather than "the withholding was zero". A source
+ * that cannot report withholding at all is therefore not entitled to erase one
+ * that can: `MercadoPagoFeeFetcher` hardcodes `taxAmount: null` because the
+ * MercadoPago API does not expose retenciones, while the ALLReport Export derives
+ * them from the gross/net gap. Without this guard, setting `MP_ACCESS_TOKEN`
+ * would put both sources on the same rows and the API would silently null the
+ * withholding on every MP charge it re-read — 565.733 rows and 221.535.299,43 ARS
+ * on production at the time this was written.
+ *
+ * Zero and NULL are the same statement on this column, so nothing legitimate is
+ * blocked: a fold that computes no withholding emits NULL and means it.
+ */
+function keepOnReversalOrNull(column: AnyPgColumn, excludedName: string) {
+  return sql`CASE WHEN ${NO_CHARGE} THEN ${column}
+    ELSE COALESCE(${sql.raw(`excluded.${excludedName}`)}, ${column}) END`;
+}
+
 export class DrizzleGatewayFeeRepository implements IGatewayFeeRepository {
   constructor(private readonly database: Db = db) {}
 
@@ -76,7 +98,7 @@ export class DrizzleGatewayFeeRepository implements IGatewayFeeRepository {
             grossAmount: keepOnReversal(basketPaymentFees.grossAmount, 'gross_amount'),
             currency: keepOnReversal(basketPaymentFees.currency, 'currency'),
             feeAmount: keepOnReversal(basketPaymentFees.feeAmount, 'fee_amount'),
-            taxAmount: keepOnReversal(basketPaymentFees.taxAmount, 'tax_amount'),
+            taxAmount: keepOnReversalOrNull(basketPaymentFees.taxAmount, 'tax_amount'),
             netAmount: keepOnReversal(basketPaymentFees.netAmount, 'net_amount'),
             settlementCurrency: keepOnReversal(basketPaymentFees.settlementCurrency, 'settlement_currency'),
             settlementAmount: keepOnReversal(basketPaymentFees.settlementAmount, 'settlement_amount'),

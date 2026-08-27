@@ -33,8 +33,20 @@
 > If you add an API route under a new prefix, add it to `src/proxy.ts` in the same
 > commit.
 >
-> **`smoke:gateway-net` reports 6 failures and `smoke:fx` 6 on prod. All twelve are
-> Stripe-shaped and none is a defect** — prod has no `STRIPE_SECRET_KEY`, so there
+> **Superseded 2026-08-27: `STRIPE_SECRET_KEY` is now set in prod and Stripe is
+> backfilled.** `smoke:fx` is 20/20 and `smoke:stripe-exports` 5/5.
+> `smoke:gateway-net` has **one** failure left, and it is a pre-existing bug the
+> Stripe mirror merely revealed: 957 Stripe **CLP** rows where
+> `basket_payments.amount` is off by exactly 100× (723 too small, 234 too large),
+> from a decimal-point bug in the Control Panel export. `money.ts` handles CLP
+> correctly as zero-decimal, so the mirror is the right side. `fix:amounts` is the
+> tool, and the analytics sync runs it as step 9 — prod simply had no Stripe ground
+> truth to compare against before this. The paragraph below describes the state
+> *before* that key was set, and is kept because the reasoning still applies to any
+> Provider with no credential:
+>
+> **`smoke:gateway-net` reported 6 failures and `smoke:fx` 6 on prod. All twelve were
+> Stripe-shaped and none was a defect** — prod has no `STRIPE_SECRET_KEY`, so there
 > are no Stripe fee rows, no USD or EUR settlement plane, and no gateway
 > subscriptions. Note `fee coverage ≈ 95.7% → 0 / 183.098` reads like an MP failure
 > and is not: that check is `WHERE p.platform = 4`, which is Stripe. Every MP check
@@ -314,8 +326,59 @@ working, not a bug.
 2. **The targets Sheet** (id + tab), shared read-only with
    `wenceslao@dashboards-496312.iam.gserviceaccount.com`. Real vs Plan ships
    *en desarrollo* until it arrives.
-3. **A prod `STRIPE_SECRET_KEY`**, or a decision that Stripe stays unsynced there.
+3. ~~**A prod `STRIPE_SECRET_KEY`**~~ — **done 2026-08-27.** The key in the repo's
+   `.env` turned out to be a working `rk_live` restricted key with all seven read
+   scopes the fetchers need, not the masked value an earlier note claimed. Set in
+   prod and backfilled: +186.859 Stripe fee rows (95,6% coverage of successful
+   Stripe Pagos), 38.222 customers, 258 disputes, 470 payouts, 52.231
+   subscriptions, 3.318 derived Stripe FX rows. `smoke:fx` and
+   `smoke:stripe-exports` are fully green as a result.
 4. **Whether the panel also sends a wider periodic report** beside the daily one.
    A refund and its cancel only net out inside a file whose window holds both, and
    a daily file cannot hold a chargeback raised three weeks after the charge.
+   **The export path makes this more important, not less** — see item 6, there is
+   no API fallback behind it.
 5. **MP's publishing IPs**, still only a hardening step for the SFTP allowlist.
+6. **A monitor on the age of the newest file in `MP_SFTP_INBOX`.** Now that MP is
+   export-only (below), the freshness of every MercadoPago figure depends on MP's
+   publishing pipeline and nothing watches it. A silent stop looks exactly like a
+   quiet week.
+
+## Not owed: `MP_ACCESS_TOKEN`
+
+**Deliberately unset in production, and it should stay that way.** It is not a
+pending credential.
+
+Its only consumer is `MercadoPagoFeeFetcher`, via the MercadoPago branch of
+`composeGatewayFeeSync` — which pushes nothing onto the subscription, customer,
+dispute or payout fetcher lists. MP has no API path for those at all, so the
+`skipping mercadopago: MP_ACCESS_TOKEN not set` lines the ledger and subscription
+backfills print are cosmetic; the token would not add a row.
+
+For the fee mirror itself the SFTP ALLReport Export is not merely equivalent, it
+is strictly better:
+
+| | API fetcher | ALLReport Export |
+|---|---|---|
+| `tax_amount` | hardcoded `null` — the API does not expose retenciones | derived from the gross/net gap; 565.733 rows on prod |
+| `subscription_id` | hardcoded `null` | 460.947 rows linked |
+| granularity | one row per Pago | one row per *movement*, folded, so reversals net |
+| window ceiling | **cannot return past 1000; logs `rows were LOST`** | complete ledger, no cap |
+
+The two columns the API cannot fill are the entire point of migrations 0015 and
+0013.
+
+Setting the token would also have been **actively destructive** until
+2026-08-27: `subscription_id` was already COALESCE-guarded in the upsert, but
+`tax_amount` used `keepOnReversal`, which only protects rows with gross 0. An API
+re-read of a normal charge wrote its `null` straight through, nulling withholding
+worth 221.535.299,43 ARS across 565.733 rows. `DrizzleGatewayFeeRepository` now
+uses `keepOnReversalOrNull` for that column, and `smoke:allreport` asserts it
+("a source that cannot report withholding does not erase it"). The guard rests on
+0015's own definition of the column: NULL means the gateway never spoke to the
+question, so zero and NULL are the same statement and nothing legitimate is
+blocked.
+
+The local token is in any case a MercadoPago **sandbox** user
+(`TESTUSER703410636516227715`, `test_user_…@testuser.com`), so setting it would
+point prod at fake data on top of everything above.
