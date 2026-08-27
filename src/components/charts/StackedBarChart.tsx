@@ -2,6 +2,7 @@
 import { useMemo } from 'react';
 import type { ChartConfiguration } from 'chart.js';
 import { ChartCanvas } from './ChartCanvas';
+import { useChartTheme } from '@/lib/client/theme';
 import { tooltipOpts } from './tooltip';
 
 interface Series {
@@ -23,6 +24,7 @@ function fmt(n: number): string {
 }
 
 export function StackedBarChart({ labels, series, height = 260, tooltipTitles }: Props) {
+  const chartTheme = useChartTheme();
   const config = useMemo<ChartConfiguration>(
     () => ({
       type: 'bar',
@@ -41,15 +43,15 @@ export function StackedBarChart({ labels, series, height = 260, tooltipTitles }:
         maintainAspectRatio: false,
         plugins: {
           legend: { display: true, labels: { boxWidth: 10, font: { size: 11 } } },
-          tooltip: tooltipOpts(tooltipTitles),
+          tooltip: tooltipOpts(tooltipTitles, chartTheme),
         },
         scales: {
-          x: { stacked: true, grid: { color: '#1e2a42' }, ticks: { font: { size: 10 }, autoSkip: true, maxTicksLimit: 14 } },
-          y: { stacked: true, grid: { color: '#1e2a42' }, ticks: { callback: (v) => fmt(v as number) }, beginAtZero: true },
+          x: { stacked: true, grid: { color: chartTheme.grid }, ticks: { font: { size: 10 }, autoSkip: true, maxTicksLimit: 14 } },
+          y: { stacked: true, grid: { color: chartTheme.grid }, ticks: { callback: (v) => fmt(v as number) }, beginAtZero: true },
         },
       },
     }),
-    [labels, series, tooltipTitles],
+    [labels, series, tooltipTitles, chartTheme],
   );
   return <ChartCanvas config={config} height={height} />;
 }

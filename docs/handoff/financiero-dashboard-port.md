@@ -45,7 +45,7 @@ landing card flipped `soon` → `live` in `src/lib/dashboards.ts`, and the
 | piece | file |
 |---|---|
 | page + tab shell | `src/app/financiero/{page,FinancieroDashboard}.tsx` |
-| Economía tab | `src/components/financiero/EconomiaTab.tsx` |
+| Financiero view | `src/components/financiero/FinancieroView.tsx` (+ `financiero/blocks.tsx`) |
 | DTOs | `src/modules/basket/core/dtos/{EconomiaDTO,GatewayNetDTO}.ts` |
 | query | `DrizzleAnalyticsQueryRepository.getEconomia` / `.getGatewayNet` |
 | endpoint | `src/app/api/financiero/economia/route.ts` |
@@ -117,16 +117,36 @@ refund count beside the dispute count rather than pretending the table covers it
 **`STRIPE_SECRET_KEY` and `STRIPE_SERVICE_KEY` are both read**, secret first —
 see ADR 0006's consequences.
 
-The **Contenido** view is live as of 2026-08-21 — see step 4. **Suscripciones**
-still renders a `pendiente` badge and no numbers, and stays that way until the
-MercadoPago *planes de suscripción* Export has a table: it is blocked on data,
-not on UI.
+The **Contenido** view is live as of 2026-08-21 — see step 4.
 
-`/financiero` now navigates the way the prototype does: **pills switch the view**
-(Financiero · Contenido), and tabs sit inside a view. The two levels are not
-interchangeable — Contenido shares no filter and no axis with Economía, and
-flattening both into one six-item bar read as though it answered the same
-question with a different chart.
+**The layout is the prototype's as of 2026-08-27, and the inner tabs are gone.**
+`public/dashboard.html` is a single scroll per view: month snapshot, two KPI
+blocks, the consolidated chart, then the cuts from coarsest to finest grain.
+`/financiero` is now the same — **pills switch the view** (Financiero ·
+Contenido) and nothing switches inside one. The three tabs that used to sit
+inside Financiero (Economía · Suscripciones · Real vs Plan) split that scroll in
+three and hid two thirds of the screen behind tabs that show no numbers.
+
+What replaced them is a `Pending` block *in the place the chart would occupy*,
+carrying which of the two sentences applies — `Suscripciones · pendiente` (the
+number does not exist: MercadoPago's *planes de suscripción* Export has no
+table) or `Real vs Plan · en desarrollo` (the number exists, the targets Sheet
+is not shared yet). A reader now sees **which** chart is missing and why, rather
+than that something is. The cards standing on placeholders today: the last-15-days
+pair, Real vs Plan, monthly transactions by bucket, active-by-last-charge age,
+average subscriber lifetime, real active subscribers, and the assistant.
+
+**Light theme, 2026-08-27.** The prototype is light and the app is dark, so the
+light palette is a re-declaration of the same tokens under
+`:root[data-theme='light']` — no parallel stylesheet, and any component already
+reading `var(--bg2)` follows. `data-theme` on `<html>` is the single source of
+truth, written by an inline script in `layout.tsx` before first paint (otherwise
+loading in light flashes dark) and toggled from the header. Chart.js cannot read
+a CSS variable, so `useChartTheme()` in `src/lib/client/theme.ts` hands every
+chart resolved grid/tick/surface colours from constant objects — constant
+because they are `useMemo` dependencies and a fresh identity per render would
+destroy and rebuild every canvas. The header stays dark in both themes: the logo
+is a white PNG.
 
 Measured 2026-08-21, and the reason there is no single revenue number anywhere —
 three Providers, three currencies, no FX, and now two different *kinds* of

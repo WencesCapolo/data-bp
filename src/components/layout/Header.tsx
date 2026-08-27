@@ -6,6 +6,7 @@ import { useSession, signOut } from '@/lib/auth/client';
 import { swapToPortal, buildPortalLoginUrl } from '@/lib/auth/portal';
 import { SyncModal, type LastUploadInfo } from '@/components/layout/SyncModal';
 import { FeeUploadModal } from '@/components/layout/FeeUploadModal';
+import { ThemeToggle } from '@/components/ui/ThemeToggle';
 import type { UploadResultDTO } from '@basket/core/dtos/PaymentUploadDTO';
 
 interface SyncState {
@@ -195,6 +196,7 @@ export function Header() {
         >
           {inFlight ? '…' : '↻ Sync'}
         </button>
+        <ThemeToggle />
         <span className="header-date">{new Date().toISOString().slice(0, 10)}</span>
         {session?.user && (
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>

@@ -2,6 +2,7 @@
 import { useMemo } from 'react';
 import type { ChartConfiguration } from 'chart.js';
 import { ChartCanvas } from './ChartCanvas';
+import { useChartTheme } from '@/lib/client/theme';
 import { tooltipOpts } from './tooltip';
 
 interface Series {
@@ -30,6 +31,7 @@ function fmt(n: number): string {
 }
 
 export function StackedAreaChart({ labels, series, height = 260, tooltipTitles }: Props) {
+  const chartTheme = useChartTheme();
   const config = useMemo<ChartConfiguration>(
     () => ({
       type: 'line',
@@ -52,20 +54,20 @@ export function StackedAreaChart({ labels, series, height = 260, tooltipTitles }
         interaction: { mode: 'index', intersect: false },
         plugins: {
           legend: { display: true, labels: { boxWidth: 10, font: { size: 11 } } },
-          tooltip: tooltipOpts(tooltipTitles),
+          tooltip: tooltipOpts(tooltipTitles, chartTheme),
         },
         scales: {
-          x: { ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 10 }, grid: { color: '#1e2a42' }, stacked: true },
+          x: { ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 10 }, grid: { color: chartTheme.grid }, stacked: true },
           y: {
             stacked: true,
             beginAtZero: true,
-            grid: { color: '#1e2a42' },
+            grid: { color: chartTheme.grid },
             ticks: { callback: (v) => fmt(v as number) },
           },
         },
       },
     }),
-    [labels, series, tooltipTitles],
+    [labels, series, tooltipTitles, chartTheme],
   );
   return <ChartCanvas config={config} height={height} />;
 }

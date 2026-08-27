@@ -2,6 +2,7 @@
 import { useMemo } from 'react';
 import type { ChartConfiguration } from 'chart.js';
 import { ChartCanvas } from './ChartCanvas';
+import { useChartTheme } from '@/lib/client/theme';
 import { tooltipOpts } from './tooltip';
 
 interface Props {
@@ -15,6 +16,7 @@ interface Props {
 }
 
 export function LineChart({ labels, series, height = 220, yFormat = 'number', tooltipTitles }: Props) {
+  const chartTheme = useChartTheme();
   const config = useMemo<ChartConfiguration>(
     () => ({
       type: 'line',
@@ -37,13 +39,13 @@ export function LineChart({ labels, series, height = 220, yFormat = 'number', to
         interaction: { mode: 'index', intersect: false },
         plugins: {
           legend: { display: series.length > 1, labels: { boxWidth: 10 } },
-          tooltip: tooltipOpts(tooltipTitles),
+          tooltip: tooltipOpts(tooltipTitles, chartTheme),
         },
         scales: {
-          x: { ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 8 }, grid: { color: '#1e2a42' } },
+          x: { ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 8 }, grid: { color: chartTheme.grid } },
           y: {
             beginAtZero: false,
-            grid: { color: '#1e2a42' },
+            grid: { color: chartTheme.grid },
             ticks: {
               callback: (v) => (yFormat === 'currency' ? `$${fmt(v as number)}` : fmt(v as number)),
             },
@@ -51,7 +53,7 @@ export function LineChart({ labels, series, height = 220, yFormat = 'number', to
         },
       },
     }),
-    [labels, series, yFormat, tooltipTitles],
+    [labels, series, yFormat, tooltipTitles, chartTheme],
   );
   return <ChartCanvas config={config} height={height} />;
 }

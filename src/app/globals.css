@@ -1152,3 +1152,258 @@ select:focus { border-color: var(--accent2); }
   .header { position: static; }
   .tabs { position: static; top: auto; }
 }
+
+/* ════════════════════════════════════════════════════════════════════════
+   TEMA CLARO
+   ════════════════════════════════════════════════════════════════════════
+   El dashboard nace oscuro y el prototipo (public/dashboard.html) es claro,
+   así que el claro se define como una re-declaración de los mismos tokens y
+   no como una hoja de estilos paralela: cualquier componente que ya lea
+   var(--bg2) cambia de tema sin tocarse.
+
+   La cabecera es la excepción deliberada: se queda oscura en los dos temas
+   porque el logo es un PNG blanco. Invertirlo lo ensucia. */
+:root[data-theme='light'] {
+  --bg: #f5f7fb;
+  --bg2: #ffffff;
+  --bg3: #f1f5f9;
+  --border: #e2e8f0;
+  --border2: #cbd5e1;
+  --text: #0f172a;
+  --text2: #475569;
+  --text3: #64748b;
+  --accent: #e30613;
+  --accent-hover: #b8050f;
+  --accent2: #0ea5e9;
+  --accent3: #0284c7;
+  --green: #059669;
+  --red: #dc2626;
+  --yellow: #d97706;
+  --arg: #3b82f6;
+  --uru: #0891b2;
+  --chi: #e11d48;
+  --ecu: #7c3aed;
+  --bra: #059669;
+  --bol: #ea580c;
+  --other: #64748b;
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.06);
+  --shadow-md: 0 4px 14px rgba(15, 23, 42, 0.06), 0 2px 6px rgba(15, 23, 42, 0.04);
+  --shadow-lg: 0 10px 30px rgba(15, 23, 42, 0.1);
+}
+:root {
+  --shadow-sm: none;
+  --shadow-md: none;
+  --shadow-lg: none;
+}
+:root[data-theme='light'] .header {
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+  border-bottom-color: #0f172a;
+}
+:root[data-theme='light'] .header-meta { color: rgba(255, 255, 255, 0.7); }
+:root[data-theme='light'] .header .sync-badge {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.25);
+  color: #fff;
+}
+:root[data-theme='light'] .header-email { color: rgba(255, 255, 255, 0.8) !important; }
+:root[data-theme='light'] .data-table tbody tr:hover { background: rgba(15, 23, 42, 0.03); }
+:root[data-theme='light'] .chart-card,
+:root[data-theme='light'] .chart-full,
+:root[data-theme='light'] .kpi-card,
+:root[data-theme='light'] .proto-card,
+:root[data-theme='light'] .filter-row {
+  box-shadow: var(--shadow-md);
+}
+
+.theme-toggle {
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: #fff;
+  border-radius: 99px;
+  padding: 4px 12px;
+  font-size: 11px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 0.15s ease;
+}
+.theme-toggle:hover { background: rgba(255, 255, 255, 0.22); }
+
+/* ════════════════════════════════════════════════════════════════════════
+   LAYOUT DEL PROTOTIPO
+   ════════════════════════════════════════════════════════════════════════
+   Las clases del prototipo (card + h2 + .desc, grid2, kpis, etiquetas de
+   sección, snapshot del mes) llevan prefijo `proto-` porque `.card` y `.tabs`
+   ya existen arriba con otra forma y otro sitio de uso. */
+.proto-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 20px 22px;
+  margin-bottom: 18px;
+}
+.proto-card-title {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.proto-card-title .proto-note {
+  font-weight: 500;
+  color: var(--text3);
+  font-size: 12px;
+}
+.proto-desc {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text2);
+  margin: 8px 0 14px;
+}
+.proto-desc code { font-family: 'DM Mono', monospace; font-size: 11px; }
+.proto-foot {
+  margin-top: 10px;
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: var(--text3);
+}
+.proto-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+@media (max-width: 1100px) { .proto-grid2 { grid-template-columns: 1fr; } }
+.proto-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+  margin-bottom: 8px;
+}
+.proto-section-label {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text3);
+  margin: 22px 2px 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.proto-controls {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  margin-bottom: 14px;
+}
+.proto-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+  color: var(--text3);
+}
+
+/* Snapshot del mes en curso: tres columnas con barra de color arriba. */
+.proto-ms-grid { display: grid; grid-template-columns: repeat(3, minmax(240px, 1fr)); gap: 16px; }
+@media (max-width: 1100px) { .proto-ms-grid { grid-template-columns: 1fr; } }
+.proto-ms-col {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 18px 20px;
+  position: relative;
+  overflow: hidden;
+}
+.proto-ms-col::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 4px;
+  background: var(--other);
+}
+.proto-ms-col.tx::before { background: var(--arg); }
+.proto-ms-col.active::before { background: var(--ecu); }
+.proto-ms-col.revenue::before { background: var(--green); }
+.proto-ms-col h4 {
+  margin: 0 0 4px;
+  font-size: 10px;
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+}
+.proto-ms-big {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  margin-top: 4px;
+  font-family: 'DM Mono', monospace;
+}
+.proto-ms-col.tx .proto-ms-big { color: var(--arg); }
+.proto-ms-col.active .proto-ms-big { color: var(--ecu); }
+.proto-ms-col.revenue .proto-ms-big { color: var(--green); }
+.proto-ms-delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  margin-top: 8px;
+}
+.proto-ms-delta.up { background: color-mix(in srgb, var(--green) 16%, transparent); color: var(--green); }
+.proto-ms-delta.down { background: color-mix(in srgb, var(--red) 16%, transparent); color: var(--red); }
+.proto-ms-delta.flat { background: var(--bg3); color: var(--text3); }
+.proto-ms-items {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+}
+.proto-ms-items .row { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; }
+.proto-ms-items .row .num { font-family: 'DM Mono', monospace; color: var(--text); }
+
+/* Un aviso donde debería ir un gráfico cuya fuente todavía no existe. */
+.proto-pending {
+  border: 1px dashed var(--border2);
+  border-radius: 12px;
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+  background: var(--bg3);
+}
+.proto-pending-badge {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--yellow) 18%, transparent);
+  color: var(--yellow);
+}
+.proto-pending-badge.dev { background: color-mix(in srgb, var(--accent2) 18%, transparent); color: var(--accent2); }
+.proto-pending-body { font-size: 12px; line-height: 1.6; color: var(--text2); max-width: 70ch; }
+.proto-pending-body code { font-family: 'DM Mono', monospace; font-size: 11px; }
+
+.proto-tag {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--yellow) 18%, transparent);
+  color: var(--yellow);
+}
