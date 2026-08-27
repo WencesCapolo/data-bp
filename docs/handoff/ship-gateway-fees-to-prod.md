@@ -55,6 +55,15 @@
 >
 > Still open: `bp-ops-worker` was already `stopped` (12:27 UTC, ~3h before this
 > deploy) and was left alone — it is not this app.
+>
+> **Correction, 2026-08-27: the analytics cron has not completed a run since
+> 2026-08-10.** `BP_SESSION_COOKIE` expired, `/payments` returns no CSV rows, and
+> `RunSyncUseCase.ts:493` throws at the payments step — which sits *above* the
+> gateway, FX, SFTP-inbox and reconciliation steps. 221 consecutive failures, all
+> of them silent. So anywhere this doc says the cron will pick something up on its
+> own — step 8d walking the inbox, step 9 correcting amounts, Stripe's incremental
+> fee sync — that is not happening until the cookie is refreshed. See
+> `docs/handoff/alert-when-a-gateway-sync-fails.md`.
 
 Everything below is **built, ingested and green in dev**. None of it is in
 production, and none of it is even committed. Your job is the deploy, in an
