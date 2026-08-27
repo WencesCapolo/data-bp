@@ -46,9 +46,11 @@ function hoursSince(d: Date): number {
 }
 
 function fmtHours(h: number): string {
-  const days = Math.floor(h / 24);
-  const rest = Math.round(h % 24);
-  return days > 0 ? `${days}d ${rest}h` : `${Math.round(h)}h`;
+  // Round to whole hours first, then split. Rounding the remainder instead
+  // carries wrong and prints "16d 24h".
+  const total = Math.round(h);
+  const days = Math.floor(total / 24);
+  return days > 0 ? `${days}d ${total % 24}h` : `${total}h`;
 }
 
 function readState(): Record<string, Fired> {
