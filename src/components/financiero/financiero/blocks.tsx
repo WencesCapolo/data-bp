@@ -66,18 +66,20 @@ export function Pending({
               Este gráfico se alimenta de <strong>Suscripciones</strong>, que todavía no
               tiene tabla: las de MercadoPago viven en el Export de{' '}
               <em>planes de suscripción</em>, que nadie generó aún. No es un problema de
-              pantalla — el número no existe en la base. Ver{' '}
-              <code>docs/handoff/financiero-dashboard-port.md</code>.
+              pantalla — el número no existe en la base.
             </>
           ) : (
+            // Lo que falta para encenderlo — la planilla compartida en modo
+            // lectura con la cuenta de servicio, y GOOGLE_SHEETS_ID_TARGETS /
+            // GOOGLE_SHEETS_TAB_TARGETS declaradas — está en
+            // docs/handoff/financiero-dashboard-port.md, paso 5. Acá no: el
+            // nombre de una variable de entorno no le dice nada a quien mira
+            // el dashboard.
             <>
               Este gráfico compara contra el <strong>Plan</strong>, que llega de una
-              planilla de objetivos todavía no compartida. Falta compartir la hoja en
-              modo lectura con{' '}
-              <code>wenceslao@dashboards-496312.iam.gserviceaccount.com</code> y declarar{' '}
-              <code>GOOGLE_SHEETS_ID_TARGETS</code> y{' '}
-              <code>GOOGLE_SHEETS_TAB_TARGETS</code>. La hoja sólo debe traer{' '}
-              <code>plan</code>: el real y el mes anterior se calculan acá.
+              planilla de objetivos todavía no compartida con el dashboard. La planilla
+              sólo debe traer el objetivo por Proveedor y mes: el real y el mes anterior
+              se calculan acá.
             </>
           ))}
       </div>

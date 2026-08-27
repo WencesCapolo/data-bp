@@ -627,8 +627,7 @@ export function FinancieroView() {
           <Pending kind="suscripciones">
             Falta la línea de <strong>suscriptores activos reales</strong>: se cuenta como
             emails únicos con suscripción vigente al cierre del mes, y hoy sólo Stripe
-            tiene espejo de Suscripciones. Ver{' '}
-            <code>docs/handoff/financiero-dashboard-port.md</code>.
+            tiene espejo de Suscripciones.
           </Pending>
         </div>
       </Card>
@@ -1391,11 +1390,14 @@ export function FinancieroView() {
         title="💬 Asistente de datos"
         desc="Preguntas sobre los datos del dashboard en lenguaje natural: ingresos por Proveedor y moneda, activos, transacciones, comisiones, precios."
       >
+        {/* El plan y su orden viven en docs/handoff/financiero-dashboard-port.md,
+            paso 6; acá va sólo el porqué, que es lo único que le sirve a quien
+            mira la pantalla. */}
         <Pending kind="asistente">
-          El asistente del prototipo respondía sobre un <code>DATA</code> embebido y
-          congelado. Contra la base viva necesita una superficie de consulta propia, y cada
+          El asistente del prototipo respondía sobre una copia de los datos embebida y
+          congelada. Contra la base viva necesita una superficie de consulta propia, y cada
           número que citaría sale de los bloques de arriba: es lo último de la portación, no
-          lo primero. Ver <code>docs/handoff/financiero-dashboard-port.md</code>, paso 6.
+          lo primero.
         </Pending>
       </Card>
 
