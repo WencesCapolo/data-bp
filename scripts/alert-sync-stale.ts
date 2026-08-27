@@ -106,16 +106,17 @@ async function main() {
     const inbox = process.env.MP_SFTP_INBOX;
 
     const checks: Check[] = [
-      // The run itself, keyed on `users` (step 3). A per-Provider check alone
-      // reads healthy when the run dies before reaching a Provider, so the run
-      // needs its own signal. Deliberately NOT keyed on `payments`: Pagos are
-      // loaded by hand through the UI now, so that watermark says nothing about
-      // whether the cron is alive.
+      // The run itself, keyed on `content` (step 5) — the first watermark BELOW
+      // the payments step that aborts the run. `users` (step 3) is the wrong
+      // signal: it sits above the throw, so it advances on every run and reads
+      // healthy while everything downstream stays dark. `payments` is the wrong
+      // signal too, in the other direction: Pagos are loaded by hand through the
+      // UI now, so that watermark is expected to be stale forever.
       {
         id: 'run',
         provider: 'analytics sync run',
-        lastGood: watermarks.get('users') ?? null,
-        what: 'the whole run — the users step, above every Provider step',
+        lastGood: watermarks.get('content') ?? null,
+        what: 'the content step (5) — the first step below the payments step that aborts the run',
         configured: true,
       },
       {
