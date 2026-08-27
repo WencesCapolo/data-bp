@@ -58,3 +58,6 @@ dump.pgc
 # the dashboard prototype — 13,9 MB of real revenue figures, and public/ is served
 # unauthenticated. Local-only artifact; the docs/handoff/ files cite it by path.
 /public/dashboard.html
+
+# sync-alert firing state (scripts/alert-sync-stale.ts)
+.alert-sync-state.json
