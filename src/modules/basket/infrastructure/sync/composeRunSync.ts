@@ -25,7 +25,7 @@ import {
   type ContentCsvRow,
 } from '@basket/infrastructure/sync/csvMappers';
 import { mapFixtureMatchRow } from '@basket/infrastructure/sync/fixtureMappers';
-import { RunSyncUseCase } from '@basket/core/use-cases/sync/RunSyncUseCase';
+import { RunSyncUseCase, type SyncScope } from '@basket/core/use-cases/sync/RunSyncUseCase';
 import { composeFxRateSync, composeGatewayFeeSync } from '@basket/infrastructure/sync/composeGatewayFeeSync';
 import { composeExportInboxIngest } from '@basket/infrastructure/sync/composeExportInbox';
 import { streamCsvFile } from '@shared/lib/csvStream';
@@ -35,6 +35,12 @@ export interface ComposeRunSyncOptions {
   /** Path to a staged Pagos Export. Given, Pagos come from the file instead of
    *  the dead `/payments` endpoint. Omitted, the sync behaves exactly as before. */
   paymentsCsvPath?: string;
+  /** `upload`: ingest the Pagos Export, realign amounts, refresh the views —
+   *  nothing else. The Sync button passes this: every other source is the
+   *  6-hourly cron's job and the Provider steps alone take ten-plus minutes
+   *  against Stripe, so an Analyst confirming an Upload waits on Pagos only.
+   *  Also skips Sheets tab discovery and Provider client setup here. */
+  scope?: SyncScope;
 }
 
 const MONTH_TAB_RX = /^(Enero|Febrero|Marzo|Abril|Mayo|Junio|Julio|Agosto|Septiembre|Octubre|Noviembre|Diciembre)\s+\d{2,4}$/i;
@@ -111,6 +117,8 @@ export function createCsvApiFetcher(): CsvApiFetcher {
 
 export async function composeRunSync(opts: ComposeRunSyncOptions = {}): Promise<RunSyncUseCase> {
   const paymentsEnabled = process.env.SYNC_PAYMENTS_ENABLED !== 'false';
+  const scope: SyncScope = opts.scope ?? 'full';
+  const uploadOnly = scope === 'upload';
   const fetcher = createCsvApiFetcher();
 
   const users = new DrizzleUserRepository();
@@ -126,7 +134,7 @@ export async function composeRunSync(opts: ComposeRunSyncOptions = {}): Promise<
 
   const gEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
   const gKey = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
-  const sheets = gEmail && gKey
+  const sheets = gEmail && gKey && !uploadOnly
     ? new GoogleSheetsFetcher({ email: gEmail, privateKey: gKey })
     : undefined;
 
@@ -188,7 +196,7 @@ export async function composeRunSync(opts: ComposeRunSyncOptions = {}): Promise<
   // cancellation has no window to read). Disabled by flag or by absent
   // credentials, in which case those steps are simply skipped.
   const gatewayEnabled = process.env.SYNC_GATEWAYS_ENABLED !== 'false';
-  const gateways = gatewayEnabled ? composeGatewayFeeSync() : null;
+  const gateways = gatewayEnabled && !uploadOnly ? composeGatewayFeeSync() : null;
   if (gateways) {
     for (const s of gateways.skipped) {
       console.warn(`[sync] gateway ${s.slug} skipped: ${s.missing} not set`);
@@ -230,6 +238,7 @@ export async function composeRunSync(opts: ComposeRunSyncOptions = {}): Promise<
     contentResource: process.env.EXTERNAL_CONTENT_PATH ?? 'content',
     contentWindowDays: Number(process.env.SYNC_CONTENT_WINDOW_DAYS ?? '30'),
     paymentsEnabled,
+    scope,
     paymentsWindow: process.env.SYNC_PAYMENTS_WINDOW ?? '-1month',
     contentEnabled: process.env.SYNC_CONTENT_ENABLED !== 'false',
     gatewayFees: gateways?.slugs.length ? gateways.useCase : undefined,
@@ -247,10 +256,10 @@ export async function composeRunSync(opts: ComposeRunSyncOptions = {}): Promise<
     // Not gated on SYNC_GATEWAYS_ENABLED: the rate feed needs no credential and
     // the derived Stripe rows are read from a table, so this step keeps working
     // in an environment with no gateway keys at all.
-    fxRates: process.env.SYNC_FX_ENABLED === 'false' ? undefined : composeFxRateSync(),
+    fxRates: process.env.SYNC_FX_ENABLED === 'false' || uploadOnly ? undefined : composeFxRateSync(),
     // MercadoPago's report centre pushes its Exports to a jailed SFTP account on
     // the box; this walks what has arrived. Unset `MP_SFTP_INBOX` and the step
     // does not exist. See docs/handoff/mercadopago-sftp-all-transactions.md.
-    exportInbox: composeExportInboxIngest('cron:sync') ?? undefined,
+    exportInbox: uploadOnly ? undefined : (composeExportInboxIngest('cron:sync') ?? undefined),
   });
 }

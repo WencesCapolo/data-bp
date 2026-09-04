@@ -7,6 +7,12 @@ Entry points:
 
 All converge on `composeRunSync()` → `new RunSyncUseCase(deps).execute()`.
 
+The Sync button (`POST /api/sync`, Upload required) runs with `scope: 'upload'`: the
+Pagos step from the file, the amount realignment, and the mat-view refresh — nothing
+else. Every other source is the cron's job, and the Provider steps alone take ten-plus
+minutes against Stripe. `SYNC_PAYMENTS_ENABLED=false` only stops the full run from
+calling the dead `/payments` endpoint; it never gates an Upload.
+
 ## Stage order (RunSyncUseCase)
 
 ```

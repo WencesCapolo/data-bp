@@ -104,6 +104,10 @@ export interface RunSyncDeps {
   gatewayFeeWindowDays?: number;
   mapUserRow: (row: Record<string, string>, knownTeamIds: Set<number>) => UserProps | null;
   mapPaymentRow: (row: Record<string, string>, knownUserIds: Set<number>) => PaymentProps | null;
+  /** `upload` runs only the Pagos step, the amount realignment and the view
+   *  refresh, reading known Subscribers from the mirror as it stands. Requires
+   *  `paymentsRows`. Default `full`. */
+  scope?: SyncScope;
   /** Maps one Pagos Export row. Required only when `paymentsRows` is supplied. */
   mapPaymentUploadRow?: (row: PaymentUploadRow, knownUserIds: Set<number>) => PaymentProps | null;
   /** Rows of an Upload. When present, Pagos come from the file and the dead
@@ -152,10 +156,74 @@ export interface RunSyncResult {
   refreshes: RefreshResult[];
 }
 
+export type SyncScope = 'full' | 'upload';
+
 export class RunSyncUseCase {
   constructor(private readonly deps: RunSyncDeps) {}
 
   async execute(): Promise<RunSyncResult> {
+    if (this.deps.scope === 'upload') return this.executeUpload();
+    return this.executeFull();
+  }
+
+  /**
+   * The Sync button's run: the Upload, then what makes it visible. Every other
+   * source belongs to the cron; a person should never wait on Stripe.
+   */
+  private async executeUpload(): Promise<RunSyncResult> {
+    if (!this.deps.paymentsRows) throw new Error("scope 'upload' requires paymentsRows");
+    const startedAt = new Date();
+    const runAt = new Date();
+    const skipped = { payments: 0 };
+
+    const userIds = await this.deps.users.getKnownIds();
+    const paymentsResult = await new LoadPaymentsFromCsvUseCase(this.deps.payments).execute({
+      rows: this.mapUploadedPayments(this.deps.paymentsRows, userIds, skipped),
+    });
+    await this.deps.syncState.updateLastSync('payments', runAt, await this.deps.payments.count());
+
+    const correctedAmounts = await this.reconcileAmounts();
+    const refreshes = await new RefreshMaterializedViewsUseCase(this.deps.matViews).execute({ concurrent: true });
+
+    const finishedAt = new Date();
+    return {
+      startedAt: startedAt.toISOString(),
+      finishedAt: finishedAt.toISOString(),
+      durationMs: finishedAt.getTime() - startedAt.getTime(),
+      syncedUsers: 0,
+      syncedPayments: paymentsResult.inserted,
+      skippedPayments: skipped.payments,
+      syncedTeams: 0,
+      syncedTournaments: 0,
+      syncedContent: 0,
+      syncedSheets: [],
+      syncedFixtures: [],
+      syncedDataMasters: [],
+      gatewayFees: [],
+      gatewaySubscriptions: [],
+      gatewayMirrors: [],
+      fxRates: [],
+      exportInbox: null,
+      correctedAmounts,
+      refreshes,
+    };
+  }
+
+  /** Realign Pago amounts against the gateway. Never fatal. See docs/adr/0006. */
+  private async reconcileAmounts(): Promise<number> {
+    try {
+      const reconciled = await new ReconcilePaymentAmountsUseCase(this.deps.payments).execute();
+      if (reconciled.corrected > 0) {
+        console.log(`realigned ${reconciled.corrected} Pago amounts to the gateway`);
+      }
+      return reconciled.corrected;
+    } catch (err) {
+      console.error('amount reconciliation failed:', (err as Error).message);
+      return 0;
+    }
+  }
+
+  private async executeFull(): Promise<RunSyncResult> {
     const startedAt = new Date();
     const usersResource = this.deps.usersResource ?? 'users';
     const paymentsResource = this.deps.paymentsResource ?? 'payments';
@@ -184,9 +252,11 @@ export class RunSyncUseCase {
 
     // 4. Payments (depend on known user ids); optional.
     // Runs after step 3 either way so `getKnownIds()` reflects this run's Subscribers.
+    // `paymentsEnabled=false` exists to stop calling the dead `/payments` endpoint;
+    // an Upload never calls it, so an Upload always runs this step.
     let paymentsInserted = 0;
     const skipped = { payments: 0 };
-    if (paymentsEnabled) {
+    if (paymentsEnabled || this.deps.paymentsRows) {
       const lastPayments = await this.deps.syncState.getLastSync('payments');
       const userIds = await this.deps.users.getKnownIds();
       const paymentsStream = this.deps.paymentsRows
@@ -367,16 +437,7 @@ export class RunSyncUseCase {
     // 9. Realign Pago amounts against the gateway. Must come AFTER the fee sync
     // (it reads fees as truth) and BEFORE the mat view refresh (amount feeds
     // tier classification, so a correction changes sub_type).
-    let correctedAmounts = 0;
-    try {
-      const reconciled = await new ReconcilePaymentAmountsUseCase(this.deps.payments).execute();
-      correctedAmounts = reconciled.corrected;
-      if (correctedAmounts > 0) {
-        console.log(`realigned ${correctedAmounts} Pago amounts to the gateway`);
-      }
-    } catch (err) {
-      console.error('amount reconciliation failed:', (err as Error).message);
-    }
+    const correctedAmounts = await this.reconcileAmounts();
 
     // 10. Refresh mat views
     const refreshes = await new RefreshMaterializedViewsUseCase(this.deps.matViews).execute({ concurrent: true });

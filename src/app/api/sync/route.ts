@@ -186,7 +186,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   };
   const uploads = new DrizzlePaymentUploadRepository();
 
-  const basketUseCase = await composeRunSync({ paymentsCsvPath });
+  // Pagos only: every other source is the cron's job, and an Analyst should
+  // not wait on Stripe to see an Upload land.
+  const basketUseCase = await composeRunSync({ paymentsCsvPath, scope: 'upload' });
   const partidosUseCase = composeSyncPartidos();
 
   const basketP = basketUseCase
