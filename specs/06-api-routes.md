@@ -72,7 +72,6 @@ Zod `customRangeRefine` enforces from+to when range=custom.
 {
   dataRange:  { minDay, maxDay },
   countries:  string[],            // desc by user count
-  lastSync:   { source, lastSync, rowCount }[],
   enums:      { subTypes, accessTypes, platforms, granularity, ranges }
 }
 ```

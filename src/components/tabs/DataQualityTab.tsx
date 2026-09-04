@@ -4,7 +4,7 @@ import { fetcher } from '@/lib/client/fetcher';
 import { KpiCard } from '@/components/ui/KpiCard';
 import { TabSkeleton } from '@/components/ui/Skeleton';
 import { ErrorBox } from '@/components/ui/ErrorBox';
-import type { DataQualityDTO } from '@basket/core/dtos/DataQualityDTO';
+import type { DataQualityDTO, SyncLogEntry } from '@basket/core/dtos/DataQualityDTO';
 import type { MetaDTO } from '@basket/core/dtos/MetaDTO';
 
 function severityOf(issue: { code: string; count: number }): 'low' | 'med' | 'high' {
@@ -21,16 +21,17 @@ const SEV_COLOR = {
   high: 'var(--red)',
 };
 
-function ageBadge(iso: string): { label: string; color: string } {
-  const t = new Date(iso).getTime();
-  if (Number.isNaN(t)) return { label: '—', color: 'var(--text3)' };
-  const ageMin = (Date.now() - t) / 60_000;
-  if (ageMin < 60) return { label: `${Math.round(ageMin)}m`, color: 'var(--green)' };
-  const h = ageMin / 60;
-  if (h < 12) return { label: `${h.toFixed(1)}h`, color: 'var(--green)' };
-  if (h < 36) return { label: `${h.toFixed(1)}h`, color: 'var(--yellow)' };
-  const d = h / 24;
-  return { label: `${d.toFixed(1)}d`, color: 'var(--red)' };
+const KIND_LABEL: Record<SyncLogEntry['kind'], string> = {
+  manual: 'Manual · Pagos',
+  inbox: 'Inbox MP',
+  cron: 'Cron',
+  token: 'Token',
+};
+
+function fmtDuration(ms: number | null): string {
+  if (ms == null) return '—';
+  if (ms < 60_000) return `${Math.round(ms / 1000)}s`;
+  return `${Math.floor(ms / 60_000)}m ${Math.round((ms % 60_000) / 1000)}s`;
 }
 
 export function DataQualityTab() {
@@ -109,35 +110,57 @@ export function DataQualityTab() {
 
       <div className="chart-full" style={{ padding: 0, overflow: 'hidden' }}>
         <div className="chart-title" style={{ padding: '20px 24px 0' }}>
-          Estado de sincronización
+          Log de sincronizaciones
         </div>
         <table className="data-table" style={{ marginTop: 12 }}>
           <thead>
             <tr>
-              <th>Fuente</th>
-              <th>Última sync</th>
-              <th style={{ textAlign: 'right' }}>Filas</th>
-              <th style={{ textAlign: 'right' }}>Antigüedad</th>
+              <th>Fecha</th>
+              <th>Tipo</th>
+              <th>Usuario</th>
+              <th>Detalle</th>
+              <th style={{ textAlign: 'right' }}>Pagos</th>
+              <th style={{ textAlign: 'right' }}>Duración</th>
+              <th style={{ width: 80, textAlign: 'center' }}>Estado</th>
             </tr>
           </thead>
           <tbody>
-            {meta?.lastSync.map((s) => {
-              const a = ageBadge(s.lastSync);
-              return (
-                <tr key={s.source}>
-                  <td style={{ fontFamily: 'DM Mono, monospace' }}>{s.source}</td>
-                  <td style={{ fontSize: 11, color: 'var(--text2)' }}>
-                    {new Date(s.lastSync).toLocaleString('es-UY')}
-                  </td>
-                  <td style={{ textAlign: 'right' }}>{s.rowCount?.toLocaleString() ?? '—'}</td>
-                  <td style={{ textAlign: 'right', color: a.color, fontWeight: 600 }}>{a.label}</td>
-                </tr>
-              );
-            }) ?? (
+            {dq.syncLog.length === 0 && (
               <tr>
-                <td colSpan={4} className="no-data">Cargando…</td>
+                <td colSpan={7} className="no-data">Sin registros</td>
               </tr>
             )}
+            {dq.syncLog.map((e, idx) => {
+              const color = e.error ? 'var(--red)' : 'var(--green)';
+              return (
+                <tr key={`${e.at}-${idx}`} title={e.error ?? undefined}>
+                  <td style={{ fontSize: 11, color: 'var(--text2)', whiteSpace: 'nowrap' }}>
+                    {new Date(e.at).toLocaleString('es-UY')}
+                  </td>
+                  <td>{KIND_LABEL[e.kind] ?? e.kind}</td>
+                  <td style={{ fontSize: 11, color: 'var(--text2)' }}>{e.actor}</td>
+                  <td style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--text3)' }}>{e.detail}</td>
+                  <td style={{ textAlign: 'right' }}>{e.rows?.toLocaleString() ?? '—'}</td>
+                  <td style={{ textAlign: 'right', color: 'var(--text3)' }}>{fmtDuration(e.durationMs)}</td>
+                  <td style={{ textAlign: 'center' }}>
+                    <span
+                      style={{
+                        display: 'inline-block',
+                        padding: '2px 8px',
+                        borderRadius: 99,
+                        fontSize: 10,
+                        textTransform: 'uppercase',
+                        letterSpacing: 1,
+                        background: `${color}22`,
+                        color,
+                      }}
+                    >
+                      {e.error ? 'error' : 'ok'}
+                    </span>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

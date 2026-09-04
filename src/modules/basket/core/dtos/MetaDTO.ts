@@ -1,9 +1,3 @@
-export interface MetaSyncEntry {
-  source: string;
-  lastSync: string;
-  rowCount: number | null;
-}
-
 export interface MetaEnums {
   subTypes: readonly string[];
   accessTypes: readonly string[];
@@ -15,7 +9,6 @@ export interface MetaEnums {
 export interface MetaDTO {
   dataRange: { minDay: string; maxDay: string };
   countries: string[];
-  lastSync: MetaSyncEntry[];
   enums: MetaEnums;
 }
 

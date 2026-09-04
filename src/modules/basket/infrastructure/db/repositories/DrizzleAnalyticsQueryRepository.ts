@@ -30,7 +30,7 @@ import type {
 } from '@basket/core/dtos/ContenidoDTO';
 import type { RetentionDTO } from '@basket/core/dtos/RetentionDTO';
 import type { LifecycleDTO } from '@basket/core/dtos/LifecycleDTO';
-import type { DataQualityDTO } from '@basket/core/dtos/DataQualityDTO';
+import type { DataQualityDTO, SyncLogEntry } from '@basket/core/dtos/DataQualityDTO';
 import { META_ENUMS, type MetaDTO } from '@basket/core/dtos/MetaDTO';
 
 type RowAny = Record<string, unknown>;
@@ -2365,6 +2365,7 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
     const v = (r: unknown): number => n(((r as unknown) as RowAny[])[0]?.c);
     return {
       generatedAt: new Date().toISOString(),
+      syncLog: await this.getSyncLog(),
       totals: { users: v(usersC), payments: v(paymentsC), teams: v(teamsC) },
       issues: [
         { code: 'user_no_country',      description: 'Users with NULL country',                      count: v(noCountry) },
@@ -2376,8 +2377,65 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
     };
   }
 
+  /**
+   * Manual Uploads and inbox ingests (basket_payment_uploads) merged with cron
+   * and token runs (basket_sync_runs), newest first. Tolerates the runs table
+   * not existing yet so the tab keeps working across the migration.
+   */
+  private async getSyncLog(limit = 60): Promise<SyncLogEntry[]> {
+    const uploads = `
+      SELECT created_at AS at,
+             CASE WHEN uploaded_by LIKE 'cron:%' THEN 'inbox'
+                  WHEN uploaded_by LIKE '%@%' THEN 'manual'
+                  ELSE 'token' END AS kind,
+             uploaded_by AS actor,
+             filename
+               || CASE WHEN window_from IS NOT NULL
+                       THEN ' · ' || to_char(window_from, 'DD/MM/YY') || ' → ' || to_char(COALESCE(window_to, window_from), 'DD/MM/YY')
+                       ELSE '' END AS detail,
+             rows_ingested AS rows,
+             NULL::int AS duration_ms,
+             error
+      FROM basket_payment_uploads`;
+    const runs = `
+      SELECT started_at AS at,
+             trigger AS kind,
+             actor,
+             CASE WHEN error IS NOT NULL THEN 'sync ' || scope
+                  WHEN scope = 'upload' THEN 'Pagos'
+                  ELSE 'usuarios ' || COALESCE(users_synced, 0)
+                    || ' · contenido ' || COALESCE(content_synced, 0)
+                    || ' · sheets ' || COALESCE(sheets_synced, 0) END AS detail,
+             payments_ingested AS rows,
+             duration_ms,
+             error
+      FROM basket_sync_runs`;
+    // sql.raw hands timestamptz back as text, so the ISO shape is made in SQL.
+    const select = `SELECT to_char(at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS at,
+             kind, actor, detail, rows, duration_ms, error`;
+    const toEntry = (r: RowAny): SyncLogEntry => ({
+      at: s(r.at),
+      kind: s(r.kind) as SyncLogEntry['kind'],
+      actor: s(r.actor),
+      detail: s(r.detail),
+      rows: r.rows == null ? null : Number(r.rows),
+      durationMs: r.duration_ms == null ? null : Number(r.duration_ms),
+      error: r.error == null ? null : String(r.error),
+    });
+    try {
+      const rows = await this.conn.execute(sql.raw(
+        `${select} FROM (${uploads} UNION ALL ${runs}) x ORDER BY at DESC LIMIT ${limit}`,
+      ));
+      return (rows as unknown as RowAny[]).map(toEntry);
+    } catch (err) {
+      if ((err as { code?: string }).code !== '42P01') throw err;
+      const rows = await this.conn.execute(sql.raw(`${select} FROM (${uploads}) x ORDER BY at DESC LIMIT ${limit}`));
+      return (rows as unknown as RowAny[]).map(toEntry);
+    }
+  }
+
   async getMeta(): Promise<MetaDTO> {
-    const [rangeRows, countryRows, syncRows] = await Promise.all([
+    const [rangeRows, countryRows] = await Promise.all([
       this.conn.execute(sql.raw(`
         SELECT MIN(day)::text AS min_day, MAX(day)::text AS max_day
         FROM basket_mat_daily_active
@@ -2389,27 +2447,14 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
         GROUP BY country
         ORDER BY c DESC
       `)),
-      this.conn.execute(sql.raw(`
-        SELECT source, last_sync, row_count
-        FROM basket_sync_state
-        ORDER BY source
-      `)),
     ]);
 
     const rangeRow = (rangeRows as unknown as RowAny[])[0] ?? {};
     const countries = (countryRows as unknown as RowAny[]).map((r) => s(r.country));
-    const lastSync = (syncRows as unknown as RowAny[]).map((r) => ({
-      source: s(r.source),
-      lastSync: r.last_sync instanceof Date
-        ? r.last_sync.toISOString()
-        : String(r.last_sync ?? ''),
-      rowCount: r.row_count == null ? null : Number(r.row_count),
-    }));
 
     return {
       dataRange: { minDay: s(rangeRow.min_day), maxDay: s(rangeRow.max_day) },
       countries,
-      lastSync,
       enums: META_ENUMS,
     };
   }

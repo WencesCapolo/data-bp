@@ -171,18 +171,18 @@ Severity heuristic:
 - count > 500 → med
 - else → low
 
-**Estado de sincronización**: per-source sync timestamp + row count + age badge (green < 12h, yellow 12-36h, red > 36h).
+**Log de sincronizaciones**: newest-first merge of `basket_payment_uploads` (manual Pagos Uploads, MP SFTP inbox ingests) and `basket_sync_runs` (cron / token runs): date, type, actor, detail (filename + Window, or what a run refreshed), Pagos ingested, duration, ok/error.
 
 **Rango de datos disponible (alert-box)**: shows `dataRange.minDay`–`dataRange.maxDay` from meta — quick sanity check on coverage.
 
 **Data path**:
 - Issues — direct counts on `basket_payments` + `basket_users` + `basket_teams`
 - Totals — `count(*)` per table
-- Sync state — `basket_sync_state` via meta endpoint
+- Sync log — `basket_payment_uploads` ∪ `basket_sync_runs`, in the data-quality endpoint
 
 **Endpoint**: `GET /api/basket/data-quality` + `GET /api/basket/meta`
 
-**Reading tip**: any `high` row blocks downstream confidence. Sync ages > 36h on `users`/`payments` mean dashboards are stale.
+**Reading tip**: any `high` row blocks downstream confidence. The header's Sync badge carries per-source freshness; the log here says who last refreshed what.
 
 ---
 

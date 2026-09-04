@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { composeRunSync } from '@basket/infrastructure/sync/composeRunSync';
+import { runLoggedSync } from '@basket/infrastructure/sync/runLoggedSync';
 import { DrizzleSyncStateRepository } from '@basket/infrastructure/db/repositories/DrizzleSyncStateRepository';
 
 export const dynamic = 'force-dynamic';
@@ -45,7 +46,7 @@ export async function POST(req: NextRequest) {
   const useCase = await composeRunSync();
   startedAt = Date.now();
   lastError = null;
-  const promise = useCase.execute();
+  const promise = runLoggedSync(useCase, 'token', 'x-sync-token');
   inFlight = promise;
   promise
     .then((result) => {

@@ -210,6 +210,25 @@ export const basketSyncState = pgTable('basket_sync_state', {
   rowCount: integer('row_count'),
 });
 
+// One row per cron or token-triggered Sync. Manual Uploads are logged in
+// basket_payment_uploads instead; the Calidad tab reads both as one log.
+export const basketSyncRuns = pgTable('basket_sync_runs', {
+  id: serial('id').primaryKey(),
+  trigger: text('trigger').notNull(),
+  actor: text('actor').notNull(),
+  scope: text('scope').notNull(),
+  startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
+  finishedAt: timestamp('finished_at', { withTimezone: true }).notNull(),
+  durationMs: integer('duration_ms').notNull(),
+  usersSynced: integer('users_synced'),
+  contentSynced: integer('content_synced'),
+  paymentsIngested: integer('payments_ingested'),
+  sheetsSynced: integer('sheets_synced'),
+  error: text('error'),
+}, (table) => ({
+  startedAtIdx: index('basket_sync_runs_started_at_idx').on(table.startedAt),
+}));
+
 // Provenance for every confirmed Pagos Export upload. See docs/adr/0004.
 export const basketPaymentUploads = pgTable('basket_payment_uploads', {
   id: serial('id').primaryKey(),

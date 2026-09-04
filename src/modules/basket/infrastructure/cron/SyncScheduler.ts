@@ -1,5 +1,6 @@
 import cron, { type ScheduledTask } from 'node-cron';
 import { composeRunSync } from '@basket/infrastructure/sync/composeRunSync';
+import { runLoggedSync } from '@basket/infrastructure/sync/runLoggedSync';
 
 const GLOBAL_KEY = Symbol.for('basket.syncScheduler');
 
@@ -38,7 +39,7 @@ export function startSyncScheduler(): void {
     state.lastError = null;
     try {
       const useCase = await composeRunSync();
-      await useCase.execute();
+      await runLoggedSync(useCase, 'cron', 'SyncScheduler');
     } catch (err) {
       state.lastError = err instanceof Error ? err.message : String(err);
       console.error('[SyncScheduler] sync failed:', state.lastError);

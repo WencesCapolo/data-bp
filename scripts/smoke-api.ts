@@ -21,7 +21,7 @@ const PROBES: Probe[] = [
     label: 'GET /meta',
     path: '/api/basket/meta',
     validate: (b) =>
-      need(b, 'dataRange') ?? need(b, 'countries') ?? need(b, 'lastSync') ?? need(b, 'enums'),
+      need(b, 'dataRange') ?? need(b, 'countries') ?? need(b, 'enums'),
   },
   {
     label: 'GET /overview',
@@ -52,7 +52,7 @@ const PROBES: Probe[] = [
   {
     label: 'GET /data-quality',
     path: '/api/basket/data-quality',
-    validate: (b) => need(b, 'totals') ?? need(b, 'issues'),
+    validate: (b) => need(b, 'totals') ?? need(b, 'issues') ?? need(b, 'syncLog'),
   },
   {
     label: 'GET /evolution?range=foo (expect 400)',
