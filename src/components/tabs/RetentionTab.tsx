@@ -5,6 +5,7 @@ import type { ChartConfiguration } from 'chart.js';
 import { fetcher } from '@/lib/client/fetcher';
 import { useFilterQS } from '@/lib/client/filterStore';
 import { KpiCard } from '@/components/ui/KpiCard';
+import { InfoHint } from '@/components/ui/InfoHint';
 import { StackedBarChart } from '@/components/charts/StackedBarChart';
 import { ChartCanvas } from '@/components/charts/ChartCanvas';
 import { TabSkeleton } from '@/components/ui/Skeleton';
@@ -101,18 +102,32 @@ export function RetentionTab() {
           value={`${last.churnRatePct.toFixed(1)}%`}
           sub={last.month.slice(0, 7)}
           variant="red"
+          hint="Expiraciones del último mes cerrado divididas por los suscriptores activos al inicio de ese mes. Un suscriptor expira cuando su acceso vence (más 7 días de gracia) sin otro Pago exitoso que lo cubra."
         />
         <KpiCard
           label="Retención último mes"
           value={`${last.retentionRatePct.toFixed(1)}%`}
           variant="green"
+          hint="Porcentaje de los suscriptores activos al inicio del último mes cerrado que seguían con acceso al terminarlo. Es el complemento del churn: retención = 100 − churn."
         />
-        <KpiCard label="Churn promedio" value={`${avgChurn.toFixed(1)}%`} />
-        <KpiCard label="Retención promedio" value={`${avgRetention.toFixed(1)}%`} variant="blue" />
+        <KpiCard
+          label="Churn promedio"
+          value={`${avgChurn.toFixed(1)}%`}
+          hint="Promedio simple del churn mensual de los meses que muestra la tabla. Cada mes pesa igual, sin importar cuántos suscriptores tenía."
+        />
+        <KpiCard
+          label="Retención promedio"
+          value={`${avgRetention.toFixed(1)}%`}
+          variant="blue"
+          hint="Promedio simple de la retención mensual de los meses que muestra la tabla. Cada mes pesa igual, sin importar cuántos suscriptores tenía."
+        />
       </div>
 
       <div className="chart-full">
-        <div className="chart-title">Lifecycle mensual</div>
+        <div className="chart-title">
+          Lifecycle mensual
+          <InfoHint text="Movimiento de suscriptores por mes, a partir de Pagos exitosos de todos los Providers. Nuevos = mes del primer Pago; Renovaciones = Pago hasta 37 días después del vencimiento anterior; Reactivaciones = Pago pasado ese plazo; Expiraciones = acceso vencido (+7 días) sin otro Pago." />
+        </div>
         <div style={{ height: 320 }}>
           <StackedBarChart
             height={320}
@@ -134,7 +149,10 @@ export function RetentionTab() {
       </div>
 
       <div className="chart-full">
-        <div className="chart-title">Churn y retención · %</div>
+        <div className="chart-title">
+          Churn y retención · %
+          <InfoHint text="Churn = expiraciones del mes sobre los suscriptores activos el primer día del mes; retención = 100 − churn. Respeta los filtros de país, Tier y Access Type. El mes en curso no se muestra hasta que cierra." />
+        </div>
         <div style={{ height: 280 }}>
           {churnLineConfig && <ChartCanvas config={churnLineConfig} height={280} />}
         </div>
@@ -144,7 +162,10 @@ export function RetentionTab() {
         <table className="data-table">
           <thead>
             <tr>
-              <th>Mes</th>
+              <th>
+                Mes
+                <InfoHint text="Una fila por mes cerrado, del más reciente al más antiguo. Inicio y Fin = suscriptores con acceso vigente el primer y el último día del mes; las demás columnas son los movimientos del gráfico de lifecycle." />
+              </th>
               <th style={{ textAlign: 'right' }}>Inicio</th>
               <th style={{ textAlign: 'right' }}>Fin</th>
               <th style={{ textAlign: 'right' }}>Nuevos</th>

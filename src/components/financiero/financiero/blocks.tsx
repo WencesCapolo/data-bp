@@ -1,5 +1,6 @@
 'use client';
 import type { ReactNode } from 'react';
+import { InfoHint } from '@/components/ui/InfoHint';
 
 /**
  * Una tarjeta del prototipo: título, descripción larga arriba (no abajo) y el
@@ -10,6 +11,7 @@ import type { ReactNode } from 'react';
 export function Card({
   title,
   note,
+  hint,
   desc,
   foot,
   children,
@@ -17,6 +19,8 @@ export function Card({
   title: string;
   /** Aclaración corta al lado del título, como el país activo. */
   note?: ReactNode;
+  /** Una frase que explica qué mide el gráfico. Se muestra al pasar por el "?". */
+  hint?: ReactNode;
   desc?: ReactNode;
   foot?: ReactNode;
   children?: ReactNode;
@@ -25,6 +29,7 @@ export function Card({
     <div className="proto-card">
       <div className="proto-card-title">
         {title}
+        {hint && <InfoHint text={hint} />}
         {note && <span className="proto-note">{note}</span>}
       </div>
       {desc && <div className="proto-desc">{desc}</div>}

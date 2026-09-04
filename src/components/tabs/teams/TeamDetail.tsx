@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import useSWR from 'swr';
 import { fetcher } from '@/lib/client/fetcher';
 import { KpiCard } from '@/components/ui/KpiCard';
+import { InfoHint } from '@/components/ui/InfoHint';
 import { TabSkeleton } from '@/components/ui/Skeleton';
 import { ErrorBox } from '@/components/ui/ErrorBox';
 import type { TeamDailyDTO, TeamRankRow } from '@basket/core/dtos/TeamsDTO';
@@ -93,19 +94,32 @@ export function TeamDetail({ team, filterQS, from, to }: Props) {
           variant="blue"
           sub={`${activeStart.toLocaleString()} al inicio del rango`}
           delta={{ value: `${signed(activeEnd - activeStart)} en el rango`, up: activeEnd >= activeStart }}
+          hint="Suscriptores de este equipo con acceso vigente el último día del rango: un Pago exitoso cuyo vencimiento, más 7 días de gracia, todavía no pasó. El subtítulo repite el conteo para el primer día del rango."
         />
-        <KpiCard label="Altas de suscripción" value={team.altas} variant="green" />
-        <KpiCard label="Bajas de suscripción" value={team.bajas} variant="red" />
+        <KpiCard
+          label="Altas de suscripción"
+          value={team.altas}
+          variant="green"
+          hint="Suscriptores del equipo que pasaron de no tener acceso a tenerlo en algún día del rango: un primer Pago o una reactivación. Una renovación sin corte de acceso no cuenta como alta."
+        />
+        <KpiCard
+          label="Bajas de suscripción"
+          value={team.bajas}
+          variant="red"
+          hint="Suscriptores del equipo cuyo acceso se cortó en algún día del rango: el vencimiento más 7 días de gracia pasó sin otro Pago que lo cubra. Por esa gracia, la baja aparece unos 7 días después del vencimiento real."
+        />
         <KpiCard
           label="Variación neta"
           value={signed(team.net)}
           variant={team.net >= 0 ? 'green' : 'red'}
           sub={`sobre una base de ${activeEnd.toLocaleString()} activas`}
+          hint="Altas menos bajas del equipo dentro del rango. Positivo: la base de suscripciones activas creció; negativo: se achicó."
         />
         <KpiCard
           label="Seguidores"
           value={team.followers}
           sub={`${followerConversion}% con suscripción activa`}
+          hint="Suscriptores que tienen a este equipo como favorito, paguen o no. No lo afectan los filtros de Tier ni Access Type. El subtítulo indica qué porcentaje de ellos tiene una suscripción activa al cierre del rango."
         />
       </div>
 
@@ -119,6 +133,7 @@ export function TeamDetail({ team, filterQS, from, to }: Props) {
             <span style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 400, marginLeft: 8 }}>
               barras = altas / bajas · línea = activas al cierre del período
             </span>
+            <InfoHint text="Barras: altas hacia arriba y bajas hacia abajo, sumadas por día, semana o mes. Línea: suscripciones activas al cierre de cada período, en su propio eje. El movimiento se atribuye al equipo favorito actual de cada suscriptor." />
           </span>
           <span className="subtype-pills">
             {BUCKETS.map((b) => (
@@ -139,7 +154,10 @@ export function TeamDetail({ team, filterQS, from, to }: Props) {
         <table className="data-table">
           <thead>
             <tr>
-              <th>{bucketLabelText}</th>
+              <th>
+                {bucketLabelText}
+                <InfoHint text="Solo los períodos con alguna alta o baja, del más reciente al más antiguo. Activas = suscripciones vigentes al cierre del período; Neto = altas menos bajas." />
+              </th>
               <th style={{ textAlign: 'right' }}>Activas</th>
               <th style={{ textAlign: 'right' }}>Altas</th>
               <th style={{ textAlign: 'right' }}>Bajas</th>

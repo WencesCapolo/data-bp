@@ -1407,3 +1407,64 @@ select:focus { border-color: var(--accent2); }
   background: color-mix(in srgb, var(--yellow) 18%, transparent);
   color: var(--yellow);
 }
+
+/* ── Info hint ("?") ─────────────────────────────────────────────────────── */
+/* Un círculo chico al lado del título de cada tarjeta o gráfico. Va en línea
+   con el texto para no mover el layout de títulos que ya existen. La burbuja
+   vive en body (portal) y se posiciona en fixed desde el botón. */
+.info-hint {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  margin-left: 6px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--border2);
+  background: transparent;
+  color: var(--text3);
+  font-family: 'Poppins', system-ui, sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0;
+  text-transform: none;
+  vertical-align: middle;
+  cursor: help;
+  flex-shrink: 0;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+.info-hint:hover,
+.info-hint:focus-visible {
+  color: var(--text);
+  border-color: var(--accent2);
+  background: var(--bg3);
+  outline: none;
+}
+.info-hint-bubble {
+  position: fixed;
+  z-index: 1000;
+  width: 280px;
+  max-width: calc(100vw - 16px);
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border2);
+  background: var(--bg3);
+  color: var(--text);
+  font-family: 'Poppins', system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.55;
+  letter-spacing: 0;
+  text-transform: none;
+  text-align: left;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+.info-hint-bubble.above { transform: translateY(-100%); }
+.info-hint-bubble strong { color: var(--text); font-weight: 600; }
+:root[data-theme='light'] .info-hint-bubble {
+  background: #ffffff;
+  box-shadow: var(--shadow-lg);
+}

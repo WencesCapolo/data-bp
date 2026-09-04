@@ -5,6 +5,7 @@ import { fetcher } from '@/lib/client/fetcher';
 import { useFilterQS } from '@/lib/client/filterStore';
 import { bucketTitles } from '@/lib/client/bucketTitle';
 import { KpiCard } from '@/components/ui/KpiCard';
+import { InfoHint } from '@/components/ui/InfoHint';
 import { LineChart } from '@/components/charts/LineChart';
 import { DoughnutChart } from '@/components/charts/DoughnutChart';
 import { StackedBarChart } from '@/components/charts/StackedBarChart';
@@ -492,7 +493,10 @@ export function FinancieroView() {
       <SectionLabel>📅 Mes en curso vs mes anterior</SectionLabel>
       <div className="proto-ms-grid" style={{ marginBottom: 8 }}>
         <div className="proto-ms-col tx">
-          <h4>Transacciones · {curMonth ? monthLabel(curMonth.month) : '—'}</h4>
+          <h4>
+            Transacciones · {curMonth ? monthLabel(curMonth.month) : '—'}
+            <InfoHint text="Cantidad de Pagos exitosos del último mes del rango, todos los Proveedores y monedas juntos: un conteo sí se puede sumar entre monedas. La variación compara contra el mes anterior." />
+          </h4>
           <div className="proto-ms-big">{curMonth ? fmtNum(curMonth.tx) : '—'}</div>
           <div className={`proto-ms-delta ${txDelta.dir}`}>
             {txDelta.dir === 'up' ? '▲' : txDelta.dir === 'down' ? '▼' : '='} {txDelta.text}
@@ -524,7 +528,10 @@ export function FinancieroView() {
           </div>
         </div>
         <div className="proto-ms-col revenue">
-          <h4>Ingresos netos USD · {curUsd ? monthLabel(curUsd.month) : '—'}</h4>
+          <h4>
+            Ingresos netos USD · {curUsd ? monthLabel(curUsd.month) : '—'}
+            <InfoHint text="Neto del último mes en el plano de liquidación: bruto liquidado menos comisión y retención, convertido a USD con la cotización de cada día (ARS al blue venta). Sin PayPal, que no tiene feed de comisiones." />
+          </h4>
           <div className="proto-ms-big">{curUsd ? fmtRound(curUsd.netUsd, 'USD') : '—'}</div>
           <div className={`proto-ms-delta ${usdDelta.dir}`}>
             {usdDelta.dir === 'up' ? '▲' : usdDelta.dir === 'down' ? '▼' : '='} {usdDelta.text}
@@ -543,22 +550,30 @@ export function FinancieroView() {
       {/* ── KPIs ── */}
       <SectionLabel>👥 Suscriptores y transacciones</SectionLabel>
       <div className="proto-kpis">
-        <KpiCard label="Transacciones en rango" value={totalTx} variant="blue" />
+        <KpiCard
+          label="Transacciones en rango"
+          value={totalTx}
+          variant="blue"
+          hint="Pagos exitosos con Subscriber conocido dentro del rango y los filtros, sumando todos los Proveedores y monedas. Cuenta eventos de pago, no personas ni importes."
+        />
         <KpiCard
           label="Transacciones del último mes"
           value={curMonth ? curMonth.tx : '—'}
           sub={curMonth ? monthLabel(curMonth.month) : undefined}
+          hint="Pagos exitosos del último mes con datos en el rango, todos los Proveedores. El mes se asigna por la fecha del Pago (hora de Argentina), no por captured_at."
         />
         <KpiCard
           label={`Suscripciones activas · ${g.subscriptionPlatformName}`}
           value={activeSubs}
           sub={`${totalSubs.toLocaleString()} en total · sin MercadoPago`}
           variant="yellow"
+          hint="Subscriptions de Stripe con status «active» hoy, según su espejo. Es una foto actual: no respeta el rango ni los filtros, y MercadoPago no entra porque sus Subscriptions no tienen tabla."
         />
         <KpiCard
           label="Suscriptores activos totales"
           value="pendiente"
           sub="espera el Export de planes de suscripción de MercadoPago"
+          hint="Se contará como Subscribers únicos con Subscription vigente al cierre del mes, en todos los Proveedores. Hoy sólo Stripe tiene espejo de Subscriptions, así que el número no existe."
         />
       </div>
 
@@ -568,24 +583,28 @@ export function FinancieroView() {
           label={`Bruto ${topCcy?.currency ?? '—'} · cobro`}
           value={topCcy ? fmtRound(topCcy.gross, topCcy.currency) : '—'}
           sub={`moneda más grande del rango · ${currencies.length} monedas en total`}
+          hint="Suma de lo facturado al Subscriber en esa moneda (plano de cobro) sobre los Pagos exitosos del rango, sin descontar comisiones. Se muestra la moneda con mayor bruto; las demás no se suman."
         />
         <KpiCard
           label={`Neto ${usd?.settlementCurrency ?? 'USD'} · liquidación ${g.platformName}`}
           value={usd ? fmtExact(usd.net, usd.settlementCurrency) : '—'}
           sub={usd ? `comisión ${fmtExact(usd.fees, usd.settlementCurrency)} · ${usd.feePct}% · ${usd.txCount.toLocaleString()} tx` : 'sin comisiones en rango'}
           variant="green"
+          hint="Sólo lo liquidado en USD (hoy Stripe): bruto liquidado menos comisión y retención según el feed de comisiones, bucketeado por captured_at. El % es comisión ÷ bruto liquidado, no sobre el bruto de cobro."
         />
         <KpiCard
           label="Neto USD del último mes"
           value={curUsd ? fmtRound(curUsd.netUsd, 'USD') : '—'}
           sub={curUsd ? `${monthLabel(curUsd.month)} · convertido día por día` : undefined}
           variant="green"
+          hint="Neto de liquidación del último mes convertible, sumando Proveedores y monedas ya pasadas a USD con la cotización de cada día. Un mes con algún día sin cotización queda ausente, no en cero."
         />
         <KpiCard
           label={`Retenciones ${taxCcy?.settlementCurrency ?? ''}`.trim()}
           value={taxCcy ? fmtRound(totalTaxes, taxCcy.settlementCurrency) : '—'}
           sub="impuesto retenido en la fuente: vuelve como crédito fiscal, no es comisión"
           variant="red"
+          hint="Impuesto que el Proveedor retiene en la fuente sobre el bruto liquidado en el rango (MercadoPago, en ARS). No es comisión: vuelve como crédito fiscal, y por eso se muestra aparte del neto."
         />
       </div>
 
@@ -593,6 +612,7 @@ export function FinancieroView() {
       <div style={{ marginTop: 18 }} />
       <Card
         title="📈 Vista consolidada: ingresos, activos y transacciones"
+        hint="Neto de liquidación por mes convertido a USD día por día, contra la cantidad de Pagos exitosos de ese mes. Las dos series usan relojes distintos: captured_at y fecha del Pago."
         desc={
           <>
             Barras: <b>ingresos netos en USD</b> por mes (eje izquierdo). Línea:{' '}
@@ -681,7 +701,11 @@ export function FinancieroView() {
             vista consolidada de arriba.
           </Pending>
         </Card>
-        <Card title="Mix de planes" desc="Distribución de transacciones por tipo de suscripción, en todo el rango.">
+        <Card
+          title="Mix de planes"
+          hint="Reparto de los Pagos exitosos del rango por Tier y frecuencia (Básico/Total · Mensual/Anual/Free), inferidos de recurrent y price_id. Cuenta Pagos, no importes ni Subscribers."
+          desc="Distribución de transacciones por tipo de suscripción, en todo el rango."
+        >
           <div style={{ height: 260 }}>
             {planMix.length === 0 ? (
               <div className="no-data">Sin datos</div>
@@ -704,6 +728,7 @@ export function FinancieroView() {
       <div className="proto-grid2">
         <Card
           title={`📉 Altas y cancelaciones de suscripción por mes · ${g.subscriptionPlatformName}`}
+          hint="Subscriptions de Stripe creadas (por created_at) y canceladas (por canceled_at) en cada mes del rango. Sólo las cancelaciones con fecha entran al gráfico; el total por status está más abajo."
           desc={
             <>
               Eventos oficiales del Proveedor, con su fecha real. El churn se lee del{' '}
@@ -751,6 +776,7 @@ export function FinancieroView() {
       <div className="proto-grid2">
         <Card
           title="Ingresos netos por mes"
+          hint="Por Proveedor y moneda de liquidación, mes a mes por captured_at: neto, comisión y, donde existe, retención; apiladas suman el bruto liquidado. Fuente: el feed de comisiones de cada Proveedor."
           desc={
             <>
               Ingresos <b>netos</b> por Proveedor y moneda de liquidación: bruto liquidado
@@ -795,6 +821,7 @@ export function FinancieroView() {
       {/* ── USD, con la cotización a la vista ── */}
       <Card
         title="💵 Ingresos netos en USD · convertidos día por día"
+        hint="Neto de liquidación pasado a USD con la cotización de cada día: ARS al blue venta de dolarapi, lo ya liquidado en USD sin convertir. Un mes con algún día sin cotización no se dibuja."
         desc={
           <>
             Una línea por Proveedor y moneda de liquidación. Un mes sin cotización rompe la
@@ -868,6 +895,7 @@ export function FinancieroView() {
       <div className="proto-grid2">
         <Card
           title="🏆 Comparativa por temporadas deportivas"
+          hint="Pagos exitosos y neto USD (liquidación, convertido por día) agrupados por temporada deportiva, del 1 de septiembre al 31 de agosto. La temporada en curso está incompleta y se compara contra temporadas enteras."
           desc={
             <>
               Cada temporada va del <b>1 de septiembre</b> al <b>31 de agosto</b> del año
@@ -895,6 +923,7 @@ export function FinancieroView() {
         </Card>
         <Card
           title="📊 Transacciones por plan · Mensual vs Anual"
+          hint="Pagos exitosos por frecuencia de Tier (Mensual, Anual, Free) y temporada sep→ago, según el Period de cada Pago. Es un conteo de Pagos, no de Subscribers."
           desc={
             <>
               Transacciones de suscripción por frecuencia de plan. El eje son{' '}
@@ -920,6 +949,7 @@ export function FinancieroView() {
       {/* ── Tabla mes × temporada ── */}
       <Card
         title="📅 Comparativa mensual por temporadas"
+        hint="Cada celda es el valor del mes en la métrica elegida: Pagos exitosos, neto USD (liquidación, convertido por día) o bruto de cobro en una moneda. Las columnas son temporadas sep→ago y el Total suma la columna."
         desc={
           <>
             Cada columna es una temporada deportiva (sep→ago) y cada fila un mes en orden de
@@ -1003,6 +1033,7 @@ export function FinancieroView() {
       {/* ── Comisiones ── */}
       <Card
         title="💳 Comisiones de pasarela"
+        hint="Comisión del Proveedor por mes (por captured_at) en su moneda de liquidación, sin retenciones. El % efectivo es comisión ÷ bruto liquidado del mismo Proveedor y moneda."
         desc={
           <>
             Comisiones cobradas por cada Proveedor mes a mes (barras) y el{' '}
@@ -1043,6 +1074,7 @@ export function FinancieroView() {
 
       <Card
         title="💳 Neto diario por moneda de liquidación"
+        hint="Neto de liquidación por día y moneda: bruto liquidado menos comisión y retención, sumando los Proveedores que liquidan en esa moneda. Bucketeado por captured_at, UTC real."
         desc="El pulso de las comisiones día por día. Bucketeado por captured_at (UTC real), no por la fecha del Pago (hora local de Argentina): los dos relojes están a 3 horas."
         foot={
           g.netExcludesUnmatchedFees
@@ -1068,6 +1100,7 @@ export function FinancieroView() {
       {/* ── Ingresos mes a mes ── */}
       <Card
         title="Ingresos mes a mes"
+        hint="Bruto y neto de liquidación por mes y moneda según el feed de comisiones; NETO USD es la suma de esos netos convertidos día por día. Las barras, en cambio, son el bruto de cobro en la moneda elegida."
         desc={
           <>
             Bruto vs neto por mes y por moneda de liquidación. Bruto = lo que el Proveedor
@@ -1158,6 +1191,7 @@ export function FinancieroView() {
       {/* ── Detalle mensual ── */}
       <Card
         title={`Detalle mensual · ${activeCcy ?? '—'}`}
+        hint="Por mes, sobre los Pagos exitosos en la moneda elegida: bruto de cobro, cantidad de Pagos y Subscribers distintos. La columna Neto USD es el total del mes en liquidación, con todas las monedas."
         desc={
           <>
             Las columnas de <i>transacciones</i> son eventos de pago: un mismo email puede
@@ -1212,6 +1246,7 @@ export function FinancieroView() {
       <div className="proto-grid2">
         <Card
           title="🌎 Ingresos por país · plano de cobro"
+          hint="Bruto de cobro, Pagos exitosos y Subscribers distintos por país del Subscriber (no del contenido) y moneda, en el rango. «N/A» es un Subscriber sin país; nada se convierte ni se suma entre monedas."
           desc="Una fila por país y moneda; sin fila de total, porque sumar ARS con UYU no da un número."
           foot={`Top 40 de ${data.byCountry.length} filas.`}
         >
@@ -1258,6 +1293,7 @@ export function FinancieroView() {
         </Card>
         <Card
           title={`Suscripciones por estado · ${g.subscriptionPlatformName}`}
+          hint="Cuántas Subscriptions de Stripe hay hoy en cada status del espejo (active, canceled, past_due…). Foto actual, no ventana: ignora el rango y los filtros."
           desc="Estado actual, en el vocabulario del Proveedor."
           foot={
             <>
@@ -1285,6 +1321,7 @@ export function FinancieroView() {
       {/* ── Catálogo ── */}
       <Card
         title="🏷️ Catálogo de precios inferido por plan, mercado y temporada"
+        hint="Precios distintos que realmente pagaron los Subscribers, por Tier, frecuencia, país, moneda y temporada, con cuántos Pagos exitosos cayeron en cada uno. Sale de los Pagos, no de una lista de precios."
         desc={
           <>
             <b>Precios detectados directamente desde las transacciones.</b> Si aparecen

@@ -5,6 +5,7 @@ import { fetcher } from '@/lib/client/fetcher';
 import { useFilterQS } from '@/lib/client/filterStore';
 import { bucketTitles } from '@/lib/client/bucketTitle';
 import { KpiCard } from '@/components/ui/KpiCard';
+import { InfoHint } from '@/components/ui/InfoHint';
 import { LineChart } from '@/components/charts/LineChart';
 import { DoughnutChart } from '@/components/charts/DoughnutChart';
 import { StackedAreaChart } from '@/components/charts/StackedAreaChart';
@@ -90,18 +91,36 @@ export function FinanceTab() {
   return (
     <div>
       <div className="kpi-grid">
-        <KpiCard label="Pagos en rango" value={totalPayments} variant="blue" />
+        <KpiCard
+          label="Pagos en rango"
+          value={totalPayments}
+          variant="blue"
+          hint="Cantidad de Pagos exitosos con cobro (monto mayor a cero, más Antel) fechados en el rango, todas las monedas juntas. Excluye intentos fallidos; con filtros activos cuenta también los vouchers."
+        />
         <KpiCard
           label={`Top moneda · ${topCurrency?.currency ?? '—'}`}
           value={topCurrency ? fmtCurrency(topCurrency.totalAmount, topCurrency.currency) : '—'}
           variant="green"
+          hint="La moneda con mayor recaudación bruta en el rango y su total, expresado en esa misma moneda. Sin conversión y antes de descontar comisiones del Provider."
         />
-        <KpiCard label="Plataformas" value={data.byPlatform.length} />
-        <KpiCard label="Monedas" value={data.byCurrency.length} variant="yellow" />
+        <KpiCard
+          label="Plataformas"
+          value={data.byPlatform.length}
+          hint="Cantidad de Providers distintos con al menos un Pago en el rango: MercadoPago, Stripe, PayPal, Antel, Manual o Voucher."
+        />
+        <KpiCard
+          label="Monedas"
+          value={data.byCurrency.length}
+          variant="yellow"
+          hint="Cantidad de monedas distintas en las que se registraron Pagos con cobro dentro del rango seleccionado."
+        />
       </div>
 
       <div className="chart-full">
-        <div className="chart-title">Ingresos diarios por moneda</div>
+        <div className="chart-title">
+          Ingresos diarios por moneda
+          <InfoHint text="Suma bruta por día de los Pagos exitosos, una línea por moneda, según la fecha del Pago. Sin conversión entre monedas ni descuento de comisiones del Provider. Llega hasta ayer." />
+        </div>
         <div style={{ height: 280 }}>
           {dailyByCurrency.labels.length === 0 ? (
             <div className="no-data">Sin ingresos en rango</div>
@@ -119,7 +138,10 @@ export function FinanceTab() {
 
       <div className="col2">
         <div className="chart-card">
-          <div className="chart-title">Distribución por moneda</div>
+          <div className="chart-title">
+            Distribución por moneda
+            <InfoHint text="Recaudación bruta del rango por moneda. Cada porción está en su propia moneda, sin conversión, así que los tamaños no son comparables entre sí." />
+          </div>
           <div style={{ height: 240 }}>
             <DoughnutChart
               labels={data.byCurrency.map((c) => c.currency)}
@@ -129,7 +151,10 @@ export function FinanceTab() {
           </div>
         </div>
         <div className="chart-card">
-          <div className="chart-title">Plataforma · monto y conteo</div>
+          <div className="chart-title">
+            Plataforma · monto y conteo
+            <InfoHint text="Por Provider: Pagos exitosos en el rango, la suma de sus montos y cuántos fueron con dinero (Reales). El monto mezcla todas las monedas sin convertir, así que solo orienta." />
+          </div>
           <div style={{ overflowX: 'auto' }}>
             <table className="data-table">
               <thead>
@@ -172,7 +197,10 @@ export function FinanceTab() {
       </div>
 
       <div className="chart-full">
-        <div className="chart-title">Mensual por plataforma · monto stacked</div>
+        <div className="chart-title">
+          Mensual por plataforma · monto stacked
+          <InfoHint text="Recaudación bruta por mes y Provider, apilada, según la fecha del Pago. Suma todas las monedas sin convertir y no descuenta comisiones del Provider." />
+        </div>
         <div style={{ height: 260 }}>
           {platformMonthlyStacked.labels.length === 0 ? (
             <div className="no-data">Sin datos</div>

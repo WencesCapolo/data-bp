@@ -2,6 +2,7 @@
 import useSWR from 'swr';
 import { fetcher } from '@/lib/client/fetcher';
 import { KpiCard } from '@/components/ui/KpiCard';
+import { InfoHint } from '@/components/ui/InfoHint';
 import { TabSkeleton } from '@/components/ui/Skeleton';
 import { ErrorBox } from '@/components/ui/ErrorBox';
 import type { DataQualityDTO, SyncLogEntry } from '@basket/core/dtos/DataQualityDTO';
@@ -48,19 +49,36 @@ export function DataQualityTab() {
   return (
     <div>
       <div className="kpi-grid">
-        <KpiCard label="Usuarios" value={dq.totals.users} variant="blue" />
-        <KpiCard label="Pagos" value={dq.totals.payments} variant="green" />
-        <KpiCard label="Equipos" value={dq.totals.teams} variant="yellow" />
+        <KpiCard
+          label="Usuarios"
+          value={dq.totals.users}
+          variant="blue"
+          hint="Total de suscriptores (cuentas de la Platform) en la copia local, sin filtro de fecha ni de actividad. Se actualiza con cada Sync."
+        />
+        <KpiCard
+          label="Pagos"
+          value={dq.totals.payments}
+          variant="green"
+          hint="Total de Pagos en la copia local, incluidos los intentos fallidos. Entran por Uploads del Pagos Export y por las Syncs automáticas."
+        />
+        <KpiCard
+          label="Equipos"
+          value={dq.totals.teams}
+          variant="yellow"
+          hint="Total de equipos conocidos en la copia local. Son los que se usan para asignar el equipo favorito de cada suscriptor en la pestaña Equipos."
+        />
         <KpiCard
           label="Generado"
           value={new Date(dq.generatedAt).toLocaleTimeString('es-UY')}
           sub={new Date(dq.generatedAt).toLocaleDateString('es-UY')}
+          hint="Momento en que se calcularon estos conteos, es decir, cuando se abrió esta pestaña. No es la fecha de la última Sync: esa se ve en el log de abajo."
         />
       </div>
 
       <div className="chart-full" style={{ padding: 0, overflow: 'hidden' }}>
         <div className="chart-title" style={{ padding: '20px 24px 0' }}>
           Issues detectados
+          <InfoHint text="Controles de consistencia sobre la copia local. El % se calcula sobre el total de Pagos (códigos payment…) o de suscriptores (los demás). Severidad: high si pasa de 5000 filas o si es un Pago sin suscriptor o un plan pago en $0; med si pasa de 500." />
         </div>
         <table className="data-table" style={{ marginTop: 12 }}>
           <thead>
@@ -111,6 +129,7 @@ export function DataQualityTab() {
       <div className="chart-full" style={{ padding: 0, overflow: 'hidden' }}>
         <div className="chart-title" style={{ padding: '20px 24px 0' }}>
           Log de sincronizaciones
+          <InfoHint text="Últimas 60 entradas, la más nueva primero: Uploads manuales del Pagos Export, ingestas automáticas del inbox, corridas de cron y por token. Pagos = filas ingresadas. Si el estado es error, el motivo aparece al pasar el mouse por la fila." />
         </div>
         <table className="data-table" style={{ marginTop: 12 }}>
           <thead>
@@ -167,7 +186,10 @@ export function DataQualityTab() {
 
       {meta?.dataRange && (
         <div className="alert-box">
-          <div className="alert-box-title">📅 Rango de datos disponible</div>
+          <div className="alert-box-title">
+            📅 Rango de datos disponible
+            <InfoHint text="Primer y último día con suscripciones activas calculadas: desde el Pago exitoso más antiguo hasta hoy o hasta el último vencimiento más 7 días, lo que ocurra antes. Fuera de este rango los gráficos no tienen datos." />
+          </div>
           <div>
             Desde <strong>{meta.dataRange.minDay}</strong> hasta{' '}
             <strong>{meta.dataRange.maxDay}</strong>

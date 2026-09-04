@@ -4,6 +4,7 @@ import { fetcher } from '@/lib/client/fetcher';
 import { useFilters, useFilterQS } from '@/lib/client/filterStore';
 import { bucketTitles } from '@/lib/client/bucketTitle';
 import { KpiCard } from '@/components/ui/KpiCard';
+import { InfoHint } from '@/components/ui/InfoHint';
 import { LineChart } from '@/components/charts/LineChart';
 import { StackedAreaChart } from '@/components/charts/StackedAreaChart';
 import { TabSkeleton } from '@/components/ui/Skeleton';
@@ -43,19 +44,38 @@ export function EvolutionTab() {
   return (
     <div>
       <div className="kpi-grid">
-        <KpiCard label="Activos al final" value={last.allActive} sub={`al ${last.bucket}`} />
-        <KpiCard label="Pico en rango" value={peak} variant="blue" />
+        <KpiCard
+          label="Activos al final"
+          value={last.allActive}
+          sub={`al ${last.bucket}`}
+          hint="Suscriptores con Subscription vigente en el último punto del rango (Pago exitoso más 7 días de gracia). Incluye vouchers y Antel; los datos llegan hasta ayer."
+        />
+        <KpiCard
+          label="Pico en rango"
+          value={peak}
+          variant="blue"
+          hint="El valor más alto de activos totales entre los puntos graficados del rango. En semana o mes cada punto ya resume varios días, así que puede diferir del pico diario."
+        />
         <KpiCard
           label="Variación"
           value={`${delta >= 0 ? '+' : ''}${delta.toLocaleString()}`}
           sub={`${deltaPct.toFixed(1)}%`}
           variant={delta >= 0 ? 'green' : 'red'}
+          hint="Activos totales del último punto menos los del primero, y ese cambio como porcentaje del primero. Compara los extremos del rango, no promedios."
         />
-        <KpiCard label="Buckets" value={data.series.length} sub={granularity} />
+        <KpiCard
+          label="Buckets"
+          value={data.series.length}
+          sub={granularity}
+          hint="Cantidad de puntos de la serie: uno por día, semana o mes con datos dentro del rango, según la granularidad elegida arriba."
+        />
       </div>
 
       <div className="chart-full">
-        <div className="chart-title">Activos por tipo de acceso · {granularity}</div>
+        <div className="chart-title">
+          Activos por tipo de acceso · {granularity}
+          <InfoHint text="Activos en cada punto según Access Type: Real (pagó con dinero) y Voucher (monto cero). Antel no se dibuja pero sí suma al total indicado debajo. En semana o mes cada punto resume varios días." />
+        </div>
         <div style={{ height: 300 }}>
           <StackedAreaChart
             height={300}
@@ -73,7 +93,10 @@ export function EvolutionTab() {
       </div>
 
       <div className="chart-full">
-        <div className="chart-title">Mix por subtipo · evolución</div>
+        <div className="chart-title">
+          Mix por subtipo · evolución
+          <InfoHint text="Activos en cada punto según Tier: Free (Period 0), Mensual Básico, Mensual Total y Anual Total. Los Pagos sin Tier reconocible (Otros) quedan fuera, así que la suma puede no llegar al total." />
+        </div>
         <div style={{ height: 280 }}>
           <StackedAreaChart
             height={280}
@@ -90,7 +113,10 @@ export function EvolutionTab() {
       </div>
 
       <div className="chart-full">
-        <div className="chart-title">Total activos · línea</div>
+        <div className="chart-title">
+          Total activos · línea
+          <InfoHint text="Suscriptores con Subscription vigente en cada punto, todos los Access Type y Tiers incluidos. Cada suscriptor cuenta una sola vez aunque tenga varios Pagos vigentes." />
+        </div>
         <div style={{ height: 220 }}>
           <LineChart
             height={220}
@@ -104,7 +130,10 @@ export function EvolutionTab() {
       </div>
 
       <div className="alert-box">
-        <div className="alert-box-title">💡 Bandas de fase deportiva</div>
+        <div className="alert-box-title">
+          💡 Bandas de fase deportiva
+          <InfoHint text="Función todavía no disponible: sombreará sobre estos gráficos las fases de la temporada deportiva de una liga. Se habilitará al filtrar un solo país y una sola liga." />
+        </div>
         <div>
           Disponibles al filtrar por <strong>1 país + 1 liga</strong> (filtro de liga · pendiente Phase 7).
         </div>

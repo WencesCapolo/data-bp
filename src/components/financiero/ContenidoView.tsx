@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import useSWR from 'swr';
 import { fetcher } from '@/lib/client/fetcher';
 import { KpiCard } from '@/components/ui/KpiCard';
+import { InfoHint } from '@/components/ui/InfoHint';
 import { LineChart } from '@/components/charts/LineChart';
 import { TabSkeleton } from '@/components/ui/Skeleton';
 import { ErrorBox } from '@/components/ui/ErrorBox';
@@ -138,46 +139,56 @@ export function ContenidoView() {
           label="Contenidos publicados"
           value={fmt(T.contentCount)}
           sub={`${scope} · partidos completos: ${fmt(T.matchesComplete)}`}
+          hint="Filas del catálogo con status publicado y al menos 60 segundos vistos por view, en el rango y país de contenido elegidos. «Partidos completos» son las que traen dos equipos."
         />
         <KpiCard
           label="Views"
           value={fmt(T.views)}
           sub={isFiltered ? 'en el rango filtrado' : 'acumulado histórico'}
           variant="blue"
+          hint="Suma del contador de views de cada contenido del catálogo filtrado. Son las views acumuladas hasta hoy de los contenidos publicados en el rango, no el tráfico de ese período."
         />
         <KpiCard
           label="Usuarios únicos"
           value={fmt(T.users)}
           sub={`visualizaciones de usuario únicas en ${isFiltered ? 'el rango' : 'el histórico'}`}
           variant="green"
+          hint="Suma de los usuarios distintos de cada contenido (views_users). Se suma entre piezas: una misma persona que vio dos partidos cuenta dos veces."
         />
         <KpiCard
           label="Tiempo total visto"
           value={fmtSecondsLong(T.seconds)}
           sub="suma de view-seconds, excluidos los negativos"
+          hint="Suma de los segundos vistos de cada contenido del catálogo filtrado. Los valores negativos, un artefacto de la fuente, se descartan en vez de contarse como cero tiempo."
         />
         <KpiCard
           label="⏱ Promedio por contenido"
           value={fmtSecondsShort(secPerPiece)}
           sub="tiempo total ÷ contenidos publicados"
           variant="yellow"
+          hint="Tiempo total visto dividido por la cantidad de contenidos publicados del rango. Promedio simple: una final muy vista y un partido menor pesan igual en el denominador."
         />
         <KpiCard
           label="⏱ Promedio por view"
           value={fmtSecondsShort(secPerView)}
           sub="tiempo total ÷ views"
           variant="yellow"
+          hint="Tiempo total visto dividido por el total de views: cuánto dura una reproducción típica. El catálogo ya excluye piezas con menos de 60 s por view, así que el piso está algo inflado."
         />
         <KpiCard
           label="⏱ Promedio por usuario"
           value={fmtSecondsShort(secPerUser)}
           sub="tiempo total ÷ usuarios únicos"
           variant="yellow"
+          hint="Tiempo total visto dividido por la suma de usuarios únicos por contenido. Como el denominador cuenta a la misma persona una vez por pieza, subestima el tiempo real por persona."
         />
       </div>
 
       <div className="chart-full">
-        <div className="chart-title">📈 Vistas y usuarios mensuales</div>
+        <div className="chart-title">
+          📈 Vistas y usuarios mensuales
+          <InfoHint text="Por mes de la fecha del contenido (día del partido): suma de views, de usuarios únicos por pieza y cantidad de contenidos publicados. Son acumulados de cada pieza asignados al mes en que se emitió." />
+        </div>
         <div className="chart-desc">
           Barras: total de <b>views</b> por mes (eje izquierdo). Líneas:{' '}
           <b>usuarios únicos</b> que vieron contenido y número de{' '}
@@ -203,7 +214,10 @@ export function ContenidoView() {
 
       <div className="col2">
         <div className="chart-card">
-          <div className="chart-title">🌎 Audiencia por país de contenido</div>
+          <div className="chart-title">
+          🌎 Audiencia por país de contenido
+          <InfoHint text="Views y usuarios sumados por el país donde se jugó el partido, top 10 por views. No es el país del Subscriber y no responde al filtro de país del resto de /financiero." />
+        </div>
           <div className="chart-desc">
             Top países por <b>origen del contenido</b>, no por país del suscriptor.
             Argentina concentra la mayor parte por el peso de la LNB.
@@ -223,7 +237,10 @@ export function ContenidoView() {
         </div>
 
         <div className="chart-card">
-          <div className="chart-title">🏆 Top torneos por audiencia</div>
+          <div className="chart-title">
+          🏆 Top torneos por audiencia
+          <InfoHint text="Los 12 torneos con más views sumadas en el rango, con su cantidad de contenidos y usuarios. Incluye programas y resúmenes, no sólo partidos." />
+        </div>
           <div className="chart-desc">
             Top {TOP_TOURNAMENTS} torneos por <b>views totales</b> en el rango. Mide
             qué ligas mueven más volumen de audiencia agregada.
@@ -265,7 +282,10 @@ export function ContenidoView() {
       </div>
 
       <div className="chart-full">
-        <div className="chart-title">📊 Top torneos por media de views</div>
+        <div className="chart-title">
+          📊 Top torneos por media de views
+          <InfoHint text="Views totales ÷ contenidos de cada torneo en el rango, sólo torneos con al menos 10 contenidos. Mide cuánto rinde cada pieza, no el volumen del torneo." />
+        </div>
         <div className="chart-desc">
           Para cada torneo, <b>views ÷ nº de contenidos</b> en el rango. Mide qué tan
           vista es en promedio cada pieza de la liga, no su volumen. Se exigen al
@@ -313,7 +333,10 @@ export function ContenidoView() {
 
       <div className="col2">
         <div className="chart-card">
-          <div className="chart-title">👥 Top equipos por views</div>
+          <div className="chart-title">
+          👥 Top equipos por views
+          <InfoHint text="Suma de views y usuarios de cada partido en que apareció el equipo, como local o visitante; un partido suma para ambos. Top 15 por views." />
+        </div>
           <div className="chart-desc">
             Top 15 equipos por visualizaciones acumuladas. Un partido cuenta para
             ambos equipos, como local y como visitante.
@@ -333,7 +356,10 @@ export function ContenidoView() {
         </div>
 
         <div className="chart-card">
-          <div className="chart-title">⭐ Top contenidos individuales</div>
+          <div className="chart-title">
+          ⭐ Top contenidos individuales
+          <InfoHint text="Los 15 contenidos del catálogo filtrado con más views acumuladas, con su fecha y torneo. Pueden ser partidos, finales o programas." />
+        </div>
           <div className="chart-desc">
             Los 15 contenidos más vistos del rango. Incluye finales, eventos y
             programas especiales, no sólo partidos.
@@ -375,7 +401,10 @@ export function ContenidoView() {
       </div>
 
       <div className="chart-full">
-        <div className="chart-title">🏟️ Partidos por liga</div>
+        <div className="chart-title">
+          🏟️ Partidos por liga
+          <InfoHint text="Sólo contenidos con dos equipos, agrupados por torneo: partidos, views, usuarios y views ÷ partidos. La métrica del selector ordena el ranking y dibuja el top 20." />
+        </div>
         <div className="chart-desc">
           Sólo partidos con dos equipos: los programas y los resúmenes quedan
           afuera, y por eso los totales aquí son menores que en la tabla de
@@ -436,7 +465,10 @@ export function ContenidoView() {
       </div>
 
       <div className="section-callout">
-        <div className="section-callout-title">Cruces contenido × suscriptores</div>
+        <div className="section-callout-title">
+          Cruces contenido × suscriptores
+          <InfoHint text="Los bloques que siguen cruzan el catálogo (por fecha del partido) con la base de Subscribers activos, que sale de los Pagos y existe desde 2024-05. Antes de esa fecha hay audiencia pero no base." />
+        </div>
         <div className="section-callout-body">
           Las visualizaciones siguientes combinan la audiencia con la base de
           suscriptores activos: <i>¿la audiencia crece junto con la base?</i>,{' '}
@@ -451,7 +483,10 @@ export function ContenidoView() {
       </div>
 
       <div className="chart-full">
-        <div className="chart-title">🔗 Audiencia mensual vs suscriptores activos</div>
+        <div className="chart-title">
+          🔗 Audiencia mensual vs suscriptores activos
+          <InfoHint text="Views del mes (por fecha del contenido) contra los Subscribers activos el último día de ese mes, según la vista diaria de activos. Sólo meses con ambas series." />
+        </div>
         <div className="chart-desc">
           Barras: views mensuales (eje izquierdo). Línea: suscriptores activos al
           cierre del mes (eje derecho). Si la audiencia crece más rápido que la
@@ -474,7 +509,10 @@ export function ContenidoView() {
 
       <div className="col2">
         <div className="chart-card">
-          <div className="chart-title">📊 Engagement: views por activo</div>
+          <div className="chart-title">
+          📊 Engagement: views por activo
+          <InfoHint text="Views del mes divididas por Subscribers activos al cierre de ese mes. Las views son acumuladas de las piezas emitidas ese mes, así que el ratio mezcla audiencia posterior con la base de ese momento." />
+        </div>
           <div className="chart-desc">
             Ratio mensual <b>views ÷ activos</b>: cuántas veces, en promedio, cada
             suscriptor activo ve contenido en el mes. Creciente indica mayor
@@ -492,7 +530,10 @@ export function ContenidoView() {
         </div>
 
         <div className="chart-card">
-          <div className="chart-title">🎯 Top eventos × altas del mismo día</div>
+          <div className="chart-title">
+          🎯 Top eventos × altas del mismo día
+          <InfoHint text="Los 12 contenidos más vistos y los Pagos de alta del mismo día: primer Pago de un Subscriber, o reactivación tras más de 7 días vencido. Coincidencia de fecha, no causalidad." />
+        </div>
           <div className="chart-desc">
             Los 12 contenidos más vistos del rango, con las altas reales de ese
             mismo día. Un evento sólo aparece como conversión si la persona se
