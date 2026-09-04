@@ -126,7 +126,7 @@ export function RetentionTab() {
       <div className="chart-full">
         <div className="chart-title">
           Lifecycle mensual
-          <InfoHint text="Movimiento de suscriptores por mes, a partir de Pagos exitosos de todos los Providers. Nuevos = mes del primer Pago; Renovaciones = Pago hasta 37 días después del vencimiento anterior; Reactivaciones = Pago pasado ese plazo; Expiraciones = acceso vencido (+7 días) sin otro Pago." />
+          <InfoHint text="Movimiento de suscriptores por mes, a partir de Pagos exitosos de todos los proveedores. Nuevos = mes del primer Pago; Renovaciones = Pago hasta 37 días después del vencimiento anterior; Reactivaciones = Pago pasado ese plazo; Expiraciones = acceso vencido (+7 días) sin otro Pago." />
         </div>
         <div style={{ height: 320 }}>
           <StackedBarChart
@@ -151,7 +151,7 @@ export function RetentionTab() {
       <div className="chart-full">
         <div className="chart-title">
           Churn y retención · %
-          <InfoHint text="Churn = expiraciones del mes sobre los suscriptores activos el primer día del mes; retención = 100 − churn. Respeta los filtros de país, Tier y Access Type. El mes en curso no se muestra hasta que cierra." />
+          <InfoHint text="Churn = expiraciones del mes sobre los suscriptores activos el primer día del mes; retención = 100 − churn. Respeta los filtros de país, plan y tipo de acceso. El mes en curso no se muestra hasta que cierra." />
         </div>
         <div style={{ height: 280 }}>
           {churnLineConfig && <ChartCanvas config={churnLineConfig} height={280} />}

@@ -101,12 +101,12 @@ export function FinanceTab() {
           label={`Top moneda · ${topCurrency?.currency ?? '—'}`}
           value={topCurrency ? fmtCurrency(topCurrency.totalAmount, topCurrency.currency) : '—'}
           variant="green"
-          hint="La moneda con mayor recaudación bruta en el rango y su total, expresado en esa misma moneda. Sin conversión y antes de descontar comisiones del Provider."
+          hint="La moneda con mayor recaudación bruta en el rango y su total, expresado en esa misma moneda. Sin conversión y antes de descontar comisiones del proveedor."
         />
         <KpiCard
           label="Plataformas"
           value={data.byPlatform.length}
-          hint="Cantidad de Providers distintos con al menos un Pago en el rango: MercadoPago, Stripe, PayPal, Antel, Manual o Voucher."
+          hint="Cantidad de proveedores distintos con al menos un Pago en el rango: MercadoPago, Stripe, PayPal, Antel, Manual o Voucher."
         />
         <KpiCard
           label="Monedas"
@@ -119,7 +119,7 @@ export function FinanceTab() {
       <div className="chart-full">
         <div className="chart-title">
           Ingresos diarios por moneda
-          <InfoHint text="Suma bruta por día de los Pagos exitosos, una línea por moneda, según la fecha del Pago. Sin conversión entre monedas ni descuento de comisiones del Provider. Llega hasta ayer." />
+          <InfoHint text="Suma bruta por día de los Pagos exitosos, una línea por moneda, según la fecha del Pago. Sin conversión entre monedas ni descuento de comisiones del proveedor. Llega hasta ayer." />
         </div>
         <div style={{ height: 280 }}>
           {dailyByCurrency.labels.length === 0 ? (
@@ -153,7 +153,7 @@ export function FinanceTab() {
         <div className="chart-card">
           <div className="chart-title">
             Plataforma · monto y conteo
-            <InfoHint text="Por Provider: Pagos exitosos en el rango, la suma de sus montos y cuántos fueron con dinero (Reales). El monto mezcla todas las monedas sin convertir, así que solo orienta." />
+            <InfoHint text="Por proveedor: Pagos exitosos en el rango, la suma de sus montos y cuántos fueron con dinero (Reales). El monto mezcla todas las monedas sin convertir, así que solo orienta." />
           </div>
           <div style={{ overflowX: 'auto' }}>
             <table className="data-table">
@@ -199,7 +199,7 @@ export function FinanceTab() {
       <div className="chart-full">
         <div className="chart-title">
           Mensual por plataforma · monto stacked
-          <InfoHint text="Recaudación bruta por mes y Provider, apilada, según la fecha del Pago. Suma todas las monedas sin convertir y no descuenta comisiones del Provider." />
+          <InfoHint text="Recaudación bruta por mes y proveedor, apilada, según la fecha del Pago. Suma todas las monedas sin convertir y no descuenta comisiones del proveedor." />
         </div>
         <div style={{ height: 260 }}>
           {platformMonthlyStacked.labels.length === 0 ? (

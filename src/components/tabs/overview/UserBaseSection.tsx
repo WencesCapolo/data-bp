@@ -38,7 +38,7 @@ export function UserBaseSection({ filterQS }: { filterQS: string }) {
   const title = (
     <div className="chart-title" style={{ marginBottom: 12 }}>
       Base de usuarios
-      <InfoHint text="Las cuentas del Platform y su relación con las Subscriptions: cuántas existen, cuántas pagaron alguna vez y cómo se mueven las altas frente a la base activa." />
+      <InfoHint text="Las cuentas de la Plataforma y su relación con las suscripciones: cuántas existen, cuántas pagaron alguna vez y cómo se mueven las altas frente a la base activa." />
     </div>
   );
 
@@ -81,7 +81,7 @@ export function UserBaseSection({ filterQS }: { filterQS: string }) {
           label="Usuarios totales"
           value={funnel.totalUsers}
           sub={usersNote ?? `al ${data.to}`}
-          hint="Cuentas habilitadas en el Platform creadas hasta el último día del rango. Solo responde al filtro de país: el de acceso o Tier no aplica a quien nunca pagó."
+          hint="Cuentas habilitadas en la Plataforma creadas hasta el último día del rango. Solo responde al filtro de país: el de acceso o plan no aplica a quien nunca pagó."
         />
         <KpiCard
           label="Verificados"
@@ -94,20 +94,20 @@ export function UserBaseSection({ filterQS }: { filterQS: string }) {
           value={funnel.everSubscribed}
           variant="blue"
           sub={pct(funnel.everSubscribed, funnel.totalUsers)}
-          hint="Suscriptores distintos con al menos un Pago exitoso hasta el último día del rango, tengan o no una Subscription vigente. Incluye vouchers, Antel y Free."
+          hint="Suscriptores distintos con al menos un Pago exitoso hasta el último día del rango, tengan o no una suscripción vigente. Incluye vouchers, Antel y Free."
         />
         <KpiCard
           label="Activos sin suscripción"
           value={funnel.activeNoSub}
           variant="yellow"
           sub={usersNote ? `${loginNote} · ${usersNote}` : loginNote}
-          hint="Cuentas que iniciaron sesión en los últimos 30 días y hoy no tienen Subscription vigente (con 7 días de gracia). El Platform guarda solo el último login, por eso no sigue el rango."
+          hint="Cuentas que iniciaron sesión en los últimos 30 días y hoy no tienen suscripción vigente (con 7 días de gracia). La Plataforma guarda solo el último inicio de sesión, por eso no sigue el rango."
         />
         <KpiCard
           label="Nunca suscritos"
           value={funnel.neverSubscribed}
           sub={usersNote ? `${loginNote} · ${usersNote}` : loginNote}
-          hint="Cuentas que iniciaron sesión en los últimos 30 días y jamás tuvieron un Pago exitoso. Siempre medido a hoy: el Platform guarda solo el último login."
+          hint="Cuentas que iniciaron sesión en los últimos 30 días y jamás tuvieron un Pago exitoso. Siempre medido a hoy: la Plataforma guarda solo el último inicio de sesión."
         />
       </div>
 
@@ -118,7 +118,7 @@ export function UserBaseSection({ filterQS }: { filterQS: string }) {
         >
           <span>
             Altas de suscripción y base activa
-            <InfoHint text="Barras: cada Suscriptor que pagó ese día, como nuevo (primer Pago de su historia), reactivación (más de 37 días tras vencer) o renovación. Línea: Subscriptions vigentes al cierre de cada punto." />
+            <InfoHint text="Barras: cada Suscriptor que pagó ese día, como nuevo (primer Pago de su historia), reactivación (más de 37 días tras vencer) o renovación. Línea: Suscripciones vigentes al cierre de cada punto." />
             <span style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 400, marginLeft: 8 }}>
               barras = nuevos / reactivaciones / renovaciones · línea = suscriptores activos al cierre
             </span>

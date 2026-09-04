@@ -53,13 +53,13 @@ export function DataQualityTab() {
           label="Usuarios"
           value={dq.totals.users}
           variant="blue"
-          hint="Total de suscriptores (cuentas de la Platform) en la copia local, sin filtro de fecha ni de actividad. Se actualiza con cada Sync."
+          hint="Total de suscriptores (cuentas de la Plataforma) en la copia local, sin filtro de fecha ni de actividad. Se actualiza con cada sincronización."
         />
         <KpiCard
           label="Pagos"
           value={dq.totals.payments}
           variant="green"
-          hint="Total de Pagos en la copia local, incluidos los intentos fallidos. Entran por Uploads del Pagos Export y por las Syncs automáticas."
+          hint="Total de Pagos en la copia local, incluidos los intentos fallidos. Entran por cargas de la exportación de Pagos y por las sincronizaciones automáticas."
         />
         <KpiCard
           label="Equipos"
@@ -71,14 +71,14 @@ export function DataQualityTab() {
           label="Generado"
           value={new Date(dq.generatedAt).toLocaleTimeString('es-UY')}
           sub={new Date(dq.generatedAt).toLocaleDateString('es-UY')}
-          hint="Momento en que se calcularon estos conteos, es decir, cuando se abrió esta pestaña. No es la fecha de la última Sync: esa se ve en el log de abajo."
+          hint="Momento en que se calcularon estos conteos, es decir, cuando se abrió esta pestaña. No es la fecha de la última sincronización: esa se ve en el registro de abajo."
         />
       </div>
 
       <div className="chart-full" style={{ padding: 0, overflow: 'hidden' }}>
         <div className="chart-title" style={{ padding: '20px 24px 0' }}>
           Issues detectados
-          <InfoHint text="Controles de consistencia sobre la copia local. El % se calcula sobre el total de Pagos (códigos payment…) o de suscriptores (los demás). Severidad: high si pasa de 5000 filas o si es un Pago sin suscriptor o un plan pago en $0; med si pasa de 500." />
+          <InfoHint text="Controles de consistencia sobre la copia local. El % se calcula sobre el total de Pagos (códigos payment…) o de suscriptores (los demás). Severidad «high» si pasa de 5000 filas o si es un Pago sin suscriptor o un plan pago en $0; «med» si pasa de 500." />
         </div>
         <table className="data-table" style={{ marginTop: 12 }}>
           <thead>
@@ -129,7 +129,7 @@ export function DataQualityTab() {
       <div className="chart-full" style={{ padding: 0, overflow: 'hidden' }}>
         <div className="chart-title" style={{ padding: '20px 24px 0' }}>
           Log de sincronizaciones
-          <InfoHint text="Últimas 60 entradas, la más nueva primero: Uploads manuales del Pagos Export, ingestas automáticas del inbox, corridas de cron y por token. Pagos = filas ingresadas. Si el estado es error, el motivo aparece al pasar el mouse por la fila." />
+          <InfoHint text="Últimas 60 entradas, la más nueva primero: cargas manuales de la exportación de Pagos, ingestas automáticas de la casilla de correo, corridas programadas y por token de acceso. Pagos = filas ingresadas. Si el estado es error, el motivo aparece al pasar el mouse por la fila." />
         </div>
         <table className="data-table" style={{ marginTop: 12 }}>
           <thead>

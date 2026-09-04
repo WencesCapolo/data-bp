@@ -59,13 +59,13 @@ export function OverviewTab() {
           value={kpis.activeAll}
           variant="default"
           sub={`al ${data.asOf}`}
-          hint="Suscriptores distintos con una Subscription vigente al día indicado: Pago exitoso, más 7 días de gracia tras el vencimiento. Incluye vouchers y Antel; no depende del rango."
+          hint="Suscriptores distintos con una suscripción vigente al día indicado: Pago exitoso, más 7 días de gracia tras el vencimiento. Incluye vouchers y Antel; no depende del rango."
         />
         <KpiCard
           label="Pagos reales"
           value={kpis.activeReal}
           variant="green"
-          hint="Suscriptores activos cuya Subscription se pagó con dinero (Pago con monto mayor a cero), sin contar Antel. Mismo criterio de vigencia que Activos totales."
+          hint="Suscriptores activos cuya suscripción se pagó con dinero (Pago con monto mayor a cero), sin contar Antel. Mismo criterio de vigencia que Activos totales."
         />
         <KpiCard
           label="Vouchers"
@@ -77,22 +77,22 @@ export function OverviewTab() {
           label="Antel"
           value={kpis.activeAntel}
           variant="yellow"
-          hint="Suscriptores activos cuya Subscription factura Antel como Provider. Cuentan como activos aunque el Pago registre monto cero."
+          hint="Suscriptores activos cuya suscripción factura Antel como proveedor. Cuentan como activos aunque el Pago registre monto cero."
         />
         <KpiCard
           label="Mensual básico"
           value={kpis.activeMensualBasico}
-          hint="Suscriptores activos con Tier Mensual Básico (Period de 30 días al precio básico). El Tier se deduce del precio del Pago; el Export no lo informa."
+          hint="Suscriptores activos con plan Mensual Básico (período de 30 días al precio básico)."
         />
         <KpiCard
           label="Mensual total"
           value={kpis.activeMensualTotal}
-          hint="Suscriptores activos con Tier Mensual Total (Period de 30 días al precio total). El Tier se deduce del precio del Pago; el Export no lo informa."
+          hint="Suscriptores activos con plan Mensual Total (período de 30 días al precio total)."
         />
         <KpiCard
           label="Anual total"
           value={kpis.activeAnualTotal}
-          hint="Suscriptores activos con Tier Anual Total (Period de 365 días). Un suscriptor con Pagos vigentes de dos Tiers distintos cuenta en ambos."
+          hint="Suscriptores activos con plan Anual Total (período de 365 días). Un suscriptor con Pagos vigentes de dos planes distintos cuenta en ambos."
         />
         <KpiCard
           label={`Nuevos pagadores ${rangeLabel(range)}`}
@@ -127,7 +127,7 @@ export function OverviewTab() {
         <div className="chart-card">
           <div className="chart-title">
             Mix de acceso
-            <InfoHint text="Reparto de los activos a la fecha según Access Type: real (pagó con dinero), voucher (Pago con monto cero, sin Provider) y antel (facturado por Antel)." />
+            <InfoHint text="Reparto de los activos a la fecha según tipo de acceso: real (pagó con dinero), voucher (Pago con monto cero, sin proveedor) y antel (facturado por Antel)." />
           </div>
           <div style={{ height: 220 }}>
             <DoughnutChart
@@ -155,7 +155,7 @@ export function OverviewTab() {
       <div className="chart-full">
         <div className="chart-title">
           Mix por subtipo · activos
-          <InfoHint text="Activos a la fecha por Tier: Free (Period 0), Mensual Básico, Mensual Total y Anual Total. Los Pagos sin Tier reconocible (Otros) no se grafican." />
+          <InfoHint text="Activos a la fecha por plan: Free (período 0), Mensual Básico, Mensual Total y Anual Total. Los Pagos sin plan reconocible (Otros) no se grafican." />
         </div>
         <div style={{ height: 220 }}>
           <BarChart
@@ -170,7 +170,7 @@ export function OverviewTab() {
         <div className="summary-card">
           <div className="summary-card-title">
             💰 Revenue · {rangeLabel(range)}
-            <InfoHint text="Suma bruta de los Pagos exitosos con monto mayor a cero fechados en el rango seleccionado, por moneda y sin conversión. No descuenta comisiones del Provider ni cuenta intentos fallidos." />
+            <InfoHint text="Suma bruta de los Pagos exitosos con monto mayor a cero fechados en el rango seleccionado, por moneda y sin conversión. No descuenta comisiones del proveedor ni cuenta intentos fallidos." />
           </div>
           <div className="summary-card-body">
             {kpis.revenueInRangeByCurrency.length === 0 ? (
@@ -200,7 +200,7 @@ export function OverviewTab() {
       <div className="alert-box">
         <div className="alert-box-title">
           🚨 Insights
-          <InfoHint text="Frase armada con los mismos datos de esta pestaña: activos totales a la fecha, los grupos de país listados (Uruguay, Argentina, Chile y Other) y el Tier con más activos." />
+          <InfoHint text="Frase armada con los mismos datos de esta pestaña: activos totales a la fecha, los grupos de país listados (Uruguay, Argentina, Chile y Other) y el plan con más activos." />
         </div>
         <div>
           {kpis.activeAll.toLocaleString()} activos totales · {countryBreakdown.length} países con presencia ·

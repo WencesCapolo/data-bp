@@ -48,7 +48,7 @@ export function EvolutionTab() {
           label="Activos al final"
           value={last.allActive}
           sub={`al ${last.bucket}`}
-          hint="Suscriptores con Subscription vigente en el último punto del rango (Pago exitoso más 7 días de gracia). Incluye vouchers y Antel; los datos llegan hasta ayer."
+          hint="Suscriptores con suscripción vigente en el último punto del rango (Pago exitoso más 7 días de gracia). Incluye vouchers y Antel; los datos llegan hasta ayer."
         />
         <KpiCard
           label="Pico en rango"
@@ -74,7 +74,7 @@ export function EvolutionTab() {
       <div className="chart-full">
         <div className="chart-title">
           Activos por tipo de acceso · {granularity}
-          <InfoHint text="Activos en cada punto según Access Type: Real (pagó con dinero) y Voucher (monto cero). Antel no se dibuja pero sí suma al total indicado debajo. En semana o mes cada punto resume varios días." />
+          <InfoHint text="Activos en cada punto según tipo de acceso: Real (pagó con dinero) y Voucher (monto cero). Antel no se dibuja pero sí suma al total indicado debajo. En semana o mes cada punto resume varios días." />
         </div>
         <div style={{ height: 300 }}>
           <StackedAreaChart
@@ -95,7 +95,7 @@ export function EvolutionTab() {
       <div className="chart-full">
         <div className="chart-title">
           Mix por subtipo · evolución
-          <InfoHint text="Activos en cada punto según Tier: Free (Period 0), Mensual Básico, Mensual Total y Anual Total. Los Pagos sin Tier reconocible (Otros) quedan fuera, así que la suma puede no llegar al total." />
+          <InfoHint text="Activos en cada punto según plan: Free (período 0), Mensual Básico, Mensual Total y Anual Total. Los Pagos sin plan reconocible (Otros) quedan fuera, así que la suma puede no llegar al total." />
         </div>
         <div style={{ height: 280 }}>
           <StackedAreaChart
@@ -115,7 +115,7 @@ export function EvolutionTab() {
       <div className="chart-full">
         <div className="chart-title">
           Total activos · línea
-          <InfoHint text="Suscriptores con Subscription vigente en cada punto, todos los Access Type y Tiers incluidos. Cada suscriptor cuenta una sola vez aunque tenga varios Pagos vigentes." />
+          <InfoHint text="Suscriptores con suscripción vigente en cada punto, todos los tipo de acceso y planes incluidos. Cada suscriptor cuenta una sola vez aunque tenga varios Pagos vigentes." />
         </div>
         <div style={{ height: 220 }}>
           <LineChart

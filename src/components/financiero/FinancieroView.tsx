@@ -554,7 +554,7 @@ export function FinancieroView() {
           label="Transacciones en rango"
           value={totalTx}
           variant="blue"
-          hint="Pagos exitosos con Subscriber conocido dentro del rango y los filtros, sumando todos los Proveedores y monedas. Cuenta eventos de pago, no personas ni importes."
+          hint="Pagos exitosos con suscriptor conocido dentro del rango y los filtros, sumando todos los Proveedores y monedas. Cuenta eventos de pago, no personas ni importes."
         />
         <KpiCard
           label="Transacciones del último mes"
@@ -567,13 +567,13 @@ export function FinancieroView() {
           value={activeSubs}
           sub={`${totalSubs.toLocaleString()} en total · sin MercadoPago`}
           variant="yellow"
-          hint="Subscriptions de Stripe con status «active» hoy, según su espejo. Es una foto actual: no respeta el rango ni los filtros, y MercadoPago no entra porque sus Subscriptions no tienen tabla."
+          hint="Suscripciones de Stripe en estado «active» hoy, según su espejo. Es una foto actual: no respeta el rango ni los filtros, y MercadoPago no entra porque sus suscripciones no tienen tabla."
         />
         <KpiCard
           label="Suscriptores activos totales"
           value="pendiente"
           sub="espera el Export de planes de suscripción de MercadoPago"
-          hint="Se contará como Subscribers únicos con Subscription vigente al cierre del mes, en todos los Proveedores. Hoy sólo Stripe tiene espejo de Subscriptions, así que el número no existe."
+          hint="Se contará como suscriptores únicos con suscripción vigente al cierre del mes, en todos los Proveedores. Hoy sólo Stripe tiene espejo de suscripciones, así que el número no existe."
         />
       </div>
 
@@ -583,7 +583,7 @@ export function FinancieroView() {
           label={`Bruto ${topCcy?.currency ?? '—'} · cobro`}
           value={topCcy ? fmtRound(topCcy.gross, topCcy.currency) : '—'}
           sub={`moneda más grande del rango · ${currencies.length} monedas en total`}
-          hint="Suma de lo facturado al Subscriber en esa moneda (plano de cobro) sobre los Pagos exitosos del rango, sin descontar comisiones. Se muestra la moneda con mayor bruto; las demás no se suman."
+          hint="Suma de lo facturado al suscriptor en esa moneda (plano de cobro) sobre los Pagos exitosos del rango, sin descontar comisiones. Se muestra la moneda con mayor bruto; las demás no se suman."
         />
         <KpiCard
           label={`Neto ${usd?.settlementCurrency ?? 'USD'} · liquidación ${g.platformName}`}
@@ -703,7 +703,7 @@ export function FinancieroView() {
         </Card>
         <Card
           title="Mix de planes"
-          hint="Reparto de los Pagos exitosos del rango por Tier y frecuencia (Básico/Total · Mensual/Anual/Free), inferidos de recurrent y price_id. Cuenta Pagos, no importes ni Subscribers."
+          hint="Reparto de los Pagos exitosos del rango por plan y frecuencia (Básico/Total · Mensual/Anual/Free), inferidos de la recurrencia y el precio de cada Pago. Cuenta Pagos, no importes ni suscriptores."
           desc="Distribución de transacciones por tipo de suscripción, en todo el rango."
         >
           <div style={{ height: 260 }}>
@@ -728,7 +728,7 @@ export function FinancieroView() {
       <div className="proto-grid2">
         <Card
           title={`📉 Altas y cancelaciones de suscripción por mes · ${g.subscriptionPlatformName}`}
-          hint="Subscriptions de Stripe creadas (por created_at) y canceladas (por canceled_at) en cada mes del rango. Sólo las cancelaciones con fecha entran al gráfico; el total por status está más abajo."
+          hint="Suscripciones de Stripe creadas y canceladas en cada mes del rango, según su fecha de alta y de cancelación. Sólo las cancelaciones con fecha entran al gráfico; el total por estado está más abajo."
           desc={
             <>
               Eventos oficiales del Proveedor, con su fecha real. El churn se lee del{' '}
@@ -923,7 +923,7 @@ export function FinancieroView() {
         </Card>
         <Card
           title="📊 Transacciones por plan · Mensual vs Anual"
-          hint="Pagos exitosos por frecuencia de Tier (Mensual, Anual, Free) y temporada sep→ago, según el Period de cada Pago. Es un conteo de Pagos, no de Subscribers."
+          hint="Pagos exitosos por frecuencia de plan (Mensual, Anual, Free) y temporada sep→ago, según el período de cada Pago. Es un conteo de Pagos, no de suscriptores."
           desc={
             <>
               Transacciones de suscripción por frecuencia de plan. El eje son{' '}
@@ -1191,7 +1191,7 @@ export function FinancieroView() {
       {/* ── Detalle mensual ── */}
       <Card
         title={`Detalle mensual · ${activeCcy ?? '—'}`}
-        hint="Por mes, sobre los Pagos exitosos en la moneda elegida: bruto de cobro, cantidad de Pagos y Subscribers distintos. La columna Neto USD es el total del mes en liquidación, con todas las monedas."
+        hint="Por mes, sobre los Pagos exitosos en la moneda elegida: bruto de cobro, cantidad de Pagos y suscriptores distintos. La columna Neto USD es el total del mes en liquidación, con todas las monedas."
         desc={
           <>
             Las columnas de <i>transacciones</i> son eventos de pago: un mismo email puede
@@ -1246,7 +1246,7 @@ export function FinancieroView() {
       <div className="proto-grid2">
         <Card
           title="🌎 Ingresos por país · plano de cobro"
-          hint="Bruto de cobro, Pagos exitosos y Subscribers distintos por país del Subscriber (no del contenido) y moneda, en el rango. «N/A» es un Subscriber sin país; nada se convierte ni se suma entre monedas."
+          hint="Bruto de cobro, Pagos exitosos y suscriptores distintos por país del suscriptor (no del contenido) y moneda, en el rango. «N/A» es un suscriptor sin país; nada se convierte ni se suma entre monedas."
           desc="Una fila por país y moneda; sin fila de total, porque sumar ARS con UYU no da un número."
           foot={`Top 40 de ${data.byCountry.length} filas.`}
         >
@@ -1293,7 +1293,7 @@ export function FinancieroView() {
         </Card>
         <Card
           title={`Suscripciones por estado · ${g.subscriptionPlatformName}`}
-          hint="Cuántas Subscriptions de Stripe hay hoy en cada status del espejo (active, canceled, past_due…). Foto actual, no ventana: ignora el rango y los filtros."
+          hint="Cuántas suscripciones de Stripe hay hoy en cada estado del espejo («active», «canceled», «past_due»…). Foto actual, no ventana: ignora el rango y los filtros."
           desc="Estado actual, en el vocabulario del Proveedor."
           foot={
             <>
@@ -1321,7 +1321,7 @@ export function FinancieroView() {
       {/* ── Catálogo ── */}
       <Card
         title="🏷️ Catálogo de precios inferido por plan, mercado y temporada"
-        hint="Precios distintos que realmente pagaron los Subscribers, por Tier, frecuencia, país, moneda y temporada, con cuántos Pagos exitosos cayeron en cada uno. Sale de los Pagos, no de una lista de precios."
+        hint="Precios distintos que realmente pagaron los suscriptores, por plan, frecuencia, país, moneda y temporada, con cuántos Pagos exitosos cayeron en cada uno. Sale de los Pagos, no de una lista de precios."
         desc={
           <>
             <b>Precios detectados directamente desde las transacciones.</b> Si aparecen

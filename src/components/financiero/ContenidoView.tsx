@@ -139,7 +139,7 @@ export function ContenidoView() {
           label="Contenidos publicados"
           value={fmt(T.contentCount)}
           sub={`${scope} · partidos completos: ${fmt(T.matchesComplete)}`}
-          hint="Filas del catálogo con status publicado y al menos 60 segundos vistos por view, en el rango y país de contenido elegidos. «Partidos completos» son las que traen dos equipos."
+          hint="Filas del catálogo en estado publicado y al menos 60 segundos vistos por view, en el rango y país de contenido elegidos. «Partidos completos» son las que traen dos equipos."
         />
         <KpiCard
           label="Views"
@@ -216,7 +216,7 @@ export function ContenidoView() {
         <div className="chart-card">
           <div className="chart-title">
           🌎 Audiencia por país de contenido
-          <InfoHint text="Views y usuarios sumados por el país donde se jugó el partido, top 10 por views. No es el país del Subscriber y no responde al filtro de país del resto de /financiero." />
+          <InfoHint text="Views y usuarios sumados por el país donde se jugó el partido, top 10 por views. No es el país del suscriptor y no responde al filtro de país del resto de /financiero." />
         </div>
           <div className="chart-desc">
             Top países por <b>origen del contenido</b>, no por país del suscriptor.
@@ -467,7 +467,7 @@ export function ContenidoView() {
       <div className="section-callout">
         <div className="section-callout-title">
           Cruces contenido × suscriptores
-          <InfoHint text="Los bloques que siguen cruzan el catálogo (por fecha del partido) con la base de Subscribers activos, que sale de los Pagos y existe desde 2024-05. Antes de esa fecha hay audiencia pero no base." />
+          <InfoHint text="Los bloques que siguen cruzan el catálogo (por fecha del partido) con la base de suscriptores activos, que sale de los Pagos y existe desde 2024-05. Antes de esa fecha hay audiencia pero no base." />
         </div>
         <div className="section-callout-body">
           Las visualizaciones siguientes combinan la audiencia con la base de
@@ -485,7 +485,7 @@ export function ContenidoView() {
       <div className="chart-full">
         <div className="chart-title">
           🔗 Audiencia mensual vs suscriptores activos
-          <InfoHint text="Views del mes (por fecha del contenido) contra los Subscribers activos el último día de ese mes, según la vista diaria de activos. Sólo meses con ambas series." />
+          <InfoHint text="Views del mes (por fecha del contenido) contra los suscriptores activos el último día de ese mes, según la vista diaria de activos. Sólo meses con ambas series." />
         </div>
         <div className="chart-desc">
           Barras: views mensuales (eje izquierdo). Línea: suscriptores activos al
@@ -511,7 +511,7 @@ export function ContenidoView() {
         <div className="chart-card">
           <div className="chart-title">
           📊 Engagement: views por activo
-          <InfoHint text="Views del mes divididas por Subscribers activos al cierre de ese mes. Las views son acumuladas de las piezas emitidas ese mes, así que el ratio mezcla audiencia posterior con la base de ese momento." />
+          <InfoHint text="Views del mes divididas por suscriptores activos al cierre de ese mes. Las views son acumuladas de las piezas emitidas ese mes, así que el ratio mezcla audiencia posterior con la base de ese momento." />
         </div>
           <div className="chart-desc">
             Ratio mensual <b>views ÷ activos</b>: cuántas veces, en promedio, cada
@@ -532,7 +532,7 @@ export function ContenidoView() {
         <div className="chart-card">
           <div className="chart-title">
           🎯 Top eventos × altas del mismo día
-          <InfoHint text="Los 12 contenidos más vistos y los Pagos de alta del mismo día: primer Pago de un Subscriber, o reactivación tras más de 7 días vencido. Coincidencia de fecha, no causalidad." />
+          <InfoHint text="Los 12 contenidos más vistos y los Pagos de alta del mismo día: primer Pago de un suscriptor, o reactivación tras más de 7 días vencido. Coincidencia de fecha, no causalidad." />
         </div>
           <div className="chart-desc">
             Los 12 contenidos más vistos del rango, con las altas reales de ese

@@ -119,7 +119,7 @@ export function TeamDetail({ team, filterQS, from, to }: Props) {
           label="Seguidores"
           value={team.followers}
           sub={`${followerConversion}% con suscripción activa`}
-          hint="Suscriptores que tienen a este equipo como favorito, paguen o no. No lo afectan los filtros de Tier ni Access Type. El subtítulo indica qué porcentaje de ellos tiene una suscripción activa al cierre del rango."
+          hint="Suscriptores que tienen a este equipo como favorito, paguen o no. No lo afectan los filtros de plan ni tipo de acceso. El subtítulo indica qué porcentaje de ellos tiene una suscripción activa al cierre del rango."
         />
       </div>
 
@@ -133,7 +133,7 @@ export function TeamDetail({ team, filterQS, from, to }: Props) {
             <span style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 400, marginLeft: 8 }}>
               barras = altas / bajas · línea = activas al cierre del período
             </span>
-            <InfoHint text="Barras: altas hacia arriba y bajas hacia abajo, sumadas por día, semana o mes. Línea: suscripciones activas al cierre de cada período, en su propio eje. El movimiento se atribuye al equipo favorito actual de cada suscriptor." />
+            <InfoHint text="Barras: altas hacia arriba y bajas hacia abajo, sumadas por día, semana o mes. Línea: Suscripciones activas al cierre de cada período, en su propio eje. El movimiento se atribuye al equipo favorito actual de cada suscriptor." />
           </span>
           <span className="subtype-pills">
             {BUCKETS.map((b) => (
