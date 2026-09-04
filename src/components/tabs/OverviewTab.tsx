@@ -107,7 +107,7 @@ export function OverviewTab() {
       <div className="chart-full">
         <div className="chart-title">
           Tendencia ({rangeLabel(range)}) · activos por tipo de acceso
-          <InfoHint text="Suscriptores activos por día en el rango seleccionado: Total (incluye Antel), Reales (pagaron con dinero) y Vouchers (sin cobro). Llega hasta ayer; hoy se excluye por estar incompleto." />
+          <InfoHint text="Suscriptores activos por día en el rango seleccionado. Reales (eje izquierdo) pagaron con dinero; Vouchers (eje derecho, línea punteada) tienen un Pago en $0 vigente. Casi todos los vouchers acompañan a un Pago real del mismo suscriptor, así que no se suman a Reales. Llega hasta ayer." />
         </div>
         <div style={{ height: 260 }}>
           <LineChart
@@ -115,9 +115,12 @@ export function OverviewTab() {
             labels={trend.map((p) => p.day.slice(5))}
             tooltipTitles={bucketTitles(trend.map((p) => p.day), 'day')}
             series={[
-              { label: 'Total', data: trend.map((p) => p.allActive), color: '#06b6d4', fill: true },
-              { label: 'Reales', data: trend.map((p) => p.realActive), color: '#10b981' },
-              { label: 'Vouchers', data: trend.map((p) => p.voucherActive), color: '#fbbf24' },
+              // Total is not drawn: it sits within one subscriber of Reales, so
+              // the two lines overlap. Vouchers is a subset of Reales, not a
+              // slice — nearly every $0 pago twins a real one — and an order
+              // of magnitude smaller, so it gets its own axis.
+              { label: 'Reales', data: trend.map((p) => p.realActive), color: '#10b981', fill: true },
+              { label: 'Vouchers', data: trend.map((p) => p.voucherActive), color: '#fbbf24', axis: 'right' },
             ]}
           />
         </div>

@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import Script from "next/script";
 import "./globals.css";
 import { startSyncScheduler } from "@basket/infrastructure/cron/SyncScheduler";
 
@@ -23,13 +24,12 @@ export default function RootLayout({
     <html lang="es" data-theme="dark">
       <head>
         {/* El tema antes del primer pixel. Sin esto, cargar en claro pinta un
-            frame oscuro y salta. */}
-        <script
-          dangerouslySetInnerHTML={{
-            __html:
-              "try{var t=localStorage.getItem('bp-theme');if(t==='light'||t==='dark'){document.documentElement.dataset.theme=t}}catch(e){}",
-          }}
-        />
+            frame oscuro y salta. Va por next/script y no por un <script> crudo:
+            React avisa que un script dentro de un componente nunca corre en el
+            cliente, y beforeInteractive lo inyecta en el head antes de hidratar. */}
+        <Script id="bp-theme" strategy="beforeInteractive">
+          {"try{var t=localStorage.getItem('bp-theme');if(t==='light'||t==='dark'){document.documentElement.dataset.theme=t}}catch(e){}"}
+        </Script>
         <link
           href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Bebas+Neue&family=DM+Mono:wght@400;500&display=swap"
           rel="stylesheet"

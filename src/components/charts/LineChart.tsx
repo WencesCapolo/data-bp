@@ -9,7 +9,16 @@ interface Props {
   labels: string[];
   /** `null` is a gap, not a zero: Chart.js leaves the line broken there, which
    *  is what a month with no exchange rate has to look like. */
-  series: { label: string; data: (number | null)[]; color?: string; fill?: boolean }[];
+  series: {
+    label: string;
+    data: (number | null)[];
+    color?: string;
+    fill?: boolean;
+    /** `right` draws the series against a second y-axis on the right. For a
+     *  series an order of magnitude below the others, sharing one axis pins
+     *  it flat to the floor and stretches the scale for everyone else. */
+    axis?: 'left' | 'right';
+  }[];
   height?: number;
   yFormat?: 'number' | 'currency';
   tooltipTitles?: string[];
@@ -17,6 +26,7 @@ interface Props {
 
 export function LineChart({ labels, series, height = 220, yFormat = 'number', tooltipTitles }: Props) {
   const chartTheme = useChartTheme();
+  const hasRight = series.some((s) => s.axis === 'right');
   const config = useMemo<ChartConfiguration>(
     () => ({
       type: 'line',
@@ -31,6 +41,8 @@ export function LineChart({ labels, series, height = 220, yFormat = 'number', to
           tension: 0.3,
           pointRadius: 0,
           borderWidth: 2,
+          yAxisID: s.axis === 'right' ? 'y1' : 'y',
+          ...(s.axis === 'right' ? { borderDash: [4, 3] } : {}),
         })),
       },
       options: {
@@ -50,10 +62,23 @@ export function LineChart({ labels, series, height = 220, yFormat = 'number', to
               callback: (v) => (yFormat === 'currency' ? `$${fmt(v as number)}` : fmt(v as number)),
             },
           },
+          ...(hasRight
+            ? {
+                y1: {
+                  position: 'right' as const,
+                  beginAtZero: false,
+                  grid: { drawOnChartArea: false },
+                  ticks: {
+                    callback: (v: string | number) =>
+                      yFormat === 'currency' ? `$${fmt(v as number)}` : fmt(v as number),
+                  },
+                },
+              }
+            : {}),
         },
       },
     }),
-    [labels, series, yFormat, tooltipTitles, chartTheme],
+    [labels, series, yFormat, tooltipTitles, chartTheme, hasRight],
   );
   return <ChartCanvas config={config} height={height} />;
 }
