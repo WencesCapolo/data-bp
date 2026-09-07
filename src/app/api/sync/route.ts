@@ -1,24 +1,21 @@
-import { existsSync, statSync } from 'node:fs';
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
-import { composeRunSync } from '@basket/infrastructure/sync/composeRunSync';
 import type { RunSyncResult } from '@basket/core/use-cases/sync/RunSyncUseCase';
 import type { UploadResultDTO } from '@basket/core/dtos/PaymentUploadDTO';
 import { DrizzleSyncStateRepository } from '@basket/infrastructure/db/repositories/DrizzleSyncStateRepository';
-import { DrizzlePaymentUploadRepository } from '@basket/infrastructure/db/repositories/DrizzlePaymentUploadRepository';
+import { pagosUploadIntake } from '@basket/infrastructure/upload/PagosUploadIntake';
 import { composeSyncPartidos } from '@partidos/infrastructure/sync/composeSyncPartidos';
 import { DrizzlePartidosSyncStateRepository } from '@partidos/infrastructure/db/repositories/DrizzlePartidosSyncStateRepository';
 import { getSessionUser } from '@/lib/auth/getSessionUser';
-import { deleteStagedFile, resolveStagedPath, takeUploadMeta } from '@shared/lib/uploadStaging';
+import { internalBypass } from '@/lib/api/uploadRequest';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-let basketInFlight: Promise<unknown> | null = null;
 let partidosInFlight: Promise<unknown> | null = null;
 let startedAt: number | null = null;
 let lastError: string | null = null;
-let lastResult: { basket?: unknown; partidos?: unknown; upload?: UploadResultDTO } = {};
+let lastResult: { basket?: RunSyncResult; partidos?: unknown; upload?: UploadResultDTO } = {};
 
 const SyncBodySchema = z.object({
   /** Handle returned by /api/basket/payments/upload. */
@@ -32,61 +29,6 @@ const SyncBodySchema = z.object({
 function tokenMatches(req: NextRequest): boolean {
   const expected = process.env.SYNC_TOKEN;
   return Boolean(expected) && req.headers.get('x-sync-token') === expected;
-}
-
-// Mirrors the bypass in src/proxy.ts: honoured only outside production and only
-// when INTERNAL_API_TOKEN is set. Used by scripts/smoke-payments-upload.ts, and
-// deliberately NOT a second production credential.
-function internalBypass(req: NextRequest): boolean {
-  const token = process.env.INTERNAL_API_TOKEN;
-  return (
-    process.env.NODE_ENV !== 'production' &&
-    !!token &&
-    req.headers.get('x-internal-token') === token
-  );
-}
-
-function toDate(iso: string | null | undefined): Date | null {
-  if (!iso) return null;
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
-
-interface UploadProvenance {
-  filename: string;
-  byteSize: number;
-  rowTotal: number;
-  windowFrom: string | null;
-  windowTo: string | null;
-}
-
-/**
- * Provenance for the Upload this run consumed: who, what file, how much of it
- * landed. Never allowed to fail the run — the mirror is already written by the
- * time we get here, and the table may predate its migration.
- */
-async function recordUpload(
-  uploads: DrizzlePaymentUploadRepository,
-  provenance: UploadProvenance,
-  email: string | null,
-  result: RunSyncResult | null,
-  error: string | null,
-): Promise<void> {
-  try {
-    await uploads.record({
-      uploadedBy: email ?? 'automation:x-sync-token',
-      filename: provenance.filename,
-      byteSize: provenance.byteSize,
-      rowTotal: provenance.rowTotal,
-      rowsIngested: result?.syncedPayments ?? 0,
-      rowsSkipped: result?.skippedPayments ?? 0,
-      windowFrom: toDate(provenance.windowFrom),
-      windowTo: toDate(provenance.windowTo),
-      error,
-    });
-  } catch (err) {
-    console.error('payment upload provenance not recorded:', (err as Error).message);
-  }
 }
 
 export async function GET(): Promise<NextResponse> {
@@ -119,7 +61,7 @@ export async function GET(): Promise<NextResponse> {
 
   return NextResponse.json({
     sources,
-    inFlight: basketInFlight !== null || partidosInFlight !== null,
+    inFlight: pagosUploadIntake().running || partidosInFlight !== null,
     startedAt: startedAt ? new Date(startedAt).toISOString() : null,
     lastError: lastError ?? partidos.lastError ?? null,
     lastResult,
@@ -148,19 +90,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
   const body = parsed.data;
+  const intake = pagosUploadIntake();
 
-  const paymentsCsvPath = resolveStagedPath(body.uploadId);
-  if (!paymentsCsvPath || !existsSync(paymentsCsvPath)) {
-    return NextResponse.json(
-      {
-        error: 'unknown_upload',
-        message: 'El archivo cargado ya no está disponible. Volvé a subirlo.',
-      },
-      { status: 400 },
-    );
-  }
-
-  if (basketInFlight || partidosInFlight) {
+  if (intake.running || partidosInFlight) {
     return NextResponse.json(
       {
         status: 'already_running',
@@ -170,55 +102,41 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
+  // Pagos only: every other source is the cron's job, and an Analyst should
+  // not wait on Stripe to see an Upload land.
+  const start = await intake.confirm({
+    uploadId: body.uploadId,
+    actor: user?.email ?? 'automation:x-sync-token',
+    fallback: {
+      filename: body.filename,
+      rowTotal: body.rowTotal,
+      windowFrom: body.windowFrom,
+      windowTo: body.windowTo,
+    },
+  });
+  if (start.status === 'unknown_upload') {
+    return NextResponse.json(
+      { error: 'unknown_upload', message: 'El archivo cargado ya no está disponible. Volvé a subirlo.' },
+      { status: 400 },
+    );
+  }
+  if (start.status === 'already_running') {
+    return NextResponse.json({ status: 'already_running', startedAt: null }, { status: 202 });
+  }
+
   startedAt = Date.now();
   lastError = null;
   lastResult = {};
 
-  // Prefer what the preview measured over what the browser reports; the request
-  // body is only a fallback for a server that restarted in between.
-  const measured = takeUploadMeta(body.uploadId);
-  const provenance: UploadProvenance = {
-    filename: measured?.filename ?? body.filename ?? 'export.csv',
-    byteSize: measured?.byteSize ?? statSync(paymentsCsvPath, { throwIfNoEntry: false })?.size ?? 0,
-    rowTotal: measured?.rowTotal ?? body.rowTotal ?? 0,
-    windowFrom: measured?.windowFrom ?? body.windowFrom ?? null,
-    windowTo: measured?.windowTo ?? body.windowTo ?? null,
-  };
-  const uploads = new DrizzlePaymentUploadRepository();
+  void start.run.then((outcome) => {
+    if (outcome.ok) {
+      lastResult = { ...lastResult, basket: outcome.result, upload: { uploadId: body.uploadId, ...outcome.upload } };
+    } else {
+      lastError = `basket: ${outcome.error}`;
+    }
+  });
 
-  // Pagos only: every other source is the cron's job, and an Analyst should
-  // not wait on Stripe to see an Upload land.
-  const basketUseCase = await composeRunSync({ paymentsCsvPath, scope: 'upload' });
-  const partidosUseCase = composeSyncPartidos();
-
-  const basketP = basketUseCase
-    .execute()
-    .then(async (r) => {
-      lastResult = {
-        ...lastResult,
-        basket: r,
-        upload: {
-          uploadId: body.uploadId,
-          rowTotal: provenance.rowTotal,
-          rowsIngested: r.syncedPayments,
-          rowsSkipped: r.skippedPayments,
-        },
-      };
-      await recordUpload(uploads, provenance, user?.email ?? null, r, null);
-    })
-    .catch(async (err) => {
-      const message = err instanceof Error ? err.message : String(err);
-      lastError = `basket: ${message}`;
-      await recordUpload(uploads, provenance, user?.email ?? null, null, message);
-    })
-    .finally(async () => {
-      basketInFlight = null;
-      // The Upload has been consumed either way; the handle is single-use.
-      await deleteStagedFile(paymentsCsvPath);
-    });
-  basketInFlight = basketP;
-
-  const partidosP = partidosUseCase
+  const partidosP = composeSyncPartidos()
     .execute()
     .then((r) => {
       lastResult = { ...lastResult, partidos: r };

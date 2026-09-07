@@ -20,7 +20,11 @@ export function composeExportInboxIngest(
 ): IngestExportInboxUseCase | null {
   const dir = process.env.MP_SFTP_INBOX;
   if (!dir) return null;
+  return composeExportInboxIngestFor(dir, uploadedBy);
+}
 
+/** The inbox ingest over any directory — the cron's landing zone, or one the CLI names. */
+export function composeExportInboxIngestFor(dir: string, uploadedBy: string): IngestExportInboxUseCase {
   return new IngestExportInboxUseCase({
     inbox: new FsExportInbox(dir),
     ingest: new IngestPaymentExportUseCase(new DrizzleGatewayFeeRepository()),

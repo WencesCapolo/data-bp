@@ -22,12 +22,10 @@ import { statSync } from 'node:fs';
 import { basename } from 'node:path';
 import { connection } from '@shared/db/client';
 import { DrizzleGatewayFeeRepository } from '@basket/infrastructure/db/repositories/DrizzleGatewayFeeRepository';
-import { DrizzlePaymentUploadRepository } from '@basket/infrastructure/db/repositories/DrizzlePaymentUploadRepository';
 import { DrizzleMaterializedViewRepository } from '@basket/infrastructure/db/repositories/DrizzleMaterializedViewRepository';
 import { RefreshMaterializedViewsUseCase } from '@basket/core/use-cases/sync/RefreshMaterializedViewsUseCase';
-import { IngestPaymentExportUseCase } from '@basket/core/use-cases/sync/IngestPaymentExportUseCase';
-import { IngestExportInboxUseCase } from '@basket/core/use-cases/sync/IngestExportInboxUseCase';
-import { FsExportInbox } from '@basket/infrastructure/exports/FsExportInbox';
+import { composeExportInboxIngestFor } from '@basket/infrastructure/sync/composeExportInbox';
+import { feeUploadIntake } from '@basket/infrastructure/upload/FeeUploadIntake';
 import { isResolved, resolveExportSource } from '@basket/infrastructure/exports/resolveExportSource';
 
 const args = process.argv.slice(2);
@@ -54,8 +52,7 @@ const pct = (part: number, whole: number) => (whole === 0 ? '-' : `${((part / wh
 
 async function main() {
   const fees = new DrizzleGatewayFeeRepository();
-  const uploads = new DrizzlePaymentUploadRepository();
-  const ingest = new IngestPaymentExportUseCase(fees);
+  const intake = feeUploadIntake();
 
   const before = await fees.count();
   console.log(`fee rows before: ${before.toLocaleString()}\n`);
@@ -66,18 +63,7 @@ async function main() {
     // `--refresh` means two things on one flag and they do not collide: for a
     // directory it re-reads files already recorded, for the mat views it rebuilds
     // them at the end.
-    const inbox = new IngestExportInboxUseCase({
-      inbox: new FsExportInbox(dir),
-      ingest,
-      uploads,
-      resolve: async (file) => {
-        const r = await resolveExportSource(file.path, file.name);
-        return isResolved(r) ? { spec: r.spec, source: r.source } : { error: r.error, message: r.message };
-      },
-      uploadedBy: 'script:ingest-gateway-exports',
-      retentionDays: Number(process.env.MP_SFTP_DONE_RETENTION_DAYS ?? '30'),
-    });
-
+    const inbox = composeExportInboxIngestFor(dir, 'script:ingest-gateway-exports');
     const result = await inbox.execute({ refresh });
     console.log(`${dir}${result.error ? ` — ${result.error}` : ''}`);
     for (const f of result.files) {
@@ -111,7 +97,16 @@ async function main() {
       continue;
     }
     console.log(`${basename(file)}  (${resolution.spec.id})`);
-    const result = await ingest.execute(resolution.source);
+    // Same intake as the confirm step: ingest, totals check, provenance. The
+    // view is rebuilt once at the end, not per file.
+    const { result, check } = await intake.ingestFile({
+      path: file,
+      spec: resolution.spec,
+      filename: basename(file),
+      byteSize: statSync(file).size,
+      actor: 'script:ingest-gateway-exports',
+      refreshView: false,
+    });
 
     totals.rows += result.rows;
     totals.gross += result.grossTotal;
@@ -127,30 +122,9 @@ async function main() {
         `tax=${ars(result.taxTotal)} (${pct(result.taxTotal, result.grossTotal)}, ${result.withTax.toLocaleString()} rows) ` +
         `net=${ars(result.netTotal)}`,
     );
-
-    // The invariant migration 0015 promises. Checked per file rather than in
-    // aggregate: a single Export whose columns moved would otherwise hide
-    // inside 27 months of correct ones.
-    const closes = Math.abs(
-      result.grossTotal - result.refundedTotal - result.feeTotal - result.taxTotal - result.netTotal,
-    );
-    console.log(
-      closes < 1
-        ? '  ✓ gross - refunds - fee - tax = net'
-        : `  ✗ gross - refunds - fee - tax - net = ${ars(closes)} — the Export's columns moved`,
-    );
-
-    await uploads.record({
-      uploadedBy: 'script:ingest-gateway-exports',
-      filename: basename(file),
-      byteSize: statSync(file).size,
-      rowTotal: result.rows,
-      rowsIngested: result.upserted,
-      rowsSkipped: result.skipped,
-      windowFrom: result.from,
-      windowTo: result.to,
-      error: null,
-    });
+    // Checked per file rather than in aggregate: a single Export whose columns
+    // moved would otherwise hide inside 27 months of correct ones.
+    console.log(check ? `  ✗ ${check.error}: ${check.message}` : '  ✓ gross - refunds - fee - tax = net');
   }
 
   const after = await fees.count();

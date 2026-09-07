@@ -1,21 +1,13 @@
 import { desc, inArray } from 'drizzle-orm';
 import { db, type Db } from '@shared/db/client';
+import type {
+  IUploadProvenanceRepository,
+  UploadProvenanceEntry,
+} from '@basket/core/ports/IUploadProvenanceRepository';
 import { basketPaymentUploads } from '../schema';
 
 /** What one confirmed Upload is worth recording. See docs/adr/0004. */
-export interface PaymentUploadRecord {
-  /** Email of the Analyst who confirmed it, or the automation that did. */
-  uploadedBy: string;
-  filename: string;
-  byteSize: number;
-  rowTotal: number;
-  rowsIngested: number;
-  rowsSkipped: number;
-  windowFrom: Date | null;
-  windowTo: Date | null;
-  /** Non-null when the sync that consumed this Upload failed. */
-  error: string | null;
-}
+export type PaymentUploadRecord = UploadProvenanceEntry;
 
 export interface PaymentUploadEntry extends PaymentUploadRecord {
   id: number;
@@ -35,7 +27,7 @@ function isMissingTable(err: unknown): boolean {
   return typeof err === 'object' && err !== null && (err as { code?: string }).code === UNDEFINED_TABLE;
 }
 
-export class DrizzlePaymentUploadRepository {
+export class DrizzlePaymentUploadRepository implements IUploadProvenanceRepository {
   constructor(private readonly database: Db = db) {}
 
   async record(entry: PaymentUploadRecord): Promise<void> {

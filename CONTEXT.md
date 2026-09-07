@@ -29,6 +29,13 @@ A Pagos Export handed to this app by a person through the UI, replacing the
 Platform endpoint that is no longer reachable.
 _Avoid_: import, file, attachment
 
+**Intake**:
+The module an Upload passes through: **inspect** a staged Export and report what
+confirming would do (the preview), then **confirm** it so it lands, with its
+provenance row and the one-at-a-time rule. One Intake per Export kind (Pagos,
+fee); the modal, the endpoints and the CLI are all callers of it.
+_Avoid_: handler, pipeline, upload service
+
 ### Money
 
 **Pago** (payment):

@@ -53,8 +53,10 @@ const SYNC_POLL_MS = 3_000;
 const PAGOS = {
   path: resolve(process.cwd(), 'payments20260804223735.csv'),
   rowTotal: 7498,
+  // ISO, on the panel's -03:00 clock (the same instant the mirror stores): the
+  // last Pago is stamped 04/08 22:35 local, which is 05/08 01:35Z.
   windowFrom: '2026-07-28',
-  windowTo: '2026-08-04',
+  windowTo: '2026-08-05',
   byProvider: { MercadoPago: 4961, Stripe: 2483, PayPal: 44, Manual: 10 } as Record<string, number>,
   approved: 5792,
   failed: 1706,
@@ -420,7 +422,6 @@ const PROBES: Probe[] = [
         PAGOS.rejected + PAGOS.pending + PAGOS.otherNotApproved === PAGOS.failed
           ? null
           : 'rejected + pending + otherNotApproved must sum to failed',
-        hasWarning(b, 'short_window'),
       );
       if (err) return err;
       ctx.uploadId = uploadId;

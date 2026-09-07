@@ -37,7 +37,8 @@
     "smoke:allreport": "tsx --env-file=.env scripts/smoke-allreport.ts",
     "smoke:fx": "tsx --env-file=.env scripts/smoke-fx.ts",
     "ingest:gateway-exports": "tsx --env-file=.env scripts/ingest-gateway-exports.ts",
-    "fix:amounts": "tsx --env-file=.env scripts/fix-payment-amount-scale.ts"
+    "fix:amounts": "tsx --env-file=.env scripts/fix-payment-amount-scale.ts",
+    "test": "vitest run"
   },
   "dependencies": {
     "better-auth": "^1.6.11",
@@ -66,6 +67,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
     "tsx": "^4.19.3",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^5.0.0"
   }
 }

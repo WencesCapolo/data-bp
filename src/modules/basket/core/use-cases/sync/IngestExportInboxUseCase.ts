@@ -1,30 +1,12 @@
 import type { IExportInbox, InboxFile } from '@basket/core/ports/IExportInbox';
 import type { IPaymentExportSource } from '@basket/core/ports/IPaymentExportSource';
+import type { IUploadProvenanceRepository } from '@basket/core/ports/IUploadProvenanceRepository';
 import type { FeeExportSourceSpec, FeeUploadRejectionCode } from '@basket/core/dtos/FeeUploadDTO';
 import { checkFeeTotals, round2 } from '@basket/core/dtos/feeTotalsCheck';
 import type { IngestPaymentExportUseCase } from './IngestPaymentExportUseCase';
 
-/**
- * What the use case needs of `basket_payment_uploads`. The same table the Upload
- * screen and the CLI write, because "has this file been ingested" is a question
- * with exactly one answer and it is provenance's job to hold it.
- */
-export interface ExportProvenanceStore {
-  record(entry: {
-    uploadedBy: string;
-    filename: string;
-    byteSize: number;
-    rowTotal: number;
-    rowsIngested: number;
-    rowsSkipped: number;
-    windowFrom: Date | null;
-    windowTo: Date | null;
-    error: string | null;
-  }): Promise<void>;
-  /** What happened to these filenames last time: ingested, or refused for its
-   *  shape. Absent means never seen, or seen and crashed — both worth retrying. */
-  filenameOutcomes(names: string[]): Promise<Map<string, 'ingested' | 'rejected'>>;
-}
+/** The same provenance table the Upload screen and the CLI write. */
+export type ExportProvenanceStore = IUploadProvenanceRepository;
 
 /** How a file is identified as an Export, and turned into rows. */
 export type ExportSourceResolver = (
