@@ -7,22 +7,18 @@ import { DrizzleUserRepository } from '@basket/infrastructure/db/repositories/Dr
 import { DrizzlePaymentRepository } from '@basket/infrastructure/db/repositories/DrizzlePaymentRepository';
 import { DrizzleTeamRepository } from '@basket/infrastructure/db/repositories/DrizzleTeamRepository';
 import { DrizzleTournamentRepository } from '@basket/infrastructure/db/repositories/DrizzleTournamentRepository';
-import { DrizzleContentRepository } from '@basket/infrastructure/db/repositories/DrizzleContentRepository';
 import { DrizzleSyncStateRepository } from '@basket/infrastructure/db/repositories/DrizzleSyncStateRepository';
 import { DrizzleMaterializedViewRepository } from '@basket/infrastructure/db/repositories/DrizzleMaterializedViewRepository';
 import {
-  mapPaymentRow,
   mapUserRow,
   mapTournamentRow,
   mapTeamLiveRow,
-  mapContentRow,
-  type PaymentCsvRow,
   type UserCsvRow,
   type TournamentCsvRow,
   type TeamLiveCsvRow,
-  type ContentCsvRow,
 } from '@basket/infrastructure/sync/csvMappers';
 import { RunSyncUseCase } from '@basket/core/use-cases/sync/RunSyncUseCase';
+import { buildSyncSteps } from '@basket/core/use-cases/sync/buildSyncSteps';
 import { basketPayments, basketUsers } from '@basket/infrastructure/db/schema';
 
 const DATA_DIR = resolve(process.cwd(), 'data');
@@ -51,7 +47,6 @@ async function main() {
   const payments = new DrizzlePaymentRepository();
   const teams = new DrizzleTeamRepository();
   const tournaments = new DrizzleTournamentRepository();
-  const content = new DrizzleContentRepository();
   const syncState = new DrizzleSyncStateRepository();
   const matViews = new DrizzleMaterializedViewRepository();
 
@@ -62,23 +57,20 @@ async function main() {
     tournaments: resolve(DATA_DIR, 'tournaments.csv'),
   });
 
-  const useCase = new RunSyncUseCase({
-    fetcher,
-    users,
-    payments,
-    teams,
-    tournaments,
-    syncState,
-    matViews,
-    mapUserRow: (row, t) => mapUserRow(row as unknown as UserCsvRow, t),
-    mapPaymentRow: (row, u) => mapPaymentRow(row as unknown as PaymentCsvRow, u),
-    mapTournamentRow: (row) => mapTournamentRow(row as unknown as TournamentCsvRow),
-    mapTeamLiveRow: (row) => mapTeamLiveRow(row as unknown as TeamLiveCsvRow),
-    mapContentRow: (row) => mapContentRow(row as unknown as ContentCsvRow),
-    paymentsEnabled: false,
-    contentEnabled: false,
-    content,
-  });
+  // Masters only, then the refresh: no Pagos (the live endpoint is dead), no
+  // content, no Sheets, no Providers.
+  const useCase = new RunSyncUseCase(
+    buildSyncSteps({
+      fetcher,
+      syncState,
+      matViews,
+      tournaments: { repo: tournaments, resource: 'tournaments', mapRow: (row) => mapTournamentRow(row as unknown as TournamentCsvRow) },
+      teams: { repo: teams, resource: 'teams', mapRow: (row) => mapTeamLiveRow(row as unknown as TeamLiveCsvRow) },
+      users: { repo: users, resource: 'users', mapRow: (row, t) => mapUserRow(row as unknown as UserCsvRow, t) },
+      payments: { repo: payments, source: null },
+    }),
+  );
+  console.log(`steps: ${useCase.stepNames.join(' → ')}`);
 
   const before = await counts();
   console.log(`before: users=${before.users.toLocaleString()} payments=${before.payments.toLocaleString()}`);

@@ -91,3 +91,8 @@ _Avoid_: range, period (reserved), timeframe
 One full refresh of this app's mirror of the Platform, ending with every derived
 table rebuilt.
 _Avoid_: update, refresh, job, run
+
+**Step**:
+One named unit of a Sync, with a declared failure policy — `fatal`, `never-fatal`
+or `per-item` — and the Steps it must follow. A Sync is an ordered list of Steps.
+_Avoid_: stage, phase, task
