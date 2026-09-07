@@ -34,8 +34,6 @@ export type PaymentUploadRow = Record<(typeof PAYMENT_UPLOAD_COLUMNS)[number], s
 
 /** Non-blocking advisories shown in the preview. None of these prevent confirming. */
 export type UploadWarningCode =
-  /** Window shorter than a month — likely leaves gaps in Pagos. */
-  | 'short_window'
   /** Zero failed Pagos, which is how the Suscripciones Export looks. */
   | 'looks_like_subscriptions'
   /** Rows whose Subscriber the mirror does not know; they will be skipped. */

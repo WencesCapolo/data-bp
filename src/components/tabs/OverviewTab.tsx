@@ -187,28 +187,6 @@ export function OverviewTab() {
             )}
           </div>
         </div>
-        <div className="summary-card">
-          <div className="summary-card-title">
-            📊 Resumen
-            <InfoHint text="Lectura rápida de las tarjetas de arriba: activos totales a la fecha, qué porcentaje de ellos pagó con dinero y el país con más activos." />
-          </div>
-          <div className="summary-card-body">
-            <div>Total activos: <strong style={{ color: 'var(--text)' }}>{kpis.activeAll.toLocaleString()}</strong></div>
-            <div>Reales: {((kpis.activeReal / Math.max(1, kpis.activeAll)) * 100).toFixed(1)}%</div>
-            <div>Top país: {countryBreakdown[0]?.label} ({countryBreakdown[0]?.count.toLocaleString()})</div>
-          </div>
-        </div>
-      </div>
-
-      <div className="alert-box">
-        <div className="alert-box-title">
-          🚨 Insights
-          <InfoHint text="Frase armada con los mismos datos de esta pestaña: activos totales a la fecha, los grupos de país listados (Uruguay, Argentina, Chile y Other) y el plan con más activos." />
-        </div>
-        <div>
-          {kpis.activeAll.toLocaleString()} activos totales · {countryBreakdown.length} países con presencia ·
-          mix dominante: <strong>{subTypeBreakdown[0]?.label}</strong> ({subTypeBreakdown[0]?.pct.toFixed(1)}%)
-        </div>
       </div>
     </div>
   );

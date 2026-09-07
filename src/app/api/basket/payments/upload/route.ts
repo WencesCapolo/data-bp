@@ -44,7 +44,6 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /** Windows shorter than this leave gaps between consecutive Uploads. */
-const MIN_WINDOW_DAYS = 30;
 
 /** Period, in days, of a monthly Pago — the only one Tiers resolve. */
 const MONTHLY_RECURRENT = 30;
@@ -284,16 +283,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     const warnings: UploadWarning[] = [];
-
-    if (windowDays !== null && windowDays < MIN_WINDOW_DAYS) {
-      warnings.push({
-        code: 'short_window',
-        message:
-          `El archivo cubre ${windowDays} día(s). Un Export de menos de ${MIN_WINDOW_DAYS} días ` +
-          'puede dejar huecos entre esta carga y la anterior.',
-        count: windowDays,
-      });
-    }
 
     // The Pagos Export and the Suscripciones Export share the same 15 columns,
     // so the absence of failures is the only signal that the wrong one was picked.

@@ -252,16 +252,12 @@ export function SyncModal({ onClose, onConfirm, lastUpload, syncInFlight, onSwit
             <>
               <p style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.6, marginBottom: 14 }}>
                 Descargá el Export desde el Control Panel y subilo acá. Antes de subirlo,
-                revisá estos tres puntos:
+                revisá estos dos puntos:
               </p>
               <ul className="modal-checklist">
                 <li>
                   Descargalo en formato <strong>CSV</strong>, no en Excel. Los archivos{' '}
                   <strong>.xls</strong> o <strong>.xlsx</strong> se rechazan.
-                </li>
-                <li>
-                  Elegí un rango de fechas que cubra <strong>más de un mes</strong>. Un rango
-                  más corto deja huecos en los Pagos.
                 </li>
                 <li>
                   Tiene que ser el Export de <strong>Pagos</strong>, no el de{' '}

@@ -128,16 +128,6 @@ export function EvolutionTab() {
           />
         </div>
       </div>
-
-      <div className="alert-box">
-        <div className="alert-box-title">
-          💡 Bandas de fase deportiva
-          <InfoHint text="Función todavía no disponible: sombreará sobre estos gráficos las fases de la temporada deportiva de una liga. Se habilitará al filtrar un solo país y una sola liga." />
-        </div>
-        <div>
-          Disponibles al filtrar por <strong>1 país + 1 liga</strong> (filtro de liga · pendiente Phase 7).
-        </div>
-      </div>
     </div>
   );
 }
