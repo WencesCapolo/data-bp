@@ -42,11 +42,11 @@ export function Card({
 /**
  * El hueco donde va un gráfico cuya fuente todavía no existe.
  *
- * Dos estados, y no uno, porque son dos frases distintas y no se responden
- * igual: `pendiente` es un dato que nadie puede producir todavía —
- * Suscripciones espera el Export de *planes de suscripción* de MercadoPago —
- * y `en desarrollo` es un dato que existe y una pantalla a medio construir:
- * Real vs Plan sólo necesita la planilla de objetivos.
+ * Todos «en desarrollo» desde 2026-09-07: el dato existe y falta la pantalla.
+ * Suscripciones tiene espejo para Stripe y MercadoPago (las preaprobaciones
+ * llegan por API desde que hay credencial de producción); lo que falta es el
+ * ciclo de vida del suscriptor día a día sobre el que se dibujan estos
+ * gráficos. Real vs Plan sólo necesita la planilla de objetivos.
  */
 export function Pending({
   kind,
@@ -57,21 +57,21 @@ export function Pending({
 }) {
   const label =
     kind === 'suscripciones'
-      ? 'Suscripciones · pendiente'
+      ? 'Suscripciones · en desarrollo'
       : kind === 'plan'
         ? 'Real vs Plan · en desarrollo'
         : 'Asistente · en desarrollo';
   return (
     <div className="proto-pending">
-      <span className={`proto-pending-badge ${kind === 'suscripciones' ? '' : 'dev'}`}>{label}</span>
+      <span className="proto-pending-badge dev">{label}</span>
       <div className="proto-pending-body">
         {children ??
           (kind === 'suscripciones' ? (
             <>
-              Este gráfico se alimenta de <strong>Suscripciones</strong>, que todavía no
-              tiene tabla: las de MercadoPago viven en el Export de{' '}
-              <em>planes de suscripción</em>, que nadie generó aún. No es un problema de
-              pantalla — el número no existe en la base.
+              Este gráfico se dibuja sobre el <strong>ciclo de vida del suscriptor</strong>{' '}
+              día a día (alta, reactivación, baja), que todavía no está calculado. Las
+              Suscripciones de Stripe y MercadoPago ya tienen espejo; sus totales por
+              estado están en esta misma pantalla.
             </>
           ) : (
             // Lo que falta para encenderlo — la planilla compartida en modo

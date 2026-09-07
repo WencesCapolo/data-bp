@@ -21,6 +21,8 @@
 // planes live in separate interfaces rather than separate fields of one row.
 // ---------------------------------------------------------------------------
 
+import type { SubscriptionLifecycle } from '../entities/GatewaySubscription';
+
 /** Settlement plane. feePct = fees / grossSettlement, same-plane by construction. */
 export interface SettlementTotal {
   platform: number;
@@ -90,14 +92,25 @@ export interface RefundTotal {
  * datable.
  */
 export interface SubscriptionStatusCount {
+  platform: number;
+  platformName: string;
+  /** The Provider's own word: Stripe `active`, MercadoPago `authorized`. */
   status: string;
+  /** The two vocabularies collapsed, so live subscribers are one number. */
+  lifecycle: SubscriptionLifecycle;
   count: number;
   withCanceledAt: number;
 }
 
-/** created is bucketed on created_at, canceled on canceled_at — the datable subset. */
+/**
+ * created is bucketed on created_at, canceled on canceled_at — the datable
+ * subset. MercadoPago records no cancellation moment at all, so its rows carry
+ * `canceled: 0` here and their churn lives only in the status counts.
+ */
 export interface SubscriptionMonthlyPoint {
   month: string;
+  platform: number;
+  platformName: string;
   created: number;
   canceled: number;
 }
@@ -180,8 +193,8 @@ export interface GatewayNetDTO {
   platformName: string;
   /** The same list unjoined, for a tab that wants to iterate rather than print. */
   platformNames: string[];
-  /** The Provider the churn figures belong to. Not the same seam as the money:
-   *  only Stripe's subscriptions are mirrored. */
+  /** The Providers whose subscriptions are mirrored, joined for a title:
+   *  'Stripe · MercadoPago'. Derived from the rows present, not declared. */
   subscriptionPlatformName: string;
   settlementTotals: SettlementTotal[];
   netByDay: NetDailyPoint[];
@@ -203,8 +216,6 @@ export interface GatewayNetDTO {
    * Subscriptions have no user dimension (customer_id is not mapped to
    * basket_users), so the churn figures ignore the tab's filters. True whenever
    * filters are active, so the tab can say so rather than quietly lying.
-   * Independently of filters, they cover Stripe only — see
-   * `subscriptionPlatformName`.
    */
   subscriptionsIgnoreFilters: boolean;
   /**

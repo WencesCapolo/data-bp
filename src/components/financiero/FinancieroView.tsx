@@ -54,18 +54,26 @@ const PLATFORM_COLORS: Record<string, string> = {
 };
 const STATUS_COLORS: Record<string, string> = {
   active: '#10b981',
+  authorized: '#34d399',
   canceled: '#f43f5e',
+  cancelled: '#fb7185',
   incomplete_expired: '#fb923c',
   past_due: '#fbbf24',
+  paused: '#a78bfa',
   incomplete: '#94a3b8',
+  pending: '#64748b',
 };
-/** Stripe subscription statuses in Spanish; the raw value never reaches the UI. */
+/** Provider subscription statuses in Spanish — Stripe's and MercadoPago's
+ *  (`authorized`, `cancelled`, `pending`); the raw value never reaches the UI. */
 const STATUS_LABEL: Record<string, string> = {
   active: 'Activa',
+  authorized: 'Activa',
   canceled: 'Cancelada',
+  cancelled: 'Cancelada',
   incomplete_expired: 'Incompleta vencida',
   past_due: 'Atrasada',
   incomplete: 'Incompleta',
+  pending: 'Sin iniciar',
   trialing: 'En prueba',
   unpaid: 'Impaga',
   paused: 'Pausada',
@@ -322,18 +330,26 @@ export function FinancieroView() {
       .sort((a, b) => b.txCount - a.txCount);
   }, [data]);
 
-  /** Suscripciones creadas y canceladas por mes. Stripe: es el único Proveedor
-   *  con espejo de Suscripciones, y el churn se lee del `status`. */
+  /** Suscripciones creadas y canceladas por mes, una serie por Proveedor. Las
+   *  cancelaciones sólo tienen fecha en Stripe: MercadoPago no registra cuándo
+   *  se canceló una preaprobación, así que su serie de bajas no existe y el
+   *  churn de MercadoPago se lee del conteo por estado. */
   const subsMonthly = useMemo(() => {
-    if (!data) return { labels: [] as string[], series: [] as { label: string; data: number[]; color: string }[] };
-    const rows = [...data.gateway.subscriptionsByMonth].sort((a, b) => (a.month < b.month ? -1 : 1));
-    return {
-      labels: rows.map((r) => r.month.slice(0, 7)),
-      series: [
-        { label: 'Altas de suscripción', data: rows.map((r) => r.created), color: '#10b981' },
-        { label: 'Cancelaciones', data: rows.map((r) => r.canceled), color: '#f43f5e' },
-      ],
-    };
+    const empty = { labels: [] as string[], series: [] as { label: string; data: number[]; color: string }[] };
+    if (!data) return empty;
+    const rows = data.gateway.subscriptionsByMonth;
+    const labels = Array.from(new Set(rows.map((r) => r.month.slice(0, 7)))).sort();
+    const platforms = Array.from(new Set(rows.map((r) => r.platformName))).sort();
+    const at = (platform: string, key: 'created' | 'canceled') =>
+      labels.map((m) => rows.find((r) => r.platformName === platform && r.month.slice(0, 7) === m)?.[key] ?? 0);
+    const CREATED_COLOR: Record<string, string> = { Stripe: '#10b981', MercadoPago: '#34d399' };
+    const series: { label: string; data: number[]; color: string }[] = [];
+    for (const pf of platforms) {
+      series.push({ label: `Altas · ${pf}`, data: at(pf, 'created'), color: CREATED_COLOR[pf] ?? '#4f8ef7' });
+      const canceled = at(pf, 'canceled');
+      if (canceled.some((v) => v > 0)) series.push({ label: `Cancelaciones · ${pf}`, data: canceled, color: '#f43f5e' });
+    }
+    return { labels, series };
   }, [data]);
 
   /** Temporadas deportivas (sep→ago): transacciones y neto USD por temporada. */
@@ -467,10 +483,22 @@ export function FinancieroView() {
   const usd = g.settlementTotals.find((t) => t.settlementCurrency === 'USD');
   const topCcy = currencies[0];
   const totalTx = data.monthlyDetail.reduce((s, r) => s + r.txCount, 0);
-  const activeSubs = g.subscriptionsByStatus.find((r) => r.status === 'active')?.count ?? 0;
-  const totalSubs = g.subscriptionsByStatus.reduce((s, r) => s + r.count, 0);
-  const canceledStatus = g.subscriptionsByStatus.find((r) => r.status === 'canceled');
-  const undatedCancels = canceledStatus ? canceledStatus.count - canceledStatus.withCanceledAt : 0;
+  // Ciclo de vida, no estado crudo: Stripe dice «active» y MercadoPago
+  // «authorized», y un solo número de vivas necesita las dos palabras juntas.
+  // Las que nunca facturaron (MercadoPago «pending»: un checkout abierto) no
+  // son suscriptoras ni churn, y quedan fuera de todo total salvo su propia nota.
+  const subsOf = (lifecycle: string) => g.subscriptionsByStatus.filter((r) => r.lifecycle === lifecycle);
+  const sumSubs = (rows: typeof g.subscriptionsByStatus) => rows.reduce((s, r) => s + r.count, 0);
+  const activeSubs = sumSubs(subsOf('live'));
+  const activeByPlatform = Array.from(new Set(subsOf('live').map((r) => r.platformName)))
+    .sort()
+    .map((pf) => `${pf} ${sumSubs(subsOf('live').filter((r) => r.platformName === pf)).toLocaleString()}`);
+  const pausedSubs = sumSubs(subsOf('paused'));
+  const neverStarted = sumSubs(subsOf('never_started'));
+  const totalSubs = sumSubs(g.subscriptionsByStatus.filter((r) => r.lifecycle !== 'never_started'));
+  const canceledSubs = sumSubs(subsOf('churned'));
+  const undatedCancels = canceledSubs - subsOf('churned').reduce((s, r) => s + r.withCanceledAt, 0);
+  const statusDonut = g.subscriptionsByStatus.filter((r) => r.lifecycle !== 'never_started');
   const detailByCcy = activeCcy ? data.monthlyDetail.filter((r) => r.currency === activeCcy) : [];
   const totalTaxes = g.settlementTotals.reduce((s, t) => s + t.taxes, 0);
   const taxCcy = g.settlementTotals.find((t) => t.taxes > 0);
@@ -526,16 +554,21 @@ export function FinancieroView() {
           </div>
         </div>
         <div className="proto-ms-col active">
-          <h4>Suscriptores activos</h4>
-          <div className="proto-ms-big" style={{ fontSize: 18 }}>
-            <span className="proto-tag">pendiente</span>
-          </div>
+          <h4>
+            Suscripciones activas hoy
+            <InfoHint text="Suscripciones vivas según el espejo de cada Proveedor: «active», «en prueba» y «atrasada» en Stripe, «authorized» en MercadoPago. Es una foto de hoy, no del mes, y cuenta suscripciones, no personas." />
+          </h4>
+          <div className="proto-ms-big">{fmtNum(activeSubs)}</div>
           <div className="proto-ms-items">
+            {activeByPlatform.map((line) => (
+              <div className="row" key={line}>
+                <span>{line.split(' ')[0]}</span>
+                <span className="num">{line.split(' ').slice(1).join(' ')}</span>
+              </div>
+            ))}
             <div className="row">
-              <span>
-                El activo del mes se cuenta sobre Suscripciones, que todavía no tiene
-                tabla para MercadoPago.
-              </span>
+              <span>Pausadas</span>
+              <span className="num">{fmtNum(pausedSubs)}</span>
             </div>
           </div>
         </div>
@@ -577,15 +610,15 @@ export function FinancieroView() {
         <KpiCard
           label={`Suscripciones activas · ${g.subscriptionPlatformName}`}
           value={activeSubs}
-          sub={`${totalSubs.toLocaleString()} en total · sin MercadoPago`}
+          sub={activeByPlatform.join(' · ') || undefined}
           variant="yellow"
-          hint="Suscripciones de Stripe en estado «active» hoy, según su espejo. Es una foto actual: no respeta el rango ni los filtros, y MercadoPago no entra porque sus suscripciones no tienen tabla."
+          hint="Suscripciones vivas hoy según el espejo de cada Proveedor («active», «en prueba», «atrasada» en Stripe; «authorized» en MercadoPago). Foto actual: no respeta el rango ni los filtros. Cuenta suscripciones, no personas."
         />
         <KpiCard
-          label="Suscriptores activos totales"
-          value="pendiente"
-          sub="espera el Export de planes de suscripción de MercadoPago"
-          hint="Se contará como suscriptores únicos con suscripción vigente al cierre del mes, en todos los Proveedores. Hoy sólo Stripe tiene espejo de suscripciones, así que el número no existe."
+          label="Suscripciones cerradas"
+          value={canceledSubs}
+          sub={`${totalSubs.toLocaleString()} con historia de cobro · ${pausedSubs.toLocaleString()} pausadas`}
+          hint={`Suscripciones canceladas o impagas en cualquiera de los dos Proveedores, foto de hoy. Se excluyen ${neverStarted.toLocaleString()} preaprobaciones de MercadoPago que nunca facturaron (un checkout abierto y abandonado): no son suscriptores ni bajas.`}
         />
       </div>
 
@@ -657,9 +690,9 @@ export function FinancieroView() {
         )}
         <div style={{ marginTop: 12 }}>
           <Pending kind="suscripciones">
-            Falta la línea de <strong>suscriptores activos reales</strong>: se cuenta como
-            emails únicos con suscripción vigente al cierre del mes, y hoy sólo Stripe
-            tiene espejo de Suscripciones.
+            Falta la línea de <strong>suscriptores activos reales</strong>: emails únicos
+            con suscripción vigente al cierre de cada mes. El espejo de Suscripciones ya
+            cubre Stripe y MercadoPago; falta el corte mensual sobre él.
           </Pending>
         </div>
       </Card>
@@ -740,19 +773,19 @@ export function FinancieroView() {
       <div className="proto-grid2">
         <Card
           title={`📉 Altas y cancelaciones de suscripción por mes · ${g.subscriptionPlatformName}`}
-          hint="Suscripciones de Stripe creadas y canceladas en cada mes del rango, según su fecha de alta y de cancelación. Sólo las cancelaciones con fecha entran al gráfico; el total por estado está más abajo."
+          hint="Suscripciones creadas y canceladas en cada mes del rango, por Proveedor, según su fecha de alta y de cancelación. Las preaprobaciones de MercadoPago que nunca facturaron no cuentan como alta. Sólo las cancelaciones con fecha entran al gráfico; el total por estado está más abajo."
           desc={
             <>
-              Eventos oficiales del Proveedor, con su fecha real. El churn se lee del estado de la
-              suscripción y no de su fecha de cancelación: {undatedCancels.toLocaleString()} de{' '}
-              {(canceledStatus?.count ?? 0).toLocaleString()} cancelaciones no traen fecha, y
-              bucketear por ella las dejaría afuera.
+              Eventos oficiales de cada Proveedor, con su fecha real. El churn se lee del estado de
+              la suscripción y no de su fecha de cancelación: {undatedCancels.toLocaleString()} de{' '}
+              {canceledSubs.toLocaleString()} cancelaciones no traen fecha, y bucketear por ella las
+              dejaría afuera.
             </>
           }
           foot={
             g.subscriptionsIgnoreFilters
-              ? 'Sin MercadoPago: sus Suscripciones viven en un Export que todavía no tiene tabla. No afectado por los filtros.'
-              : 'Sin MercadoPago: sus Suscripciones viven en un Export que todavía no tiene tabla.'
+              ? 'MercadoPago no registra cuándo se canceló una preaprobación, así que sus bajas no tienen serie mensual. No afectado por los filtros.'
+              : 'MercadoPago no registra cuándo se canceló una preaprobación, así que sus bajas no tienen serie mensual.'
           }
         >
           <div style={{ height: 300 }}>
@@ -1305,25 +1338,26 @@ export function FinancieroView() {
         </Card>
         <Card
           title={`Suscripciones por estado · ${g.subscriptionPlatformName}`}
-          hint="Cuántas suscripciones de Stripe hay hoy en cada estado del espejo («activa», «cancelada», «atrasada»…). Foto actual, no ventana: ignora el rango y los filtros."
-          desc="Estado actual, en el vocabulario del Proveedor."
+          hint="Cuántas suscripciones hay hoy en cada estado del espejo de cada Proveedor («activa», «cancelada», «pausada»…). Foto actual, no ventana: ignora el rango y los filtros. Las preaprobaciones de MercadoPago que nunca facturaron quedan fuera del gráfico."
+          desc="Estado actual, en el vocabulario de cada Proveedor, traducido."
           foot={
             <>
               El churn se lee del estado de la suscripción: {undatedCancels.toLocaleString()} de{' '}
-              {(canceledStatus?.count ?? 0).toLocaleString()} cancelaciones no traen fecha.
+              {canceledSubs.toLocaleString()} cancelaciones no traen fecha. Fuera del gráfico:{' '}
+              {neverStarted.toLocaleString()} preaprobaciones sin iniciar.
               {g.subscriptionsIgnoreFilters && <> No afectado por los filtros.</>}
             </>
           }
         >
           <div style={{ height: 260 }}>
-            {g.subscriptionsByStatus.length === 0 ? (
+            {statusDonut.length === 0 ? (
               <div className="no-data">Sin suscripciones</div>
             ) : (
               <DoughnutChart
                 height={260}
-                labels={g.subscriptionsByStatus.map((r) => statusLabel(r.status))}
-                values={g.subscriptionsByStatus.map((r) => r.count)}
-                colors={g.subscriptionsByStatus.map((r) => STATUS_COLORS[r.status] ?? '#64748b')}
+                labels={statusDonut.map((r) => `${statusLabel(r.status)} · ${r.platformName}`)}
+                values={statusDonut.map((r) => r.count)}
+                colors={statusDonut.map((r) => STATUS_COLORS[r.status] ?? '#64748b')}
               />
             )}
           </div>

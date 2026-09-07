@@ -28,7 +28,44 @@ export interface GatewaySubscriptionProps {
   trialEnd: Date | null;
 }
 
-const LIVE_STATUSES = new Set(['active', 'trialing', 'past_due']);
+/**
+ * Where a subscription is in its life, across both Providers' vocabularies.
+ *
+ * Stripe says `active`/`canceled`; MercadoPago says `authorized`/`cancelled`
+ * (double l). Both words are kept verbatim in the mirror — the gateway's own
+ * word is a fact — and collapsed only here, so a count of live subscribers is
+ * one number rather than one per spelling.
+ *
+ *   * `live` — billing, or expected to resume: Stripe `active`, `trialing`,
+ *     `past_due` (the gateway is still retrying and most recover); MP
+ *     `authorized`.
+ *   * `paused` — the subscriber stopped billing without leaving. Neither live
+ *     revenue nor churn; reported on its own.
+ *   * `churned` — gone: `canceled`/`cancelled`, `unpaid`, `incomplete_expired`.
+ *   * `never_started` — a subscription object that never billed once: Stripe
+ *     `incomplete`, MP `pending` (created when the subscriber opens checkout,
+ *     202k of them). Counting these as subscribers would triple MercadoPago's
+ *     base; counting them as churn would invent it.
+ */
+export type SubscriptionLifecycle = 'live' | 'paused' | 'churned' | 'never_started' | 'other';
+
+const LIFECYCLE: Record<string, SubscriptionLifecycle> = {
+  active: 'live',
+  trialing: 'live',
+  past_due: 'live',
+  authorized: 'live',
+  paused: 'paused',
+  canceled: 'churned',
+  cancelled: 'churned',
+  unpaid: 'churned',
+  incomplete_expired: 'churned',
+  incomplete: 'never_started',
+  pending: 'never_started',
+};
+
+export function subscriptionLifecycle(status: string): SubscriptionLifecycle {
+  return LIFECYCLE[status] ?? 'other';
+}
 
 export class GatewaySubscription {
   constructor(private readonly props: GatewaySubscriptionProps) {}
@@ -40,7 +77,7 @@ export class GatewaySubscription {
    *  still retrying and most recover — treating it as churn reports the loss
    *  early and then has to take it back. */
   get isLive(): boolean {
-    return LIVE_STATUSES.has(this.props.status);
+    return subscriptionLifecycle(this.props.status) === 'live';
   }
 
   /**

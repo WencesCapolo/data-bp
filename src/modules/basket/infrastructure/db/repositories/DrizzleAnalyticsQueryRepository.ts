@@ -16,6 +16,7 @@ import type { EvolutionDTO } from '@basket/core/dtos/EvolutionDTO';
 import type { TeamsDTO, TeamRankRow, TeamDailyDTO } from '@basket/core/dtos/TeamsDTO';
 import type { FinanceDTO } from '@basket/core/dtos/FinanceDTO';
 import type { GatewayNetDTO, NetDailyPoint } from '@basket/core/dtos/GatewayNetDTO';
+import { subscriptionLifecycle } from '@basket/core/entities/GatewaySubscription';
 import {
   indexRates,
   usdByMonth,
@@ -197,8 +198,9 @@ const gatewayName = (platform: number): string =>
 // object with a different id shape (the 143,577 hex32 ids in basket_payments)
 // and no fetcher yet, so widening the money seam above must NOT widen this one:
 // counting MP subscriptions as zero would understate churn, not report it.
-const SUBSCRIPTION_PLATFORM = 4;
-const SUBSCRIPTION_PLATFORM_NAME = 'Stripe';
+/** Providers with a subscription mirror: Stripe subscriptions and MercadoPago
+ *  preapprovals, both in basket_gateway_subscriptions. */
+const SUBSCRIPTION_PLATFORMS = '(0, 4)';
 
 // GROUPING(day, month) bitmasks: bit set = column IS grouped away.
 const GRP_DAY = 1; // day kept, month grouped   -> 01
@@ -1691,7 +1693,7 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
 
   // --------------------------------------------------------------------------
   // GATEWAY NET — fees, net and refunds off basket_payment_fees, plus
-  // subscription churn off basket_gateway_subscriptions. Stripe only.
+  // subscription churn off basket_gateway_subscriptions (Stripe and MercadoPago).
   //
   // Everything money-shaped here is bucketed on captured_at (true UTC), the
   // clock basket_mat_gateway_net_daily picked; basket_payments.created_at is
@@ -1715,12 +1717,12 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
       // meaningful restriction to a past month. Churn reads status, never
       // canceled_at — 15,636 canceled rows carry no canceled_at.
       this.conn.execute(sql.raw(`
-        SELECT status,
+        SELECT platform, status,
                COUNT(*)::int           AS c,
                COUNT(canceled_at)::int AS with_canceled_at
         FROM basket_gateway_subscriptions
-        WHERE platform = ${SUBSCRIPTION_PLATFORM}
-        GROUP BY status
+        WHERE platform IN ${SUBSCRIPTION_PLATFORMS}
+        GROUP BY platform, status
         ORDER BY c DESC
       `)),
       // The monthly shape is the datable subset only: a cancellation without a
@@ -1728,25 +1730,30 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
       // counts above are what covers those rows.
       this.conn.execute(sql.raw(`
         WITH created AS (
-          SELECT DATE_TRUNC('month', created_at)::date AS m, COUNT(*)::int AS n
+          SELECT platform, DATE_TRUNC('month', created_at)::date AS m, COUNT(*)::int AS n
           FROM basket_gateway_subscriptions
-          WHERE platform = ${SUBSCRIPTION_PLATFORM}
+          WHERE platform IN ${SUBSCRIPTION_PLATFORMS}
             AND created_at >= '${f}'::date AND created_at < '${t}'::date + 1
-          GROUP BY 1
+            -- A MercadoPago preapproval is created when checkout opens; only
+            -- the ones that went on to bill are an alta. Stripe has no such
+            -- state worth excluding (its 'incomplete' is rare and expires).
+            AND status <> 'pending'
+          GROUP BY 1, 2
         ),
         canceled AS (
-          SELECT DATE_TRUNC('month', canceled_at)::date AS m, COUNT(*)::int AS n
+          SELECT platform, DATE_TRUNC('month', canceled_at)::date AS m, COUNT(*)::int AS n
           FROM basket_gateway_subscriptions
-          WHERE platform = ${SUBSCRIPTION_PLATFORM}
+          WHERE platform IN ${SUBSCRIPTION_PLATFORMS}
             AND canceled_at >= '${f}'::date AND canceled_at < '${t}'::date + 1
-          GROUP BY 1
+          GROUP BY 1, 2
         )
-        SELECT COALESCE(c.m, x.m)   AS month,
-               COALESCE(c.n, 0)     AS created,
-               COALESCE(x.n, 0)     AS canceled
+        SELECT COALESCE(c.platform, x.platform) AS platform,
+               COALESCE(c.m, x.m)               AS month,
+               COALESCE(c.n, 0)                 AS created,
+               COALESCE(x.n, 0)                 AS canceled
         FROM created c
-        FULL OUTER JOIN canceled x ON x.m = c.m
-        ORDER BY 1
+        FULL OUTER JOIN canceled x ON x.m = c.m AND x.platform = c.platform
+        ORDER BY 2, 1
       `)),
       // All-time on purpose: coverage moves when Pagos are ingested, not only
       // when fees are, so a range-windowed figure reads as a coverage
@@ -1797,6 +1804,9 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
     // The Providers actually present in this range, not the whole seam: a range
     // with no MercadoPago Pagos should not label itself as covering MercadoPago.
     const presentPlatforms = [...new Set(settlement.map((r) => n(r.platform)))].sort();
+    const subscriptionPlatforms = [
+      ...new Set(((statusRows as unknown) as RowAny[]).map((r) => n(r.platform))),
+    ].sort();
 
     // USD is computed from the DAY grain and never from the month or the total:
     // the blue rate moves every day and ARS inflation makes a month-rate
@@ -1828,7 +1838,7 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
     return {
       platformName: presentPlatforms.map(gatewayName).join(' · ') || GATEWAY_PLATFORM_NAMES[4],
       platformNames: presentPlatforms.map(gatewayName),
-      subscriptionPlatformName: SUBSCRIPTION_PLATFORM_NAME,
+      subscriptionPlatformName: subscriptionPlatforms.map(gatewayName).join(' · ') || GATEWAY_PLATFORM_NAMES[4],
       settlementTotals: settlement
         .filter((r) => n(r.grp) === GRP_TOTAL)
         .map((r) => ({
@@ -1870,12 +1880,17 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
         }))
         .sort((a, b) => b.refundCount - a.refundCount),
       subscriptionsByStatus: ((statusRows as unknown) as RowAny[]).map((r) => ({
+        platform: n(r.platform),
+        platformName: gatewayName(n(r.platform)),
         status: s(r.status),
+        lifecycle: subscriptionLifecycle(s(r.status)),
         count: n(r.c),
         withCanceledAt: n(r.with_canceled_at),
       })),
       subscriptionsByMonth: ((subMonthRows as unknown) as RowAny[]).map((r) => ({
         month: d(r.month),
+        platform: n(r.platform),
+        platformName: gatewayName(n(r.platform)),
         created: n(r.created),
         canceled: n(r.canceled),
       })),
