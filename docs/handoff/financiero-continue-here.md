@@ -399,8 +399,17 @@ template fails with `The "string" argument must be of type string`; pass
   error), and a cross outside 0,5–2,0 is refused — the source published a EUR leg
   of `1` on 11 days in July 2024, which crosses to 940 EUR/USD and would have
   multiplied that week's EUR revenue by a thousand.
-- **The *planes de suscripción* Export — one real file.** This is now the single
-  thing between the Suscripciones tab and done. Reversals arrived and are ingested
+- ~~The *planes de suscripción* Export~~ — **no longer needed, 2026-09-07.** The
+  owner enabled production credentials, and `/preapproval/search` returns every
+  MercadoPago subscription with its live `status` (298 619 rows: 202k `pending`,
+  68k `cancelled`, 14k `authorized`, 14k `paused`). `MercadoPagoSubscriptionFetcher`
+  walks it in `date_created` windows (the endpoint caps `offset+limit` at 10 000)
+  and rides the cron's subscription step; `pnpm backfill:subscriptions` does the
+  first pass. The Suscripciones figures on the tab read both Providers through
+  `subscriptionLifecycle()` (Stripe `active` = MP `authorized`; MP `pending` is a
+  checkout that never billed and counts as nothing). What is still open on that
+  tab is the day-grain subscriber lifecycle the remaining `en desarrollo` charts
+  draw on — derived from Pagos, no human input needed. Reversals arrived and are ingested
   (2026-08-26); the *clientes* bridge is still last and lowest value. Ask for one
   file before any adapter is written for it: every column name is an assumption
   until a real file exists, which is the discipline that saved the reversals feed.
