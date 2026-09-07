@@ -462,7 +462,7 @@ export function FeeUploadModal({ onClose, onSwitchToPagos }: Props) {
                   </>
                 ) : (
                   <>
-                    Vista <code>basket_mat_gateway_net_daily</code> reconstruida en{' '}
+                    Vista de netos diarios reconstruida en{' '}
                     {fmtNum(result.viewRefreshMs)} ms: los netos de /financiero ya incluyen este mes.
                   </>
                 )}

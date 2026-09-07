@@ -59,6 +59,18 @@ const STATUS_COLORS: Record<string, string> = {
   past_due: '#fbbf24',
   incomplete: '#94a3b8',
 };
+/** Stripe subscription statuses in Spanish; the raw value never reaches the UI. */
+const STATUS_LABEL: Record<string, string> = {
+  active: 'Activa',
+  canceled: 'Cancelada',
+  incomplete_expired: 'Incompleta vencida',
+  past_due: 'Atrasada',
+  incomplete: 'Incompleta',
+  trialing: 'En prueba',
+  unpaid: 'Impaga',
+  paused: 'Pausada',
+};
+const statusLabel = (s: string): string => STATUS_LABEL[s] ?? s.replace(/_/g, ' ');
 const MONTHS_ES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 /** El orden de una temporada deportiva: septiembre primero, agosto último. */
 const SEASON_MONTH_ORDER = [9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8];
@@ -560,7 +572,7 @@ export function FinancieroView() {
           label="Transacciones del último mes"
           value={curMonth ? curMonth.tx : '—'}
           sub={curMonth ? monthLabel(curMonth.month) : undefined}
-          hint="Pagos exitosos del último mes con datos en el rango, todos los Proveedores. El mes se asigna por la fecha del Pago (hora de Argentina), no por captured_at."
+          hint="Pagos exitosos del último mes con datos en el rango, todos los Proveedores. El mes se asigna por la fecha del Pago (hora de Argentina), no por la fecha de captura de la comisión."
         />
         <KpiCard
           label={`Suscripciones activas · ${g.subscriptionPlatformName}`}
@@ -590,7 +602,7 @@ export function FinancieroView() {
           value={usd ? fmtExact(usd.net, usd.settlementCurrency) : '—'}
           sub={usd ? `comisión ${fmtExact(usd.fees, usd.settlementCurrency)} · ${usd.feePct}% · ${usd.txCount.toLocaleString()} tx` : 'sin comisiones en rango'}
           variant="green"
-          hint="Sólo lo liquidado en USD (hoy Stripe): bruto liquidado menos comisión y retención según el feed de comisiones, bucketeado por captured_at. El % es comisión ÷ bruto liquidado, no sobre el bruto de cobro."
+          hint="Sólo lo liquidado en USD (hoy Stripe): bruto liquidado menos comisión y retención según el feed de comisiones, bucketeado por fecha de captura. El % es comisión ÷ bruto liquidado, no sobre el bruto de cobro."
         />
         <KpiCard
           label="Neto USD del último mes"
@@ -612,7 +624,7 @@ export function FinancieroView() {
       <div style={{ marginTop: 18 }} />
       <Card
         title="📈 Vista consolidada: ingresos, activos y transacciones"
-        hint="Neto de liquidación por mes convertido a USD día por día, contra la cantidad de Pagos exitosos de ese mes. Las dos series usan relojes distintos: captured_at y fecha del Pago."
+        hint="Neto de liquidación por mes convertido a USD día por día, contra la cantidad de Pagos exitosos de ese mes. Las dos series usan relojes distintos: fecha de captura y fecha del Pago."
         desc={
           <>
             Barras: <b>ingresos netos en USD</b> por mes (eje izquierdo). Línea:{' '}
@@ -731,8 +743,8 @@ export function FinancieroView() {
           hint="Suscripciones de Stripe creadas y canceladas en cada mes del rango, según su fecha de alta y de cancelación. Sólo las cancelaciones con fecha entran al gráfico; el total por estado está más abajo."
           desc={
             <>
-              Eventos oficiales del Proveedor, con su fecha real. El churn se lee del{' '}
-              <code>status</code> y no de <code>canceled_at</code>: {undatedCancels.toLocaleString()} de{' '}
+              Eventos oficiales del Proveedor, con su fecha real. El churn se lee del estado de la
+              suscripción y no de su fecha de cancelación: {undatedCancels.toLocaleString()} de{' '}
               {(canceledStatus?.count ?? 0).toLocaleString()} cancelaciones no traen fecha, y
               bucketear por ella las dejaría afuera.
             </>
@@ -776,7 +788,7 @@ export function FinancieroView() {
       <div className="proto-grid2">
         <Card
           title="Ingresos netos por mes"
-          hint="Por Proveedor y moneda de liquidación, mes a mes por captured_at: neto, comisión y, donde existe, retención; apiladas suman el bruto liquidado. Fuente: el feed de comisiones de cada Proveedor."
+          hint="Por Proveedor y moneda de liquidación, mes a mes por fecha de captura: neto, comisión y, donde existe, retención; apiladas suman el bruto liquidado. Fuente: el feed de comisiones de cada Proveedor."
           desc={
             <>
               Ingresos <b>netos</b> por Proveedor y moneda de liquidación: bruto liquidado
@@ -1033,7 +1045,7 @@ export function FinancieroView() {
       {/* ── Comisiones ── */}
       <Card
         title="💳 Comisiones de pasarela"
-        hint="Comisión del Proveedor por mes (por captured_at) en su moneda de liquidación, sin retenciones. El % efectivo es comisión ÷ bruto liquidado del mismo Proveedor y moneda."
+        hint="Comisión del Proveedor por mes (por fecha de captura) en su moneda de liquidación, sin retenciones. El % efectivo es comisión ÷ bruto liquidado del mismo Proveedor y moneda."
         desc={
           <>
             Comisiones cobradas por cada Proveedor mes a mes (barras) y el{' '}
@@ -1049,7 +1061,7 @@ export function FinancieroView() {
               <> Quedan afuera {payCoverage.preapprovals.toLocaleString()} preaprobaciones de
               MercadoPago: son suscripciones, no cobros, y nunca tuvieron comisión que informar.</>
             )}{' '}
-            El % se calcula contra <code>settlement_amount</code> y no contra el bruto de
+            El % se calcula contra el monto liquidado y no contra el bruto de
             cobro: dividir una comisión en USD por un bruto en UYU da 0,16% y no significa
             nada.
           </>
@@ -1074,8 +1086,8 @@ export function FinancieroView() {
 
       <Card
         title="💳 Neto diario por moneda de liquidación"
-        hint="Neto de liquidación por día y moneda: bruto liquidado menos comisión y retención, sumando los Proveedores que liquidan en esa moneda. Bucketeado por captured_at, UTC real."
-        desc="El pulso de las comisiones día por día. Bucketeado por captured_at (UTC real), no por la fecha del Pago (hora local de Argentina): los dos relojes están a 3 horas."
+        hint="Neto de liquidación por día y moneda: bruto liquidado menos comisión y retención, sumando los Proveedores que liquidan en esa moneda. Bucketeado por fecha de captura, UTC real."
+        desc="El pulso de las comisiones día por día. Bucketeado por fecha de captura (UTC real), no por la fecha del Pago (hora local de Argentina): los dos relojes están a 3 horas."
         foot={
           g.netExcludesUnmatchedFees
             ? 'Con filtros activos sólo entran las comisiones cuyo Pago está ingestado; el titular sin filtros lee el espejo completo.'
@@ -1293,11 +1305,11 @@ export function FinancieroView() {
         </Card>
         <Card
           title={`Suscripciones por estado · ${g.subscriptionPlatformName}`}
-          hint="Cuántas suscripciones de Stripe hay hoy en cada estado del espejo («active», «canceled», «past_due»…). Foto actual, no ventana: ignora el rango y los filtros."
+          hint="Cuántas suscripciones de Stripe hay hoy en cada estado del espejo («activa», «cancelada», «atrasada»…). Foto actual, no ventana: ignora el rango y los filtros."
           desc="Estado actual, en el vocabulario del Proveedor."
           foot={
             <>
-              El churn se lee del <code>status</code>: {undatedCancels.toLocaleString()} de{' '}
+              El churn se lee del estado de la suscripción: {undatedCancels.toLocaleString()} de{' '}
               {(canceledStatus?.count ?? 0).toLocaleString()} cancelaciones no traen fecha.
               {g.subscriptionsIgnoreFilters && <> No afectado por los filtros.</>}
             </>
@@ -1309,7 +1321,7 @@ export function FinancieroView() {
             ) : (
               <DoughnutChart
                 height={260}
-                labels={g.subscriptionsByStatus.map((r) => r.status)}
+                labels={g.subscriptionsByStatus.map((r) => statusLabel(r.status))}
                 values={g.subscriptionsByStatus.map((r) => r.count)}
                 colors={g.subscriptionsByStatus.map((r) => STATUS_COLORS[r.status] ?? '#64748b')}
               />
@@ -1460,13 +1472,13 @@ export function FinancieroView() {
           <p style={{ marginBottom: 8 }}>
             <b>Conversión a USD, por día.</b> El blue se movió 9,5% dentro de julio de 2024 y
             de 1.000 a 1.565 en el período que cubren los Pagos: una cotización mensual no es
-            un redondeo de la diaria. Stripe convierte con su propio{' '}
-            <code>exchange_rate</code>; ARS con el blue venta de dolarapi. EUR no lo cotiza
+            un redondeo de la diaria. Stripe convierte con su propia
+            cotización; ARS con el blue venta de dolarapi. EUR no lo cotiza
             ninguna fuente y sus figuras USD quedan ausentes.
           </p>
           <p style={{ marginBottom: 8 }}>
-            <b>Dos relojes.</b> <code>basket_payments.created_at</code> es hora de Argentina
-            guardada como UTC; <code>captured_at</code> es UTC real. Son 3 horas, y sólo
+            <b>Dos relojes.</b> La fecha del Pago es hora de Argentina guardada como UTC; la
+            fecha de captura de la comisión es UTC real. Son 3 horas, y sólo
             importan en los bordes de mes.
           </p>
           <p>

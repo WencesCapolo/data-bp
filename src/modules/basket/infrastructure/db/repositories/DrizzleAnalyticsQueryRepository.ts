@@ -2368,11 +2368,11 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
       syncLog: await this.getSyncLog(),
       totals: { users: v(usersC), payments: v(paymentsC), teams: v(teamsC) },
       issues: [
-        { code: 'user_no_country',      description: 'Users with NULL country',                      count: v(noCountry) },
-        { code: 'user_no_team',         description: 'Users with no promo team',                     count: v(noTeam) },
-        { code: 'payment_orphan',       description: 'Payments whose user_id is missing from users', count: v(orphanPayments) },
-        { code: 'paid_zero_non_antel',  description: 'Non-Antel paid plan with amount = 0',          count: v(zeroAmountNonAntel) },
-        { code: 'payment_failed',       description: 'Payments with status = 0 (failed)',             count: v(statusZero) },
+        { code: 'user_no_country',      description: 'Usuarios sin país informado',                      count: v(noCountry) },
+        { code: 'user_no_team',         description: 'Usuarios sin equipo promocional asignado',                     count: v(noTeam) },
+        { code: 'payment_orphan',       description: 'Pagos cuyo usuario no existe en la tabla de usuarios', count: v(orphanPayments) },
+        { code: 'paid_zero_non_antel',  description: 'Plan pago (no Antel) con importe 0',          count: v(zeroAmountNonAntel) },
+        { code: 'payment_failed',       description: 'Pagos con estado fallido',             count: v(statusZero) },
       ],
     };
   }
@@ -2401,7 +2401,7 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
       SELECT started_at AS at,
              trigger AS kind,
              actor,
-             CASE WHEN error IS NOT NULL THEN 'sync ' || scope
+             CASE WHEN error IS NOT NULL THEN CASE WHEN scope = 'upload' THEN 'Pagos' ELSE 'sincronización completa' END
                   WHEN scope = 'upload' THEN 'Pagos'
                   ELSE 'usuarios ' || COALESCE(users_synced, 0)
                     || ' · contenido ' || COALESCE(content_synced, 0)

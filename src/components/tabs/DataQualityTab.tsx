@@ -16,6 +16,18 @@ function severityOf(issue: { code: string; count: number }): 'low' | 'med' | 'hi
   return 'low';
 }
 
+const SEV_LABEL = { low: 'baja', med: 'media', high: 'alta' } as const;
+
+/** Spanish name + description per issue code; the code itself never reaches the UI. */
+const ISSUE_LABEL: Record<string, { name: string; description: string }> = {
+  user_no_country: { name: 'Usuario sin país', description: 'Usuarios sin país informado' },
+  user_no_team: { name: 'Usuario sin equipo', description: 'Usuarios sin equipo promocional asignado' },
+  payment_orphan: { name: 'Pago huérfano', description: 'Pagos cuyo usuario no existe en la tabla de usuarios' },
+  paid_zero_non_antel: { name: 'Pago en cero', description: 'Plan pago (no Antel) con importe 0' },
+  payment_failed: { name: 'Pago fallido', description: 'Pagos con estado fallido' },
+};
+const issueName = (code: string): string => ISSUE_LABEL[code]?.name ?? code.replace(/_/g, ' ');
+
 const SEV_COLOR = {
   low: 'var(--text2)',
   med: 'var(--yellow)',
@@ -83,7 +95,7 @@ export function DataQualityTab() {
         <table className="data-table" style={{ marginTop: 12 }}>
           <thead>
             <tr>
-              <th>Código</th>
+              <th>Problema</th>
               <th>Descripción</th>
               <th style={{ textAlign: 'right' }}>Cantidad</th>
               <th style={{ textAlign: 'right' }}>% del total</th>
@@ -97,8 +109,8 @@ export function DataQualityTab() {
               const pct = total > 0 ? (i.count / total) * 100 : 0;
               return (
                 <tr key={i.code}>
-                  <td style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--text3)' }}>{i.code}</td>
-                  <td>{i.description}</td>
+                  <td style={{ fontWeight: 600 }}>{issueName(i.code)}</td>
+                  <td>{ISSUE_LABEL[i.code]?.description ?? i.description}</td>
                   <td style={{ textAlign: 'right', color: SEV_COLOR[sev], fontWeight: 600 }}>
                     {i.count.toLocaleString()}
                   </td>
@@ -116,7 +128,7 @@ export function DataQualityTab() {
                         color: SEV_COLOR[sev],
                       }}
                     >
-                      {sev}
+                      {SEV_LABEL[sev]}
                     </span>
                   </td>
                 </tr>

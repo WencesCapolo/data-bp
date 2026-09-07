@@ -153,7 +153,7 @@ export function ContenidoView() {
           value={fmt(T.users)}
           sub={`visualizaciones de usuario únicas en ${isFiltered ? 'el rango' : 'el histórico'}`}
           variant="green"
-          hint="Suma de los usuarios distintos de cada contenido (views_users). Se suma entre piezas: una misma persona que vio dos partidos cuenta dos veces."
+          hint="Suma de los usuarios distintos de cada contenido. Se suma entre piezas: una misma persona que vio dos partidos cuenta dos veces."
         />
         <KpiCard
           label="Tiempo total visto"
@@ -578,7 +578,7 @@ export function ContenidoView() {
 
       <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 8, lineHeight: 1.6 }}>
         Catálogo filtrado como en el prototipo: sólo contenido publicado
-        (<code>status = 1</code>) y con al menos {data.catalogue.minAvgSecondsPerView}{' '}
+        y con al menos {data.catalogue.minAvgSecondsPerView}{' '}
         segundos vistos por view. De {fmt(data.catalogue.rowsInRange)} filas en el
         rango quedan {fmt(data.catalogue.rowsKept)}:{' '}
         {fmt(data.catalogue.rowsDroppedStatus)} sin publicar y{' '}
