@@ -4,9 +4,9 @@
 and net in `basket_payment_fees`, subscriptions in `basket_gateway_subscriptions`,
 both running as delta steps inside the normal analytics sync.
 
-The Stripe half is done and merged. The MercadoPago fee fetcher is **written and
-unit-verified but has never run against the live API**, because no credential
-existed. Everything below is either wiring that already exists and needs
+The Stripe half is done and merged. The MercadoPago fee fetcher **ran against the
+live API on 2026-09-07** once the owner enabled production credentials
+(`MP_ACCESS_TOKEN` in `.env` is now the collector's `APP_USR-…`). Everything below is either wiring that already exists and needs
 switching on, or the one piece that genuinely has to be built.
 
 ---
@@ -103,10 +103,32 @@ no fee and never will, exactly like Stripe's `sub_` rows.
 
 ---
 
-## 3. Subscriptions — the part that must actually be built
+## 3. Subscriptions — built 2026-09-07, first live run same day
 
-`basket_gateway_subscriptions` currently holds Stripe only. MercadoPago
-subscriptions are **preapprovals**, and there is no fetcher for them.
+> **Status.** `MercadoPagoSubscriptionFetcher` exists, is wired into
+> `composeGatewayFeeSync`, and walked the live account. Three facts the live API
+> taught that the plan below did not know:
+>
+> - `/preapproval/search` refuses `offset + limit >= 10000` — a hard wall like
+>   the 1000 on payments. The account holds ~299k preapprovals, so the fetcher
+>   slices by `date_created` in month windows and halves any that exceed 9 900.
+> - The date filter is one param, both bounds mandatory:
+>   `range=date_created:after:<iso>,before:<iso>`. Open-ended ranges are a 400.
+>   `range=last_modified:after:…,before:…` also works, so a *delta* is possible
+>   once `IGatewaySubscriptionFetcher` models one — today it re-reads the set.
+> - Status vocabulary on this account: `pending` (~202k), `cancelled` (~58k),
+>   `paused` (~14k), `authorized` (~14k). `pending` dominates: a preapproval is
+>   created when the subscriber opens checkout, before any payment. Churn views
+>   must not count `pending` as a live subscriber.
+>
+> Also fixed the same day, on the **fee** side: the payments search returns
+> `rejected`/`cancelled`/`pending` attempts with `fee_details: []` and
+> `net_received_amount: 0`, and the gross-minus-net fallback turned each one
+> into a 100% fee (2-day smoke read 21.73%). `moneyMoved()` now drops them;
+> the ratio is 5.95%.
+
+`basket_gateway_subscriptions` held Stripe only. MercadoPago subscriptions are
+**preapprovals**. The original plan, kept for the mapping table:
 
 Build `MercadoPagoSubscriptionFetcher implements IGatewaySubscriptionFetcher`
 (port at `src/modules/basket/core/ports/IGatewaySubscriptionFetcher.ts`), then add

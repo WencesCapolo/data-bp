@@ -96,12 +96,12 @@ export class MercadoPagoFeeFetcher implements IGatewayFeeFetcher {
       this.cfg.onWindowOverflow?.(window, total);
     }
 
-    for (const payment of first.results) yield toFeeProps(payment);
+    for (const payment of first.results) if (moneyMoved(payment)) yield toFeeProps(payment);
     if (first.results.length < PAGE_SIZE) return;
 
     for (let offset = PAGE_SIZE; offset <= MAX_OFFSET; offset += PAGE_SIZE) {
       const page = await this.fetchPage(window, offset);
-      for (const payment of page.results) yield toFeeProps(payment);
+      for (const payment of page.results) if (moneyMoved(payment)) yield toFeeProps(payment);
       if (page.results.length < PAGE_SIZE) return;
     }
   }
@@ -124,6 +124,22 @@ export class MercadoPagoFeeFetcher implements IGatewayFeeFetcher {
       onRetry: this.cfg.onRetry,
     });
   }
+}
+
+/**
+ * Statuses under which MercadoPago never captured the money. The search
+ * endpoint returns these alongside real charges, with `fee_details: []` and
+ * `net_received_amount: 0`, which the gross-minus-net fallback below would read
+ * as a fee equal to the whole price — one rejected 12 999 ARS card attempt
+ * showed up as a 12 999 ARS commission on the first live run. Stripe never
+ * sees the equivalent because its fee source is the balance ledger, where a
+ * declined charge has no entry; this filter is the same rule stated for a
+ * source that has no ledger.
+ */
+const NO_MONEY_MOVED = new Set(['pending', 'in_process', 'rejected', 'cancelled', 'authorized']);
+
+export function moneyMoved(p: Pick<MpPayment, 'status'>): boolean {
+  return !NO_MONEY_MOVED.has(p.status);
 }
 
 function toFeeProps(p: MpPayment): GatewayFeeProps {

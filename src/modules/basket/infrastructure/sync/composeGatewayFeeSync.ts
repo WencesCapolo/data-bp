@@ -6,6 +6,7 @@ import { DrizzleGatewaySubscriptionRepository } from '@basket/infrastructure/db/
 import type { IGatewaySubscriptionFetcher } from '@basket/core/ports/IGatewaySubscriptionFetcher';
 import { SyncGatewaySubscriptionsUseCase } from '@basket/core/use-cases/sync/SyncGatewaySubscriptionsUseCase';
 import { MercadoPagoFeeFetcher } from '@basket/infrastructure/gateways/MercadoPagoFeeFetcher';
+import { MercadoPagoSubscriptionFetcher } from '@basket/infrastructure/gateways/MercadoPagoSubscriptionFetcher';
 import type { IGatewayFeeFetcher } from '@basket/core/ports/IGatewayFeeFetcher';
 import { SyncGatewayFeesUseCase } from '@basket/core/use-cases/sync/SyncGatewayFeesUseCase';
 import { StripeCustomerFetcher } from '@basket/infrastructure/gateways/StripeCustomerFetcher';
@@ -34,8 +35,8 @@ export interface ComposeGatewayFeeSyncOptions {
 
 export interface ComposedGatewayFeeSync {
   useCase: SyncGatewayFeesUseCase;
-  /** Null when no gateway exposes subscriptions — MercadoPago preapprovals are
-   *  not modelled here yet, so today this is Stripe or nothing. */
+  /** Null when no gateway has a credential. Stripe subscriptions and
+   *  MercadoPago preapprovals both land here. */
   subscriptionsUseCase: SyncGatewaySubscriptionsUseCase | null;
   /** Customer mirror — the customer_id -> email bridge. Full refresh. Stripe
    *  only today; MercadoPago's clientes Export arrives through the Upload. */
@@ -116,6 +117,10 @@ export function composeGatewayFeeSync(
               `and the window cannot be split further — rows were LOST`,
           );
         },
+      }));
+      subFetchers.push(new MercadoPagoSubscriptionFetcher({
+        accessToken: token,
+        onRetry: logRetry('mercadopago'),
       }));
     } else {
       skipped.push({ slug: 'mercadopago', missing: 'MP_ACCESS_TOKEN' });
