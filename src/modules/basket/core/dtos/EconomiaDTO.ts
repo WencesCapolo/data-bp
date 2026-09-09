@@ -53,8 +53,18 @@ export interface MonthlyDetailRow {
   payers: number;
 }
 
+/** The range in one line, for the hero: how many Pagos, people and countries. */
+export interface EconomiaTotals {
+  txCount: number;
+  /** Distinct Subscribers who paid in the range. */
+  payers: number;
+  /** Distinct subscriber countries in the range, 'N/A' excluded. */
+  countries: number;
+}
+
 export interface EconomiaDTO {
   range: DateRange;
+  totals: EconomiaTotals;
   /**
    * Gateways whose gross we can show but whose fees we cannot, so the tab can
    * say which platforms are missing from every net figure instead of implying

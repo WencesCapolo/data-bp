@@ -46,6 +46,69 @@ export interface MonthlyLifecyclePoint {
    *  later Pago overlapping it. Derived from Pagos, so every Provider counts —
    *  unlike the Providers' own dated cancellations, which MercadoPago lacks. */
   churned: number;
+  /** Subscription Pagos (never a one-off) under a Mensual Tier — the prototype's
+   *  "Transacciones por plan · Mensual vs Anual", month by month. */
+  mensual: number;
+  /** The same, under the Anual Tier. mensual + anual ≤ new + recurring + reactivated:
+   *  a Free right is neither. */
+  anual: number;
+}
+
+/**
+ * Pagos of a window bucketed the way `MonthlyLifecyclePoint` buckets a month,
+ * plus the Subscribers who left the pool inside it. The window is a run of days,
+ * not a month, so a Pago's bucket is decided by the Subscriber's whole history
+ * and only its date decides which window it lands in.
+ */
+export interface WindowTx {
+  newSubscribers: number;
+  recurring: number;
+  reactivated: number;
+  oneOff: number;
+  churned: number;
+  mensual: number;
+  anual: number;
+  /** newSubscribers + recurring + reactivated + oneOff: the payment events. */
+  total: number;
+}
+
+/** The pool at the close of one day, split two ways that do not add up to
+ *  `total`: a Subscriber holding two rights counts in both Periods and both
+ *  families, and once in the total. */
+export interface WindowActive {
+  total: number;
+  mensual: number;
+  anual: number;
+  /** Under a Total Tier, monthly or annual. */
+  famTotal: number;
+  /** Under the Básico Tier. */
+  famBasico: number;
+}
+
+/**
+ * One side of the rolling comparison: the days `start`..`end` inclusive, what
+ * was paid inside them, who was in the pool at `end`, and what the Providers
+ * settled — converted to USD day by day, per Provider, and null where a day
+ * had no rate (see GatewayNetDTO.UsdSettlementTotal).
+ */
+export interface PeriodWindow {
+  start: string;
+  end: string;
+  tx: WindowTx;
+  active: WindowActive;
+  netUsdByPlatform: { platform: number; platformName: string; netUsd: number | null }[];
+}
+
+/**
+ * The prototype's "Últimos N días vs N días anteriores": two windows of the
+ * same length ending at `asOf` and the day before the current one starts. Not
+ * calendar months — a month in progress compared against a whole month reads
+ * as a collapse every day until the 30th.
+ */
+export interface PeriodComparison {
+  windowDays: number;
+  current: PeriodWindow;
+  previous: PeriodWindow;
 }
 
 /** Distinct Subscribers in the pool at the close of a month, by Period. */
@@ -111,4 +174,6 @@ export interface SubscriberLifecycleDTO {
   lastCharge: LastChargeRow[];
   /** All-time at `asOf`, honouring the filters. */
   lifetime: LifetimeStats;
+  /** The rolling 30-day pair, honouring the filters. */
+  periodComparison: PeriodComparison;
 }

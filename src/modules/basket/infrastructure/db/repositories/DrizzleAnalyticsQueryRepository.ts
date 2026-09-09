@@ -26,6 +26,7 @@ import {
 import type { EconomiaDTO } from '@basket/core/dtos/EconomiaDTO';
 import type {
   LastChargeBucket,
+  PeriodWindow,
   SubscriberLifecycleDTO,
 } from '@basket/core/dtos/SubscriberLifecycleDTO';
 import type {
@@ -205,6 +206,15 @@ const gatewayName = (platform: number): string =>
 /** Providers with a subscription mirror: Stripe subscriptions and MercadoPago
  *  preapprovals, both in basket_gateway_subscriptions. */
 const SUBSCRIPTION_PLATFORMS = '(0, 4)';
+
+// The rolling comparison on /financiero: the last 30 days against the 30
+// before. The daily series is fetched over both windows so the bajas of each
+// can be summed off the same rows the 15-day chart reads.
+const PERIOD_WINDOW_DAYS = 30;
+/** Days of the daily lifecycle series to fetch: both windows, anchor included. */
+const DAILY_SPAN = 2 * PERIOD_WINDOW_DAYS - 1;
+/** Days the prototype's "últimos 15 días" charts show: the anchor and the 15 before it. */
+const DAILY_CHART_DAYS = 15;
 
 // GROUPING(day, month) bitmasks: bit set = column IS grouped away.
 const GRP_DAY = 1; // day kept, month grouped   -> 01
@@ -1269,11 +1279,13 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
     // read the live view. One scan, three grains: as three separate queries this
     // walked 400k rows three times and cost 5s on range=all.
     //
-    // grp is GROUPING(month, country, price): a bit set means that column is
-    // grouped away, which tags each set unambiguously.
-    //   (country, currency)                        -> 101 = 5
-    //   (month, currency)                          -> 011 = 3
-    //   (family, frequency, country, ccy, season, price) -> 100 = 4
+    // grp is GROUPING(month, country, price, currency, plan_frequency): a bit
+    // set means that column is grouped away, which tags each set unambiguously.
+    //   (country, currency)                        -> 10101 = 21
+    //   (month, currency)                          -> 01101 = 13
+    //   (family, frequency, country, ccy, season, price) -> 10000 = 16
+    //   (month, plan_frequency)                    -> 01110 = 14
+    //   ()                                         -> 11111 = 31
     const groupedLive = this.conn.execute(sql.raw(`
       WITH base AS MATERIALIZED (
         SELECT
@@ -1300,21 +1312,28 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
           ${season}                             AS season
         FROM basket_v_active_payments ${live}
       )
-      SELECT GROUPING(month, country, amount)::int AS grp,
+      SELECT GROUPING(month, country, amount, currency, plan_frequency)::int AS grp,
              month, country, currency, plan_family, plan_frequency, season,
              amount::numeric              AS price,
              SUM(amount)::numeric         AS gross,
              COUNT(*)::int                AS tx_count,
-             COUNT(DISTINCT user_id)::int AS payers
+             COUNT(DISTINCT user_id)::int AS payers,
+             COUNT(DISTINCT country) FILTER (WHERE country <> 'N/A')::int AS countries
       FROM base
       GROUP BY GROUPING SETS (
         (country, currency),
         (month, currency),
-        (plan_family, plan_frequency, country, currency, season, amount)
+        (plan_family, plan_frequency, country, currency, season, amount),
+        (month, plan_frequency),
+        ()
       )
     `));
 
-    const [grossRows, liveRows, gateway, lifecycle] = await Promise.all([
+    // The anchor every lifecycle figure hangs from, read once here so the
+    // rolling windows and the Provider net they compare are cut at the same day.
+    const asOf = await this.lifecycleAnchor();
+
+    const [grossRows, liveRows, gateway, lifecycle, windowNet] = await Promise.all([
       hasFilters(filters)
         ? this.conn.execute(sql.raw(`
             SELECT DATE_TRUNC('month', created_at)::date AS month,
@@ -1335,18 +1354,30 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
           `)),
       groupedLive,
       this.getGatewayNet(range, filters),
-      this.getSubscriberLifecycle(range, filters),
+      this.getSubscriberLifecycle(range, filters, asOf),
+      this.windowNetUsd(asOf, filters),
     ]);
 
     const platformsWithGross = new Set(
       ((grossRows as unknown) as RowAny[]).map((r) => s(r.platform_name)),
     );
     const all = (liveRows as unknown) as RowAny[];
-    const GRP_COUNTRY = 5;
-    const GRP_MONTH = 3;
-    const GRP_CATALOG = 4;
+    const GRP_COUNTRY = 21;
+    const GRP_MONTH = 13;
+    const GRP_CATALOG = 16;
+    const GRP_TOTALS = 31;
+    const totalsRow = all.find((r) => n(r.grp) === GRP_TOTALS);
+    // Both sides of the comparison were cut at `asOf`; the Provider net is
+    // joined here because it comes from the fee mirror, not from Pagos.
+    lifecycle.periodComparison.current.netUsdByPlatform = windowNet.current;
+    lifecycle.periodComparison.previous.netUsdByPlatform = windowNet.previous;
     return {
       range,
+      totals: {
+        txCount: n(totalsRow?.tx_count),
+        payers: n(totalsRow?.payers),
+        countries: n(totalsRow?.countries),
+      },
       // Anything we took money through but hold no fee rows for. Derived from
       // the range's own platforms, so a range with no MercadoPago Pagos does not
       // warn about MercadoPago.
@@ -1414,16 +1445,22 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
   // last one hold no altas and every scheduled expiry: drawn to today, the pool
   // reads as collapsing at exactly the rate people were due to renew.
   // --------------------------------------------------------------------------
-  private async getSubscriberLifecycle(
-    range: DateRange,
-    filters?: CommonFilters,
-  ): Promise<SubscriberLifecycleDTO> {
+  /** The last day with a Pago, capped at yesterday — see the block comment above. */
+  private async lifecycleAnchor(): Promise<string> {
     const [anchorRow] = ((await this.conn.execute(sql.raw(`
       SELECT LEAST(MAX(created_at)::date, CURRENT_DATE - 1)::text AS as_of
       FROM basket_v_active_payments
     `))) as unknown) as RowAny[];
-    const asOf = s(anchorRow?.as_of) || yesterdayEndUtc().toISOString().slice(0, 10);
+    return s(anchorRow?.as_of) || yesterdayEndUtc().toISOString().slice(0, 10);
+  }
+
+  private async getSubscriberLifecycle(
+    range: DateRange,
+    filters: CommonFilters | undefined,
+    asOf: string,
+  ): Promise<SubscriberLifecycleDTO> {
     const a = `'${asOf}'::date`;
+    const fw = buildActiveFilterWhere(filters);
 
     // Months the range touches, clamped to the anchor month — the same "keep
     // the whole month" rule monthWindowWhere applies to the Retención tab.
@@ -1453,11 +1490,149 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
       GROUP BY 1, 2 ORDER BY 1, 2
     `));
 
+    // Subscription Pagos per month by Period, for "Mensual vs Anual". Live on
+    // both paths: the months view carries no Period, and this is one indexed
+    // scan of the window with two counters, cheaper than widening the view.
+    const monthFreqRowsP = this.conn.execute(sql.raw(`
+      SELECT DATE_TRUNC('month', created_at)::date::text AS month,
+             COUNT(*) FILTER (WHERE sub_type LIKE 'Mensual%')::int  AS mensual,
+             COUNT(*) FILTER (WHERE sub_type = 'Anual_Total')::int   AS anual
+      FROM basket_v_active_payments
+      WHERE created_at >= ${monthFrom} AND created_at < ${monthTo} + INTERVAL '1 month'
+        AND NOT (recurrent = 0 AND amount > 0) ${fw}
+      GROUP BY 1
+    `));
+
+    // The rolling pair: Pagos of the last 30 days and of the 30 before, each
+    // bucketed by what it meant for its Subscriber. The window CTE keeps every
+    // Pago of the Subscribers who paid in those 60 days — the LAG needs a whole
+    // history to tell a renewal from a reactivation — but on 60 days that is a
+    // small slice of the table on either path, so this never reads a mat view.
+    const W = PERIOD_WINDOW_DAYS;
+    const windowTxRowsP = this.conn.execute(sql.raw(`
+      WITH w(w, s, e) AS (
+        VALUES ('current',  ${a} - ${W - 1},     ${a}),
+               ('previous', ${a} - ${2 * W - 1}, ${a} - ${W})
+      ),
+      p AS (
+        SELECT user_id, created_at, sub_type,
+               (recurrent = 0 AND amount > 0) AS one_off,
+               LAG(expires_at) OVER (PARTITION BY user_id ORDER BY created_at, id) AS prev_e,
+               MIN(created_at) OVER (PARTITION BY user_id) AS first_at
+        FROM basket_v_active_payments
+        WHERE user_id IN (
+          SELECT user_id FROM basket_v_active_payments
+          WHERE created_at >= ${a} - ${2 * W - 1} AND created_at < ${a} + 1 ${fw}
+        ) ${fw}
+      )
+      SELECT w.w,
+        COUNT(*) FILTER (WHERE one_off)::int AS one_off,
+        COUNT(*) FILTER (WHERE NOT one_off AND created_at = first_at)::int AS new_subscribers,
+        COUNT(*) FILTER (WHERE NOT one_off AND created_at <> first_at
+                           AND created_at <= prev_e + INTERVAL '37 days')::int AS recurring,
+        COUNT(*) FILTER (WHERE NOT one_off AND created_at <> first_at
+                           AND created_at > prev_e + INTERVAL '37 days')::int AS reactivated,
+        COUNT(*) FILTER (WHERE NOT one_off AND sub_type LIKE 'Mensual%')::int AS mensual,
+        COUNT(*) FILTER (WHERE NOT one_off AND sub_type = 'Anual_Total')::int  AS anual
+      FROM w JOIN p ON p.created_at >= w.s AND p.created_at < w.e + 1
+      GROUP BY w.w
+    `));
+    // The pool at the close of each window, split by Period and by family. Two
+    // days against the Pagos that cover them — the expires_at index does the work.
+    const windowActiveRowsP = this.conn.execute(sql.raw(`
+      SELECT d.d::text AS day,
+        COUNT(DISTINCT user_id)::int AS total,
+        COUNT(DISTINCT user_id) FILTER (WHERE sub_type LIKE 'Mensual%')::int AS mensual,
+        COUNT(DISTINCT user_id) FILTER (WHERE sub_type = 'Anual_Total')::int  AS anual,
+        COUNT(DISTINCT user_id) FILTER (WHERE sub_type IN ('Mensual_Total', 'Anual_Total'))::int AS fam_total,
+        COUNT(DISTINCT user_id) FILTER (WHERE sub_type = 'Mensual_Basico')::int AS fam_basico
+      FROM (VALUES (${a}), (${a} - ${W})) d(d)
+      JOIN basket_v_active_payments p
+        ON p.created_at < d.d + 1 AND p.expires_at >= d.d - INTERVAL '7 days' ${fw}
+      GROUP BY d.d
+    `));
+
     const [dailyRows, monthlyRows, activeRows, lifetimeRows] = hasFilters(filters)
-      ? await this.lifecycleLive(a, monthFrom, monthTo, buildActiveFilterWhere(filters))
+      ? await this.lifecycleLive(a, monthFrom, monthTo, fw)
       : await this.lifecycleFromMatViews(a, monthFrom, monthTo);
-    const lastChargeRows = await lastChargeRowsP;
-    return this.toLifecycleDTO(asOf, dailyRows, monthlyRows, activeRows, lastChargeRows, lifetimeRows);
+    const [lastChargeRows, monthFreqRows, windowTxRows, windowActiveRows] = await Promise.all([
+      lastChargeRowsP, monthFreqRowsP, windowTxRowsP, windowActiveRowsP,
+    ]);
+    return this.toLifecycleDTO(asOf, {
+      dailyRows, monthlyRows, activeRows, lastChargeRows, lifetimeRows,
+      monthFreqRows, windowTxRows, windowActiveRows,
+    });
+  }
+
+  /**
+   * The Providers' net over the two rolling windows, converted to USD day by
+   * day exactly as the range totals are. Its own read of the fee mirror, because
+   * the range is the tab's and the windows are the anchor's: on "últimos 7 días"
+   * the previous window lies entirely outside the range.
+   */
+  private async windowNetUsd(
+    asOf: string,
+    filters?: CommonFilters,
+  ): Promise<Record<'current' | 'previous', PeriodWindow['netUsdByPlatform']>> {
+    const W = PERIOD_WINDOW_DAYS;
+    const from = shiftDay(asOf, -(2 * W - 1));
+    const split = shiftDay(asOf, -W);
+    const [moneyRows, fxRows] = await Promise.all([
+      hasFilters(filters)
+        ? this.gatewayMoneyFiltered(from, asOf, filters!)
+        : this.gatewayMoneyUnfiltered(from, asOf),
+      this.fxRates(from, asOf),
+    ]);
+    const days = ((moneyRows as unknown) as RowAny[])
+      .filter((r) => s(r.grain) === 'settlement' && n(r.grp) === GRP_DAY)
+      .map((r): NetDailyPoint => ({
+        day: d(r.day),
+        platform: n(r.platform),
+        platformName: gatewayName(n(r.platform)),
+        settlementCurrency: s(r.ccy),
+        grossSettlement: n(r.gross),
+        fees: n(r.fees),
+        taxes: n(r.taxes),
+        net: n(r.net),
+        txCount: n(r.tx_count),
+      }));
+    const rates = indexRates(fxRows);
+    // Per Provider, its settlement currencies added — two USD figures can be
+    // summed, and a Provider settling in two currencies is still one Provider.
+    // Null if any of them is null: a total short a currency is not a total.
+    const perPlatform = (rows: NetDailyPoint[]): PeriodWindow['netUsdByPlatform'] => {
+      const byPlatform = new Map<number, { platformName: string; netUsd: number | null }>();
+      for (const t of usdTotals(rows, rates)) {
+        const cur = byPlatform.get(t.platform) ?? { platformName: t.platformName, netUsd: 0 };
+        cur.netUsd = cur.netUsd === null || t.netUsd === null ? null : cur.netUsd + t.netUsd;
+        byPlatform.set(t.platform, cur);
+      }
+      return [...byPlatform.entries()]
+        .map(([platform, v]) => ({ platform, ...v }))
+        .sort((x, y) => x.platform - y.platform);
+    };
+    return {
+      current: perPlatform(days.filter((r) => r.day > split)),
+      previous: perPlatform(days.filter((r) => r.day <= split)),
+    };
+  }
+
+  /** The fetched FX sources over a span of days — see getGatewayNet for why
+   *  only these two, and docs/adr/0007 for what each one is. */
+  private async fxRates(f: string, t: string): Promise<DailyRate[]> {
+    const rows = (await this.conn.execute(sql.raw(`
+      SELECT day::text AS day, quote_currency, source, rate::float8 AS rate
+      FROM basket_fx_rates
+      WHERE base_currency = 'USD'
+        AND source IN ('blue', 'oficial_cross')
+        AND day BETWEEN '${f}'::date AND '${t}'::date
+    `))) as unknown as RowAny[];
+    return rows.map((r): DailyRate => ({
+      day: d(r.day),
+      quoteCurrency: s(r.quote_currency),
+      source: s(r.source),
+      rate: n(r.rate),
+    }));
   }
 
   /**
@@ -1471,7 +1646,7 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
       run(`
         SELECT day::text AS day, new_subscribers, reactivated, churned, active
         FROM basket_mat_subscriber_days
-        WHERE day BETWEEN ${a} - 15 AND ${a}
+        WHERE day BETWEEN ${a} - ${DAILY_SPAN} AND ${a}
         ORDER BY day
       `),
       run(`
@@ -1526,20 +1701,21 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
    */
   private lifecycleLive(a: string, monthFrom: string, monthTo: string, fw: string) {
     const run = (q: string) => this.conn.execute(sql.raw(q));
-      // The 15 days ending at the anchor. Membership is one row per (day,
-      // Subscriber) with two flags, so entering and leaving are one GROUP BY
-      // rather than four correlated scans of the pool.
+      // The 60 days ending at the anchor — both rolling windows; the chart
+      // takes the last 16. Membership is one row per (day, Subscriber) with two
+      // flags, so entering and leaving are one GROUP BY rather than four
+      // correlated scans of the pool.
     const dailyRowsP = run(`
       WITH days AS (
-        SELECT generate_series(${a} - 15, ${a}, INTERVAL '1 day')::date AS d
+        SELECT generate_series(${a} - ${DAILY_SPAN}, ${a}, INTERVAL '1 day')::date AS d
       ),
       cov AS (
         SELECT user_id, created_at::date AS s, (expires_at + INTERVAL '7 days')::date AS e
         FROM basket_v_active_payments
         -- Bounds on the raw columns, so the expires_at index is used. A Pago
-        -- whose coverage ended before the window cannot change who is in the
-        -- pool on any day of it.
-        WHERE expires_at >= ${a} - INTERVAL '24 days'
+        -- whose coverage ended before the window (grace and the day before the
+        -- first day included) cannot change who is in the pool on any day of it.
+        WHERE expires_at >= ${a} - INTERVAL '${DAILY_SPAN + 9} days'
           AND created_at < ${a} + 1 ${fw}
       ),
       -- Gaps and islands: a Subscriber's overlapping or abutting Pagos merge
@@ -1697,13 +1873,18 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
 
   private toLifecycleDTO(
     asOf: string,
-    dailyRows: unknown,
-    monthlyRows: unknown,
-    activeRows: unknown,
-    lastChargeRows: unknown,
-    lifetimeRows: unknown,
+    rows: {
+      dailyRows: unknown;
+      monthlyRows: unknown;
+      activeRows: unknown;
+      lastChargeRows: unknown;
+      lifetimeRows: unknown;
+      monthFreqRows: unknown;
+      windowTxRows: unknown;
+      windowActiveRows: unknown;
+    },
   ): SubscriberLifecycleDTO {
-    const daily = ((dailyRows as unknown) as RowAny[]).map((r) => ({
+    const dailyAll = ((rows.dailyRows as unknown) as RowAny[]).map((r) => ({
       day: d(r.day),
       newSubscribers: n(r.new_subscribers),
       reactivated: n(r.reactivated),
@@ -1711,20 +1892,67 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
       net: n(r.new_subscribers) + n(r.reactivated) - n(r.churned),
       active: n(r.active),
     }));
-    const [lt] = (lifetimeRows as unknown) as RowAny[];
+    const [lt] = (rows.lifetimeRows as unknown) as RowAny[];
     const stat = (v: unknown): number | null => (v == null ? null : Number(v));
+
+    const freqByMonth = new Map<string, { mensual: number; anual: number }>();
+    for (const r of (rows.monthFreqRows as unknown) as RowAny[]) {
+      freqByMonth.set(d(r.month), { mensual: n(r.mensual), anual: n(r.anual) });
+    }
+
+    const W = PERIOD_WINDOW_DAYS;
+    const txRows = (rows.windowTxRows as unknown) as RowAny[];
+    const actRows = (rows.windowActiveRows as unknown) as RowAny[];
+    const window = (which: 'current' | 'previous'): PeriodWindow => {
+      const end = which === 'current' ? asOf : shiftDay(asOf, -W);
+      const start = shiftDay(end, -(W - 1));
+      const tx = txRows.find((r) => s(r.w) === which);
+      const act = actRows.find((r) => d(r.day) === end);
+      const churned = dailyAll
+        .filter((r) => r.day >= start && r.day <= end)
+        .reduce((acc, r) => acc + r.churned, 0);
+      const b = {
+        newSubscribers: n(tx?.new_subscribers),
+        recurring: n(tx?.recurring),
+        reactivated: n(tx?.reactivated),
+        oneOff: n(tx?.one_off),
+      };
+      return {
+        start,
+        end,
+        tx: {
+          ...b,
+          churned,
+          mensual: n(tx?.mensual),
+          anual: n(tx?.anual),
+          total: b.newSubscribers + b.recurring + b.reactivated + b.oneOff,
+        },
+        active: {
+          total: n(act?.total),
+          mensual: n(act?.mensual),
+          anual: n(act?.anual),
+          famTotal: n(act?.fam_total),
+          famBasico: n(act?.fam_basico),
+        },
+        // Filled by getEconomia, which holds the fee mirror's side of the window.
+        netUsdByPlatform: [],
+      };
+    };
+
     return {
       asOf,
-      daily,
-      monthly: ((monthlyRows as unknown) as RowAny[]).map((r) => ({
+      daily: dailyAll.slice(-(DAILY_CHART_DAYS + 1)),
+      monthly: ((rows.monthlyRows as unknown) as RowAny[]).map((r) => ({
         month: d(r.month),
         newSubscribers: n(r.new_subscribers),
         recurring: n(r.recurring),
         reactivated: n(r.reactivated),
         oneOff: n(r.one_off),
         churned: n(r.churned),
+        mensual: freqByMonth.get(d(r.month))?.mensual ?? 0,
+        anual: freqByMonth.get(d(r.month))?.anual ?? 0,
       })),
-      activeByMonth: ((activeRows as unknown) as RowAny[]).map((r) => ({
+      activeByMonth: ((rows.activeRows as unknown) as RowAny[]).map((r) => ({
         month: d(r.month),
         mensual: n(r.mensual),
         anual: n(r.anual),
@@ -1732,7 +1960,7 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
         total: n(r.total),
         partial: Boolean(r.partial),
       })),
-      lastCharge: ((lastChargeRows as unknown) as RowAny[]).map((r) => ({
+      lastCharge: ((rows.lastChargeRows as unknown) as RowAny[]).map((r) => ({
         platform: n(r.platform),
         platformName: gatewayName(n(r.platform)),
         bucket: s(r.bucket) as LastChargeBucket,
@@ -1746,6 +1974,11 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
         p25Months: stat(lt?.p25),
         p75Months: stat(lt?.p75),
         maxMonths: stat(lt?.max),
+      },
+      periodComparison: {
+        windowDays: W,
+        current: window('current'),
+        previous: window('previous'),
       },
     };
   }

@@ -2,543 +2,290 @@
 import { useMemo, useState } from 'react';
 import useSWR from 'swr';
 import { fetcher } from '@/lib/client/fetcher';
-import { useFilterQS } from '@/lib/client/filterStore';
-import { bucketTitle, bucketTitles } from '@/lib/client/bucketTitle';
-import { KpiCard } from '@/components/ui/KpiCard';
-import { InfoHint } from '@/components/ui/InfoHint';
-import { LineChart } from '@/components/charts/LineChart';
-import { DoughnutChart } from '@/components/charts/DoughnutChart';
-import { StackedBarChart } from '@/components/charts/StackedBarChart';
-import { ComboChart } from '@/components/financiero/contenido/ComboChart';
+import { useFilterQS, useFilters } from '@/lib/client/filterStore';
 import { TabSkeleton } from '@/components/ui/Skeleton';
 import { ErrorBox } from '@/components/ui/ErrorBox';
-import { Card, Pending, SectionLabel } from './financiero/blocks';
-import { LifecycleChart } from './financiero/LifecycleChart';
+import { Breakdown, Card, Kpi, MsCol, Pending, SectionLabel, delta } from './financiero/blocks';
+import {
+  ActiveChart,
+  CancelMonthlyChart,
+  CombinedChart,
+  Daily15Chart,
+  DailyActive15Chart,
+  FeesChart,
+  FlowChart,
+  LC_BUCKETS,
+  LastChargeChart,
+  PlansDonut,
+  PlansFreqChart,
+  RevenueChart,
+  SeasonsChart,
+} from './financiero/protoCharts';
+import {
+  fmt,
+  fmtDayShort,
+  fmtUsd,
+  fmtUsdRound,
+  monthToSeason,
+  pctOf,
+  seasonFullRange,
+  seasonLabel,
+  ym,
+} from './financiero/format';
 import type { EconomiaDTO } from '@basket/core/dtos/EconomiaDTO';
+import type { MonthlyLifecyclePoint, ActiveByMonthPoint } from '@basket/core/dtos/SubscriberLifecycleDTO';
 
 /**
- * La vista Financiero de /financiero, en el orden del prototipo.
+ * La vista Suscriptores de /financiero: `public/dashboard.html`, tarjeta por
+ * tarjeta y en su orden, con los números vivos.
  *
- * `public/dashboard.html` es un scroll único: snapshot del mes, dos bloques de
- * KPIs, la vista consolidada, y después los cortes de mayor a menor grano. Las
- * tres pestañas que había acá (Economía · Suscripciones · Real vs Plan) partían
- * ese scroll en tres y escondían dos tercios de la pantalla detrás de una
- * pestaña que no muestra números. Ahora el orden es el del prototipo y cada
- * hueco dice, en el sitio del gráfico, por qué está vacío.
+ * Snapshot de 30 días, dos filas de KPIs con desglose, la vista consolidada,
+ * los dos gráficos de 15 días, Real vs Plan, flujo mensual y mix de planes,
+ * cancelaciones y antigüedad del último cargo, vida media, ingresos netos y
+ * activos reales, temporadas, la tabla mes × temporada, comisiones, las dos
+ * tablas mensuales y el catálogo. Lo único agregado es el "?" de cada título.
  *
- * Nada de lo que se dibuja acá suma monedas distintas. El bruto vive en el
- * plano de **cobro** y en siete monedas; el neto vive en el plano de
- * **liquidación** y se convierte a USD día por día. Son dos números diferentes
- * de la misma venta y mezclarlos es el error más fácil de cometer en esta
- * pantalla.
+ * Nada de lo que se dibuja acá suma monedas distintas sin pasar por USD. El
+ * bruto vive en el plano de **cobro** y en siete monedas; el neto vive en el
+ * plano de **liquidación** y se convierte a USD día por día. Son dos números
+ * diferentes de la misma venta.
  */
 
-const CURRENCY_COLORS: Record<string, string> = {
-  UYU: '#22d3ee',
-  USD: '#10b981',
-  ARS: '#4f8ef7',
-  CLP: '#f43f5e',
-  BRL: '#a78bfa',
-  EUR: '#fbbf24',
-  BOB: '#fb923c',
-  PEN: '#94a3b8',
-  NONE: '#64748b',
+const GW_COLOR: Record<string, string> = { MercadoPago: '#06b6d4', Stripe: '#635bff', PayPal: '#003087' };
+const CUR_PALETTE: Record<string, string> = {
+  USD: '#10b981', ARS: '#3b82f6', EUR: '#8b5cf6', MXN: '#f59e0b', CLP: '#ef4444', BRL: '#06b6d4', COP: '#ec4899', PEN: '#64748b', UYU: '#0891b2', BOB: '#ea580c',
 };
-const PLATFORM_COLORS: Record<string, string> = {
-  MercadoPago: '#06b6d4',
-  Stripe: '#a78bfa',
-  PayPal: '#4f8ef7',
-  Antel: '#fb923c',
-  Voucher: '#fbbf24',
-  Manual: '#94a3b8',
-  Unknown: '#64748b',
+const PLAN_PALETTE: Record<string, string> = {
+  Total: '#3b82f6', 'Básico': '#10b981', Free: '#94a3b8', Otros: '#8b5cf6', 'Partido único': '#94a3b8',
 };
-const STATUS_COLORS: Record<string, string> = {
-  active: '#10b981',
-  authorized: '#34d399',
-  canceled: '#f43f5e',
-  cancelled: '#fb7185',
-  incomplete_expired: '#fb923c',
-  past_due: '#fbbf24',
-  paused: '#a78bfa',
-  incomplete: '#94a3b8',
-  pending: '#64748b',
+const MARKET_LABEL: Record<string, string> = {
+  Argentina: '🇦🇷 Argentina', Brazil: '🇧🇷 Brasil', Bolivia: '🇧🇴 Bolivia', Chile: '🇨🇱 Chile', Ecuador: '🇪🇨 Ecuador',
+  Peru: '🇵🇪 Perú', Uruguay: '🇺🇾 Uruguay', Paraguay: '🇵🇾 Paraguay', Venezuela: '🇻🇪 Venezuela', Colombia: '🇨🇴 Colombia',
+  Mexico: '🇲🇽 México', 'United States of America': '🇺🇸 Estados Unidos', Spain: '🇪🇸 España',
 };
-/** Provider subscription statuses in Spanish — Stripe's and MercadoPago's
- *  (`authorized`, `cancelled`, `pending`); the raw value never reaches the UI. */
-const STATUS_LABEL: Record<string, string> = {
-  active: 'Activa',
-  authorized: 'Activa',
-  canceled: 'Cancelada',
-  cancelled: 'Cancelada',
-  incomplete_expired: 'Incompleta vencida',
-  past_due: 'Atrasada',
-  incomplete: 'Incompleta',
-  pending: 'Sin iniciar',
-  trialing: 'En prueba',
-  unpaid: 'Impaga',
-  paused: 'Pausada',
-};
-const statusLabel = (s: string): string => STATUS_LABEL[s] ?? s.replace(/_/g, ' ');
-const MONTHS_ES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
-/** El orden de una temporada deportiva: septiembre primero, agosto último. */
+const MONTH_FULL_ES = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 const SEASON_MONTH_ORDER = [9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8];
 
-function fmtExact(n: number, c: string): string {
-  if (!c || c === 'NONE') return n.toLocaleString('es-UY', { maximumFractionDigits: 2 });
-  return new Intl.NumberFormat('es-UY', {
-    style: 'currency',
-    currency: c,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(n);
-}
-function fmtRound(n: number, c: string): string {
-  if (!c || c === 'NONE') return n.toLocaleString('es-UY', { maximumFractionDigits: 0 });
-  return new Intl.NumberFormat('es-UY', {
-    style: 'currency',
-    currency: c,
-    maximumFractionDigits: 0,
-  }).format(n);
-}
-function fmtNum(n: number): string {
-  return Math.round(n).toLocaleString('es-UY');
-}
-function monthLabel(ym: string): string {
-  const [y, m] = ym.slice(0, 7).split('-');
-  return `${MONTHS_ES[Number(m) - 1]} ${y.slice(2)}`;
-}
-/** La temporada a la que pertenece un mes: sep→ago, nombrada por su año inicial. */
-function seasonOf(ym: string): number {
-  const y = Number(ym.slice(0, 4));
-  const m = Number(ym.slice(5, 7));
-  return m >= 9 ? y : y - 1;
-}
-function seasonLabel(start: number): string {
-  return `${String(start).slice(2)}/${String(start + 1).slice(2)}`;
-}
-function pct(cur: number, prev: number): { text: string; dir: 'up' | 'down' | 'flat' } {
-  if (!prev) return { text: 'sin mes anterior', dir: 'flat' };
-  const d = ((cur - prev) / prev) * 100;
-  if (Math.abs(d) < 0.05) return { text: '0,0%', dir: 'flat' };
-  return {
-    text: `${d > 0 ? '+' : '−'}${Math.abs(d).toLocaleString('es-UY', { maximumFractionDigits: 1 })}%`,
-    dir: d > 0 ? 'up' : 'down',
-  };
-}
+type SeasonMetric =
+  | 'tx_mensual' | 'tx_anual' | 'tx_nuevas' | 'tx_reactivadas' | 'tx_recurrentes'
+  | 'activos' | 'bajas' | 'ingresos_netos_usd' | 'ingresos_netos_local';
+const SEASON_METRICS: { key: SeasonMetric; label: string; title: string }[] = [
+  { key: 'tx_mensual', label: 'Transacciones mensuales', title: 'TRANSACCIONES MENSUALES' },
+  { key: 'tx_anual', label: 'Transacciones anuales', title: 'TRANSACCIONES ANUALES' },
+  { key: 'tx_nuevas', label: 'Transacciones nuevas (altas)', title: 'TRANSACCIONES NUEVAS (ALTAS)' },
+  { key: 'tx_reactivadas', label: 'Transacciones reactivadas', title: 'TRANSACCIONES REACTIVADAS' },
+  { key: 'tx_recurrentes', label: 'Transacciones recurrentes', title: 'TRANSACCIONES RECURRENTES' },
+  { key: 'activos', label: 'Suscriptores activos (fin de mes)', title: 'SUSCRIPTORES ACTIVOS (FIN DE MES)' },
+  { key: 'bajas', label: 'Bajas', title: 'BAJAS' },
+  { key: 'ingresos_netos_usd', label: 'Ingresos netos (USD)', title: 'INGRESOS NETOS (USD)' },
+  { key: 'ingresos_netos_local', label: 'Ingresos netos (moneda local)', title: 'INGRESOS NETOS (MONEDA LOCAL)' },
+];
 
-type SeasonMetric = 'tx' | 'neto_usd' | 'bruto_local';
-const SEASON_METRICS: { key: SeasonMetric; label: string }[] = [
-  { key: 'tx', label: 'Transacciones' },
-  { key: 'neto_usd', label: 'Ingresos netos (USD)' },
-  { key: 'bruto_local', label: 'Ingresos brutos (moneda local)' },
-];
-/** Métricas que el prototipo ofrece y esta base todavía no puede calcular. */
-const SEASON_METRICS_PENDING = [
-  'Suscriptores activos (fin de mes)',
-  'Bajas',
-  'Transacciones nuevas / reactivadas / recurrentes',
-];
+const sumBy = <T,>(rows: T[], f: (r: T) => number): number => rows.reduce((a, r) => a + f(r), 0);
 
 export function FinancieroView() {
   const url = `/api/financiero/economia?${useFilterQS()}`;
   const { data, error, isLoading } = useSWR<EconomiaDTO>(url, fetcher);
-  // El bruto vive en siete monedas de cobro que no se pueden sumar, así que la
-  // pantalla muestra una por vez y arranca por la más grande del rango.
-  const [grossCcy, setGrossCcy] = useState<string | null>(null);
-  const [seasonMetric, setSeasonMetric] = useState<SeasonMetric>('tx');
-  const [catFilters, setCatFilters] = useState({ market: 'ALL', season: 'ALL', plan: 'ALL', currency: 'ALL' });
+  const countries = useFilters((s) => s.countries);
+  const [lcPlatform, setLcPlatform] = useState<'all' | 'MercadoPago' | 'Stripe'>('all');
+  const [seasonMetric, setSeasonMetric] = useState<SeasonMetric>('tx_mensual');
+  const [cat, setCat] = useState({ market: 'ALL', season: 'ALL', plan: 'ALL', currency: 'ALL', price: 'ALL' });
 
-  const currencies = useMemo(() => {
-    if (!data) return [] as { currency: string; gross: number }[];
-    const idx: Record<string, number> = {};
-    for (const r of data.monthlyGross) idx[r.currency] = (idx[r.currency] ?? 0) + r.gross;
-    return Object.entries(idx)
-      .map(([currency, gross]) => ({ currency, gross }))
-      .sort((a, b) => b.gross - a.gross);
-  }, [data]);
-
-  const activeCcy = grossCcy ?? currencies[0]?.currency ?? null;
-
-  /** Transacciones y pagadores por mes, sumando todas las monedas: un conteo
-   *  de eventos sí se puede sumar entre monedas, un importe no. */
-  const txByMonth = useMemo(() => {
-    if (!data) return [] as { month: string; tx: number; payers: number }[];
-    const idx: Record<string, { tx: number; payers: number }> = {};
-    for (const r of data.monthlyDetail) {
-      idx[r.month.slice(0, 7)] ??= { tx: 0, payers: 0 };
-      idx[r.month.slice(0, 7)].tx += r.txCount;
-      idx[r.month.slice(0, 7)].payers += r.payers;
-    }
-    return Object.entries(idx)
-      .map(([month, v]) => ({ month, ...v }))
-      .sort((a, b) => (a.month < b.month ? -1 : 1));
-  }, [data]);
-
-  /** Neto en USD por mes, sumando plataformas y monedas ya convertidas. Un mes
-   *  sin cotización no aporta: queda ausente, no en cero. */
-  const netUsdByMonth = useMemo(() => {
-    if (!data) return [] as { month: string; netUsd: number }[];
-    const idx: Record<string, number> = {};
-    for (const r of data.gateway.netUsdByMonth) {
-      if (r.netUsd === null) continue;
-      idx[r.month.slice(0, 7)] = (idx[r.month.slice(0, 7)] ?? 0) + r.netUsd;
-    }
-    return Object.entries(idx)
-      .map(([month, netUsd]) => ({ month, netUsd }))
-      .sort((a, b) => (a.month < b.month ? -1 : 1));
-  }, [data]);
-
-  const grossMonthly = useMemo(() => {
-    if (!data || !activeCcy) return { labels: [] as string[], series: [] as { label: string; data: number[]; color: string }[] };
-    const rows = data.monthlyGross.filter((r) => r.currency === activeCcy);
-    const months = Array.from(new Set(rows.map((r) => r.month))).sort();
-    const plats = Array.from(new Set(rows.map((r) => r.platformName)));
-    const idx: Record<string, Record<string, number>> = {};
-    for (const r of rows) {
-      idx[r.month] ??= {};
-      idx[r.month][r.platformName] = (idx[r.month][r.platformName] ?? 0) + r.gross;
-    }
-    return {
-      labels: months.map((m) => m.slice(0, 7)),
-      series: plats.map((p) => ({
-        label: p,
-        data: months.map((m) => idx[m]?.[p] ?? 0),
-        color: PLATFORM_COLORS[p] ?? '#64748b',
-      })),
-    };
-  }, [data, activeCcy]);
-
-  const netMonthly = useMemo(() => {
-    if (!data) return [] as { ccy: string; platformName: string; labels: string[]; series: { label: string; data: number[]; color: string }[] }[];
-    const rows = data.gateway.netByMonth;
-    return data.gateway.settlementTotals.map((t) => {
-      // Cruzado por plataforma Y moneda: dos Proveedores liquidando la misma
-      // moneda apilarían dos estructuras de comisión en una sola barra.
-      const mine = rows
-        .filter((r) => r.settlementCurrency === t.settlementCurrency && r.platform === t.platform)
-        .sort((a, b) => (a.month < b.month ? -1 : 1));
-      return {
-        ccy: t.settlementCurrency,
-        platformName: t.platformName,
-        labels: mine.map((r) => r.month.slice(0, 7)),
-        series: [
-          { label: `Neto ${t.settlementCurrency}`, data: mine.map((r) => r.net), color: '#10b981' },
-          { label: `Comisión ${t.settlementCurrency}`, data: mine.map((r) => r.fees), color: '#f43f5e' },
-          // Sólo donde el Proveedor retiene. Apilar un cero plano se leería
-          // como "lo miramos y no hay", que sólo es cierto para Stripe.
-          ...(t.taxes > 0
-            ? [{ label: `Retenciones ${t.settlementCurrency}`, data: mine.map((r) => r.taxes), color: '#f59e0b' }]
-            : []),
-        ],
-      };
-    });
-  }, [data]);
-
-  const usdMonthly = useMemo(() => {
-    if (!data) return { labels: [] as string[], series: [] as { label: string; data: (number | null)[]; color: string }[] };
-    const rows = data.gateway.netUsdByMonth.filter((r) => r.rateSource !== null);
-    const months = Array.from(new Set(rows.map((r) => r.month))).sort();
-    const keys = Array.from(new Set(rows.map((r) => `${r.platform}:${r.settlementCurrency}`)));
-    const idx: Record<string, Record<string, number | null>> = {};
-    for (const r of rows) {
-      idx[`${r.platform}:${r.settlementCurrency}`] ??= {};
-      idx[`${r.platform}:${r.settlementCurrency}`][r.month] = r.netUsd;
-    }
-    return {
-      labels: months.map((m) => m.slice(0, 7)),
-      series: keys.map((k) => {
-        const sample = rows.find((r) => `${r.platform}:${r.settlementCurrency}` === k)!;
-        return {
-          label: `${sample.platformName} · ${sample.settlementCurrency}→USD`,
-          data: months.map((m) => idx[k]?.[m] ?? null),
-          color: CURRENCY_COLORS[sample.settlementCurrency] ?? '#64748b',
-        };
-      }),
-    };
-  }, [data]);
-
-  /** Neto diario por moneda de liquidación: el pulso de las comisiones. */
-  const netDaily = useMemo(() => {
-    if (!data) return { labels: [] as string[], series: [] as { label: string; data: number[]; color: string; fill: boolean }[] };
-    const rows = data.gateway.netByDay;
-    const days = Array.from(new Set(rows.map((r) => r.day))).sort();
-    const ccys = Array.from(new Set(rows.map((r) => r.settlementCurrency)));
-    const idx: Record<string, Record<string, number>> = {};
-    for (const r of rows) {
-      idx[r.day] ??= {};
-      idx[r.day][r.settlementCurrency] = (idx[r.day][r.settlementCurrency] ?? 0) + r.net;
-    }
-    return {
-      labels: days,
-      series: ccys.map((c) => ({
-        label: `${c} neto`,
-        data: days.map((day) => idx[day]?.[c] ?? 0),
-        color: CURRENCY_COLORS[c] ?? '#94a3b8',
-        fill: true,
-      })),
-    };
-  }, [data]);
-
-  /** Comisiones mes a mes por Proveedor·moneda, con su % efectivo sobre el
-   *  bruto liquidado — nunca sobre el bruto de cobro, que está en otra moneda. */
-  const feesCombo = useMemo(() => {
-    if (!data) return { labels: [] as string[], bars: [] as { label: string; data: number[]; color: string }[], lines: [] as { label: string; data: number[]; color: string; dashed?: boolean }[] };
-    const rows = data.gateway.netByMonth;
-    const months = Array.from(new Set(rows.map((r) => r.month.slice(0, 7)))).sort();
-    const keys = Array.from(new Set(rows.map((r) => `${r.platform}:${r.settlementCurrency}`)));
-    const idx: Record<string, Record<string, { fees: number; taxes: number; gross: number }>> = {};
-    for (const r of rows) {
-      const k = `${r.platform}:${r.settlementCurrency}`;
-      idx[k] ??= {};
-      const cell = (idx[k][r.month.slice(0, 7)] ??= { fees: 0, taxes: 0, gross: 0 });
-      cell.fees += r.fees;
-      cell.taxes += r.taxes;
-      cell.gross += r.grossSettlement;
-    }
-    const bars: { label: string; data: number[]; color: string }[] = [];
-    const lines: { label: string; data: number[]; color: string; dashed?: boolean }[] = [];
-    for (const k of keys) {
-      const sample = rows.find((r) => `${r.platform}:${r.settlementCurrency}` === k)!;
-      const name = `${sample.platformName} · ${sample.settlementCurrency}`;
-      bars.push({
-        label: `Comisión ${name}`,
-        data: months.map((m) => idx[k]?.[m]?.fees ?? 0),
-        color: CURRENCY_COLORS[sample.settlementCurrency] ?? '#94a3b8',
-      });
-      lines.push({
-        label: `% efectivo ${name}`,
-        data: months.map((m) => {
-          const c = idx[k]?.[m];
-          return c && c.gross > 0 ? Number(((c.fees / c.gross) * 100).toFixed(2)) : 0;
-        }),
-        color: '#f43f5e',
-        dashed: true,
-      });
-    }
-    return { labels: months, bars, lines };
-  }, [data]);
-
-  const planMix = useMemo(() => {
-    if (!data) return [] as { label: string; txCount: number }[];
-    const idx: Record<string, number> = {};
-    for (const r of data.catalog) {
-      const k = `${r.planFamily} · ${r.planFrequency}`;
-      idx[k] = (idx[k] ?? 0) + r.txCount;
-    }
-    return Object.entries(idx)
-      .map(([label, txCount]) => ({ label, txCount }))
-      .sort((a, b) => b.txCount - a.txCount);
-  }, [data]);
-
-  /** El ciclo de vida del suscriptor, listo para dibujar. Todo sale de
-   *  `data.lifecycle`, anclado en el último día con Pagos (`asOf`): después de
-   *  la última carga no hay altas y sí vencimientos, y dibujar hasta hoy leería
-   *  como un derrumbe que no ocurrió. */
-  const lifecycle = useMemo(() => {
+  /** Todo lo mensual, indexado por 'YYYY-MM': la lista de meses del rango y
+   *  los mapas que cada gráfico y cada tabla leen. */
+  const m = useMemo(() => {
     const empty = {
-      asOf: '',
-      dayLabels: [] as string[],
-      dayTitles: [] as string[],
-      daily: [] as EconomiaDTO['lifecycle']['daily'],
-      activeMin: 0,
-      activeMax: 0,
-      monthLabels: [] as string[],
-      monthTitles: [] as string[],
-      monthly: [] as EconomiaDTO['lifecycle']['monthly'],
-      activeLabels: [] as string[],
-      activeTitles: [] as string[],
-      activeByMonth: [] as EconomiaDTO['lifecycle']['activeByMonth'],
-      activeTotalByMonth: {} as Record<string, number>,
-      lastCharge: { labels: [] as string[], series: [] as { label: string; data: number[]; color: string }[], unknown: 0, live: 0 },
-      lifetime: null as EconomiaDTO['lifecycle']['lifetime'] | null,
+      list: [] as string[],
+      buckets: new Map<string, MonthlyLifecyclePoint>(),
+      active: new Map<string, ActiveByMonthPoint>(),
+      netUsd: new Map<string, number>(),
+      grossUsd: new Map<string, number>(),
+      feesUsdByGw: new Map<string, Map<string, number>>(),
+      netLocal: new Map<string, Map<string, number>>(),
+      grossLocal: new Map<string, Map<string, number>>(),
+      netLocalPlatforms: new Map<string, Set<string>>(),
     };
     if (!data) return empty;
     const lc = data.lifecycle;
-    const actives = lc.daily.map((r) => r.active);
-    const lo = actives.length ? Math.min(...actives) : 0;
-    const hi = actives.length ? Math.max(...actives) : 0;
-    // El eje se ancla cerca del mínimo para que se vea el movimiento diario:
-    // un pool de 24.000 que se mueve de a 60 es una línea plana desde cero.
-    const pad = Math.max(50, Math.round((hi - lo) * 0.25));
-    const activeTotalByMonth: Record<string, number> = {};
-    for (const r of lc.activeByMonth) activeTotalByMonth[r.month.slice(0, 7)] = r.total;
-    const BUCKETS: { key: EconomiaDTO['lifecycle']['lastCharge'][number]['bucket']; label: string }[] = [
-      { key: '0-30', label: '0–30 días' },
-      { key: '31-60', label: '31–60 días' },
-      { key: '61-90', label: '61–90 días' },
-      { key: '91-180', label: '91–180 días' },
-      { key: '180+', label: '180+ días' },
-      { key: 'unknown', label: 'sin Pago vinculado' },
-    ];
-    const platforms = Array.from(new Set(lc.lastCharge.map((r) => r.platformName))).sort();
-    return {
-      asOf: lc.asOf,
-      dayLabels: lc.daily.map((r) => `${r.day.slice(8, 10)}/${r.day.slice(5, 7)}`),
-      dayTitles: bucketTitles(lc.daily.map((r) => r.day), 'day'),
-      daily: lc.daily,
-      activeMin: Math.max(0, lo - pad),
-      activeMax: hi + pad,
-      monthLabels: lc.monthly.map((r) => monthLabel(r.month)),
-      monthTitles: bucketTitles(lc.monthly.map((r) => r.month), 'month'),
-      monthly: lc.monthly,
-      activeLabels: lc.activeByMonth.map((r) => (r.partial ? `${monthLabel(r.month)} ⏳` : monthLabel(r.month))),
-      activeTitles: lc.activeByMonth.map((r) =>
-        r.partial ? `Mes en curso · al ${lc.asOf.slice(8, 10)}/${lc.asOf.slice(5, 7)}/${lc.asOf.slice(0, 4)}` : bucketTitle(r.month, 'month'),
-      ),
-      activeByMonth: lc.activeByMonth,
-      activeTotalByMonth,
-      lastCharge: {
-        labels: BUCKETS.map((b) => b.label),
-        series: platforms.map((pf) => ({
-          label: pf,
-          data: BUCKETS.map((b) => lc.lastCharge.find((r) => r.platformName === pf && r.bucket === b.key)?.count ?? 0),
-          color: PLATFORM_COLORS[pf] ?? '#64748b',
-        })),
-        unknown: lc.lastCharge.filter((r) => r.bucket === 'unknown').reduce((a, r) => a + r.count, 0),
-        live: lc.lastCharge.reduce((a, r) => a + r.count, 0),
-      },
-      lifetime: lc.lifetime,
-    };
-  }, [data]);
-
-  /** Suscripciones creadas y canceladas por mes, una serie por Proveedor. Las
-   *  cancelaciones sólo tienen fecha en Stripe: MercadoPago no registra cuándo
-   *  se canceló una preaprobación, así que su serie de bajas no existe y el
-   *  churn de MercadoPago se lee del conteo por estado. */
-  const subsMonthly = useMemo(() => {
-    const empty = { labels: [] as string[], series: [] as { label: string; data: number[]; color: string }[] };
-    if (!data) return empty;
-    const rows = data.gateway.subscriptionsByMonth;
-    const labels = Array.from(new Set(rows.map((r) => r.month.slice(0, 7)))).sort();
-    const platforms = Array.from(new Set(rows.map((r) => r.platformName))).sort();
-    const at = (platform: string, key: 'created' | 'canceled') =>
-      labels.map((m) => rows.find((r) => r.platformName === platform && r.month.slice(0, 7) === m)?.[key] ?? 0);
-    const CREATED_COLOR: Record<string, string> = { Stripe: '#10b981', MercadoPago: '#34d399' };
-    const series: { label: string; data: number[]; color: string }[] = [];
-    for (const pf of platforms) {
-      series.push({ label: `Altas · ${pf}`, data: at(pf, 'created'), color: CREATED_COLOR[pf] ?? '#4f8ef7' });
-      const canceled = at(pf, 'canceled');
-      if (canceled.some((v) => v > 0)) series.push({ label: `Cancelaciones · ${pf}`, data: canceled, color: '#f43f5e' });
-    }
-    return { labels, series };
-  }, [data]);
-
-  /** Temporadas deportivas (sep→ago): transacciones y neto USD por temporada. */
-  const seasons = useMemo(() => {
-    const idx: Record<number, { tx: number; netUsd: number }> = {};
-    for (const r of txByMonth) {
-      const s = seasonOf(r.month);
-      (idx[s] ??= { tx: 0, netUsd: 0 }).tx += r.tx;
-    }
-    for (const r of netUsdByMonth) {
-      const s = seasonOf(r.month);
-      (idx[s] ??= { tx: 0, netUsd: 0 }).netUsd += r.netUsd;
-    }
-    return Object.entries(idx)
-      .map(([start, v]) => ({ start: Number(start), label: seasonLabel(Number(start)), ...v }))
-      .sort((a, b) => a.start - b.start);
-  }, [txByMonth, netUsdByMonth]);
-
-  /** Transacciones por frecuencia de plan y temporada. El catálogo tiene grano
-   *  de temporada, no de mes: por eso el eje son temporadas y no meses como en
-   *  el prototipo, que leía un CSV mensualizado que esta base no tiene. */
-  const planFreqBySeason = useMemo(() => {
-    if (!data) return { labels: [] as string[], series: [] as { label: string; data: number[]; color: string }[] };
-    const rows = data.catalog.filter((r) => r.planFrequency);
-    const seasonKeys = Array.from(new Set(rows.map((r) => r.season))).sort();
-    const freqs = Array.from(new Set(rows.map((r) => r.planFrequency)));
-    const idx: Record<string, Record<string, number>> = {};
-    for (const r of rows) {
-      idx[r.season] ??= {};
-      idx[r.season][r.planFrequency] = (idx[r.season][r.planFrequency] ?? 0) + r.txCount;
-    }
-    const COLORS: Record<string, string> = { Mensual: '#4f8ef7', Anual: '#a78bfa', Único: '#94a3b8' };
-    return {
-      labels: seasonKeys,
-      series: freqs.map((f) => ({
-        label: f,
-        data: seasonKeys.map((s) => idx[s]?.[f] ?? 0),
-        color: COLORS[f] ?? '#64748b',
-      })),
-    };
-  }, [data]);
-
-  /** La tabla mes × temporada del prototipo: filas sep→ago, columnas temporada. */
-  const seasonTable = useMemo(() => {
-    const value: Record<string, number> = {};
-    if (seasonMetric === 'tx') for (const r of txByMonth) value[r.month] = r.tx;
-    if (seasonMetric === 'neto_usd') for (const r of netUsdByMonth) value[r.month] = r.netUsd;
-    if (seasonMetric === 'bruto_local' && data && activeCcy) {
-      for (const r of data.monthlyDetail.filter((x) => x.currency === activeCcy)) {
-        value[r.month.slice(0, 7)] = (value[r.month.slice(0, 7)] ?? 0) + r.gross;
+    const g = data.gateway;
+    for (const r of lc.monthly) empty.buckets.set(ym(r.month), r);
+    for (const r of lc.activeByMonth) empty.active.set(ym(r.month), r);
+    for (const r of g.netUsdByMonth) {
+      const k = ym(r.month);
+      if (r.netUsd !== null) empty.netUsd.set(k, (empty.netUsd.get(k) ?? 0) + r.netUsd);
+      if (r.grossUsd !== null) empty.grossUsd.set(k, (empty.grossUsd.get(k) ?? 0) + r.grossUsd);
+      if (r.feesUsd !== null) {
+        const byGw = empty.feesUsdByGw.get(k) ?? new Map<string, number>();
+        byGw.set(r.platformName, (byGw.get(r.platformName) ?? 0) + r.feesUsd);
+        empty.feesUsdByGw.set(k, byGw);
       }
     }
-    const seasonKeys = Array.from(new Set(Object.keys(value).map(seasonOf))).sort((a, b) => a - b);
-    return {
-      seasons: seasonKeys,
-      rows: SEASON_MONTH_ORDER.map((m) => ({
-        month: m,
-        cells: seasonKeys.map((s) => {
-          const year = m >= 9 ? s : s + 1;
-          return value[`${year}-${String(m).padStart(2, '0')}`] ?? null;
-        }),
-      })),
-      totals: seasonKeys.map((s) =>
-        SEASON_MONTH_ORDER.reduce((acc, m) => {
-          const year = m >= 9 ? s : s + 1;
-          return acc + (value[`${year}-${String(m).padStart(2, '0')}`] ?? 0);
-        }, 0),
-      ),
-    };
-  }, [seasonMetric, txByMonth, netUsdByMonth, data, activeCcy]);
-
-  /** Bruto y neto por mes y moneda de liquidación: la tabla "Ingresos mes a mes". */
-  const revenueTable = useMemo(() => {
-    if (!data) return { ccys: [] as string[], rows: [] as { month: string; byCcy: Record<string, { gross: number; net: number }>; netUsd: number | null }[] };
-    const ccys = Array.from(new Set(data.gateway.netByMonth.map((r) => r.settlementCurrency))).sort();
-    const idx: Record<string, Record<string, { gross: number; net: number }>> = {};
-    for (const r of data.gateway.netByMonth) {
-      const m = r.month.slice(0, 7);
-      idx[m] ??= {};
-      const cell = (idx[m][r.settlementCurrency] ??= { gross: 0, net: 0 });
-      cell.gross += r.grossSettlement;
-      cell.net += r.net;
+    for (const r of g.netByMonth) {
+      const k = ym(r.month);
+      const nl = empty.netLocal.get(r.settlementCurrency) ?? new Map<string, number>();
+      nl.set(k, (nl.get(k) ?? 0) + r.net);
+      empty.netLocal.set(r.settlementCurrency, nl);
+      const gl = empty.grossLocal.get(r.settlementCurrency) ?? new Map<string, number>();
+      gl.set(k, (gl.get(k) ?? 0) + r.grossSettlement);
+      empty.grossLocal.set(r.settlementCurrency, gl);
+      const ps = empty.netLocalPlatforms.get(r.settlementCurrency) ?? new Set<string>();
+      ps.add(r.platformName);
+      empty.netLocalPlatforms.set(r.settlementCurrency, ps);
     }
-    const usd: Record<string, number> = {};
-    for (const r of netUsdByMonth) usd[r.month] = r.netUsd;
-    const months = Array.from(new Set([...Object.keys(idx), ...Object.keys(usd)])).sort().reverse();
-    return {
-      ccys,
-      rows: months.map((month) => ({ month, byCcy: idx[month] ?? {}, netUsd: usd[month] ?? null })),
-    };
-  }, [data, netUsdByMonth]);
+    empty.list = Array.from(new Set([...empty.buckets.keys(), ...empty.active.keys(), ...empty.netUsd.keys()])).sort();
+    return empty;
+  }, [data]);
 
-  /** El catálogo con los cinco selectores del prototipo. */
-  const catalogView = useMemo(() => {
-    if (!data) return { rows: [], markets: [], seasons: [], plans: [], ccys: [] } as {
-      rows: EconomiaDTO['catalog'];
-      markets: string[];
-      seasons: string[];
-      plans: string[];
-      ccys: string[];
-    };
+  /** Temporadas deportivas del rango, agregadas como el prototipo. */
+  const seasons = useMemo(() => {
+    const agg = new Map<number, { months: string[]; tx: number; bajas: number; netUsd: number; activePeak: number; activePeakMonth: string | null }>();
+    for (const month of m.list) {
+      const s = monthToSeason(month);
+      const a = agg.get(s) ?? { months: [], tx: 0, bajas: 0, netUsd: 0, activePeak: 0, activePeakMonth: null };
+      a.months.push(month);
+      const b = m.buckets.get(month);
+      if (b) {
+        a.tx += b.newSubscribers + b.recurring + b.reactivated + b.oneOff;
+        a.bajas += b.churned;
+      }
+      a.netUsd += m.netUsd.get(month) ?? 0;
+      const act = m.active.get(month)?.total ?? 0;
+      if (act > a.activePeak) { a.activePeak = act; a.activePeakMonth = month; }
+      agg.set(s, a);
+    }
+    const lastTxMonth = m.list.length ? m.list[m.list.length - 1] : null;
+    return Array.from(agg.entries())
+      .sort(([x], [y]) => x - y)
+      .map(([s, a]) => {
+        const fr = seasonFullRange(s);
+        const isPartial = a.months.length < 12;
+        const inProgress = lastTxMonth !== null && lastTxMonth < fr.last;
+        const label = inProgress ? `${seasonLabel(s)} ⏳` : isPartial ? `${seasonLabel(s)} *` : seasonLabel(s);
+        const notes: string[] = [];
+        if (isPartial) notes.push(`${a.months.length}/12 meses en rango`);
+        if (a.activePeakMonth) notes.push(`pico de activos: ${a.activePeakMonth}`);
+        return { start: s, label, footer: notes.join(' · '), ...a };
+      });
+  }, [m]);
+
+  /** La tabla mes × temporada para la métrica elegida. */
+  const seasonTable = useMemo(() => {
+    const byMonth = new Map<string, number>();
+    let localCurrency = '';
+    if (seasonMetric === 'activos') {
+      for (const [k, v] of m.active) byMonth.set(k, v.total);
+    } else if (seasonMetric === 'ingresos_netos_usd') {
+      for (const [k, v] of m.netUsd) byMonth.set(k, v);
+    } else if (seasonMetric === 'ingresos_netos_local') {
+      // La moneda dominante del rango, como el prototipo: la de mayor neto.
+      let best = -1;
+      for (const [ccy, months] of m.netLocal) {
+        const tot = Array.from(months.values()).reduce((a, b) => a + b, 0);
+        if (tot > best) { best = tot; localCurrency = ccy; }
+      }
+      for (const [k, v] of m.netLocal.get(localCurrency) ?? []) byMonth.set(k, v);
+    } else {
+      const pick: Record<Exclude<SeasonMetric, 'activos' | 'ingresos_netos_usd' | 'ingresos_netos_local'>, (b: MonthlyLifecyclePoint) => number> = {
+        tx_mensual: (b) => b.mensual,
+        tx_anual: (b) => b.anual,
+        tx_nuevas: (b) => b.newSubscribers,
+        tx_reactivadas: (b) => b.reactivated,
+        tx_recurrentes: (b) => b.recurring,
+        bajas: (b) => b.churned,
+      };
+      for (const [k, b] of m.buckets) byMonth.set(k, pick[seasonMetric](b));
+    }
+    const months = Array.from(byMonth.keys()).sort();
+    if (months.length === 0) return null;
+    const firstM = months[0];
+    const lastM = months[months.length - 1];
+    const seasonKeys: number[] = [];
+    for (let s = monthToSeason(firstM); s <= monthToSeason(lastM); s += 1) seasonKeys.push(s);
+    const values = new Map<number, Map<number, number | null>>();
+    const totals = new Map<number, number>();
+    const counts = new Map<number, number>();
+    for (const s of seasonKeys) {
+      const row = new Map<number, number | null>();
+      let tot = 0;
+      let n = 0;
+      for (const mo of SEASON_MONTH_ORDER) {
+        const yr = mo >= 9 ? s : s + 1;
+        const key = `${yr}-${String(mo).padStart(2, '0')}`;
+        if (key < firstM || key > lastM) { row.set(mo, null); continue; }
+        const v = byMonth.get(key) ?? 0;
+        row.set(mo, v);
+        tot += v;
+        n += 1;
+      }
+      values.set(s, row);
+      totals.set(s, tot);
+      counts.set(s, n);
+    }
+    const isMoneyUsd = seasonMetric === 'ingresos_netos_usd';
+    const isMoneyLocal = seasonMetric === 'ingresos_netos_local';
+    const fmtVal = (v: number): string =>
+      isMoneyUsd
+        ? fmtUsd(v)
+        : isMoneyLocal
+          ? `${v < 0 ? '-' : ''}${Math.abs(v).toLocaleString('es-AR', { maximumFractionDigits: 2 })}${localCurrency ? ` ${localCurrency}` : ''}`
+          : fmt(v);
+    const title = isMoneyLocal && localCurrency ? `INGRESOS NETOS (${localCurrency})` : SEASON_METRICS.find((x) => x.key === seasonMetric)!.title;
+    return { seasonKeys, values, totals, counts, fmtVal, title, invert: seasonMetric === 'bajas' };
+  }, [m, seasonMetric]);
+
+  /** El catálogo con los cinco selectores del prototipo, precio incluido. */
+  const catalog = useMemo(() => {
+    if (!data) return null;
     const all = data.catalog;
-    const rows = all.filter(
-      (r) =>
-        (catFilters.market === 'ALL' || r.market === catFilters.market) &&
-        (catFilters.season === 'ALL' || r.season === catFilters.season) &&
-        (catFilters.plan === 'ALL' || `${r.planFamily} · ${r.planFrequency}` === catFilters.plan) &&
-        (catFilters.currency === 'ALL' || r.currency === catFilters.currency),
+    const planKey = (r: EconomiaDTO['catalog'][number]) => `${r.planFamily}|${r.planFrequency}`;
+    let base = all;
+    if (cat.market !== 'ALL') base = base.filter((r) => r.market === cat.market);
+    if (cat.season !== 'ALL') base = base.filter((r) => r.season === cat.season);
+    if (cat.plan !== 'ALL') base = base.filter((r) => planKey(r) === cat.plan);
+    if (cat.currency !== 'ALL') base = base.filter((r) => r.currency === cat.currency);
+    // Los precios que quedan tras los otros cuatro filtros, agrupados por moneda
+    // y precio redondeado, con su cantidad de Pagos para poder ordenar.
+    const priceBucket = new Map<string, { currency: string; price: number; count: number }>();
+    for (const r of base) {
+      const pR = Math.round(r.price);
+      const k = `${r.currency}|${pR}`;
+      const prev = priceBucket.get(k) ?? { currency: r.currency, price: pR, count: 0 };
+      prev.count += r.txCount;
+      priceBucket.set(k, prev);
+    }
+    const prices = Array.from(priceBucket.values()).sort((a, b) =>
+      a.currency !== b.currency ? a.currency.localeCompare(b.currency) : a.price - b.price,
     );
+    const priceStillThere = cat.price === 'ALL' || prices.some((p) => `${p.currency}|${p.price}` === cat.price);
+    let rows = base;
+    if (cat.price !== 'ALL' && priceStillThere) {
+      const [c, p] = cat.price.split('|');
+      rows = rows.filter((r) => r.currency === c && Math.round(r.price) === Number(p));
+    }
+    rows = [...rows].sort((a, b) =>
+      a.market !== b.market ? a.market.localeCompare(b.market)
+        : a.planFamily !== b.planFamily ? a.planFamily.localeCompare(b.planFamily)
+          : a.planFrequency !== b.planFrequency ? a.planFrequency.localeCompare(b.planFrequency)
+            : a.season !== b.season ? a.season.localeCompare(b.season)
+              : b.txCount - a.txCount,
+    );
+    let lastKey = '';
+    let rank = 0;
+    const ranked = rows.map((r) => {
+      const k = `${r.market}|${r.planFamily}|${r.planFrequency}|${r.season}`;
+      rank = k === lastKey ? rank + 1 : 1;
+      lastKey = k;
+      return { ...r, rank };
+    });
     return {
-      rows,
+      rows: ranked,
       markets: Array.from(new Set(all.map((r) => r.market))).sort(),
       seasons: Array.from(new Set(all.map((r) => r.season))).sort(),
-      plans: Array.from(new Set(all.map((r) => `${r.planFamily} · ${r.planFrequency}`))).sort(),
-      ccys: Array.from(new Set(all.map((r) => r.currency))).sort(),
+      plans: Array.from(new Map(all.map((r) => [planKey(r), `${r.planFamily} · ${r.planFrequency}`])).entries()).sort((a, b) => a[1].localeCompare(b[1])),
+      currencies: Array.from(new Set(all.map((r) => r.currency))).sort(),
+      prices,
     };
-  }, [data, catFilters]);
+  }, [data, cat]);
 
   if (isLoading) {
     return (
@@ -551,218 +298,301 @@ export function FinancieroView() {
   if (error) return <ErrorBox message={error.message} />;
   if (!data) return null;
 
+  const lc = data.lifecycle;
   const g = data.gateway;
-  const usd = g.settlementTotals.find((t) => t.settlementCurrency === 'USD');
-  const topCcy = currencies[0];
-  const totalTx = data.monthlyDetail.reduce((s, r) => s + r.txCount, 0);
-  // Ciclo de vida, no estado crudo: Stripe dice «active» y MercadoPago
-  // «authorized», y un solo número de vivas necesita las dos palabras juntas.
-  // Las que nunca facturaron (MercadoPago «pending»: un checkout abierto) no
-  // son suscriptoras ni churn, y quedan fuera de todo total salvo su propia nota.
-  const subsOf = (lifecycle: string) => g.subscriptionsByStatus.filter((r) => r.lifecycle === lifecycle);
-  const sumSubs = (rows: typeof g.subscriptionsByStatus) => rows.reduce((s, r) => s + r.count, 0);
-  const activeSubs = sumSubs(subsOf('live'));
-  const activeByPlatform = Array.from(new Set(subsOf('live').map((r) => r.platformName)))
-    .sort()
-    .map((pf) => `${pf} ${sumSubs(subsOf('live').filter((r) => r.platformName === pf)).toLocaleString()}`);
-  const pausedSubs = sumSubs(subsOf('paused'));
-  const neverStarted = sumSubs(subsOf('never_started'));
-  const totalSubs = sumSubs(g.subscriptionsByStatus.filter((r) => r.lifecycle !== 'never_started'));
-  const canceledSubs = sumSubs(subsOf('churned'));
-  const undatedCancels = canceledSubs - subsOf('churned').reduce((s, r) => s + r.withCanceledAt, 0);
-  const statusDonut = g.subscriptionsByStatus.filter((r) => r.lifecycle !== 'never_started');
-  const detailByCcy = activeCcy ? data.monthlyDetail.filter((r) => r.currency === activeCcy) : [];
-  const totalTaxes = g.settlementTotals.reduce((s, t) => s + t.taxes, 0);
-  const taxCcy = g.settlementTotals.find((t) => t.taxes > 0);
-  // Cobertura sólo sobre Pagos que *podían* traer comisión. Las preaprobaciones
-  // de MercadoPago son objetos de suscripción que nunca tuvieron comisión, y
-  // promediarlas dejaría la cifra clavada cerca del 73% como si fuera una
-  // pérdida permanente.
-  const payCoverage = g.coverage.reduce(
-    (acc, r) => (r.idShape === 'preapproval'
-      ? { ...acc, preapprovals: acc.preapprovals + r.successful }
-      : { ...acc, withFee: acc.withFee + r.withFee, successful: acc.successful + r.successful }),
-    { withFee: 0, successful: 0, preapprovals: 0 },
-  );
+  const pc = lc.periodComparison;
+  const A = pc.current;
+  const B = pc.previous;
+  const asOfShort = `${lc.asOf.slice(8, 10)}/${lc.asOf.slice(5, 7)}`;
+  const countryLabel = countries.length === 0 ? 'Todos los países' : countries.join(', ');
+  const countryNote = countries.length === 0 ? '· todos los países' : `· ${countries.join(', ')}`;
 
-  const curMonth = txByMonth.at(-1) ?? null;
-  const prevMonth = txByMonth.at(-2) ?? null;
-  const curUsd = netUsdByMonth.at(-1) ?? null;
-  const prevUsd = netUsdByMonth.at(-2) ?? null;
-  const txDelta = pct(curMonth?.tx ?? 0, prevMonth?.tx ?? 0);
-  const usdDelta = pct(curUsd?.netUsd ?? 0, prevUsd?.netUsd ?? 0);
-
-  const seasonFmt = (v: number | null): string => {
-    if (v === null) return '—';
-    if (seasonMetric === 'tx') return fmtNum(v);
-    if (seasonMetric === 'neto_usd') return fmtRound(v, 'USD');
-    return fmtRound(v, activeCcy ?? 'NONE');
+  // ── Totales del rango, sobre los meses que toca ──
+  const bucketsInRange = Array.from(m.buckets.values());
+  const totals = {
+    nuevos: sumBy(bucketsInRange, (b) => b.newSubscribers),
+    recurrentes: sumBy(bucketsInRange, (b) => b.recurring),
+    reactivados: sumBy(bucketsInRange, (b) => b.reactivated),
+    oneOff: sumBy(bucketsInRange, (b) => b.oneOff),
+    bajas: sumBy(bucketsInRange, (b) => b.churned),
+    mensual: sumBy(bucketsInRange, (b) => b.mensual),
+    anual: sumBy(bucketsInRange, (b) => b.anual),
   };
+  const txTotal = totals.nuevos + totals.recurrentes + totals.reactivados + totals.oneOff;
+  const monthsWithTx = bucketsInRange.filter((b) => b.newSubscribers + b.recurring + b.reactivated + b.oneOff > 0).length;
+  const freqTot = totals.mensual + totals.anual;
+  const freqOtro = Math.max(0, totals.nuevos + totals.recurrentes + totals.reactivados - freqTot);
+  const freqLead = freqTot > 0 ? (totals.mensual >= totals.anual ? 'Mensual' : 'Anual') : '—';
+  const freqLeadPct = freqTot > 0 ? pctOf(freqLead === 'Mensual' ? totals.mensual : totals.anual, freqTot) : '—';
+
+  const planFam = new Map<string, number>();
+  for (const r of data.catalog) planFam.set(r.planFamily || 'Sin clasificar', (planFam.get(r.planFamily || 'Sin clasificar') ?? 0) + r.txCount);
+  const planSorted = Array.from(planFam.entries()).sort((a, b) => b[1] - a[1]);
+  const planTot = sumBy(planSorted, ([, v]) => v);
+
+  // ── Económicos, en USD y por Proveedor ──
+  const usd = g.usdTotals;
+  const sumUsd = (f: (t: (typeof usd)[number]) => number | null): number => sumBy(usd, (t) => f(t) ?? 0);
+  const totalUsdNet = sumUsd((t) => t.netUsd);
+  const totalUsdGross = sumUsd((t) => t.grossUsd);
+  const totalFeeUsd = sumUsd((t) => t.feesUsd);
+  const byGw = (f: (t: (typeof usd)[number]) => number | null): { name: string; v: number }[] => {
+    const idx = new Map<string, number>();
+    for (const t of usd) idx.set(t.platformName, (idx.get(t.platformName) ?? 0) + (f(t) ?? 0));
+    return Array.from(idx.entries()).map(([name, v]) => ({ name, v })).sort((a, b) => b.v - a.v);
+  };
+  const netByGw = byGw((t) => t.netUsd);
+  const grossByGw = byGw((t) => t.grossUsd);
+  const feeByGw = byGw((t) => t.feesUsd);
+  const netByCur = g.settlementTotals
+    .reduce((idx, t) => idx.set(t.settlementCurrency, (idx.get(t.settlementCurrency) ?? 0) + t.net), new Map<string, number>());
+  const netByCurSorted = Array.from(netByCur.entries()).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 4);
+  const feePct = totalUsdGross > 0 ? `${((totalFeeUsd / totalUsdGross) * 100).toFixed(1)}%` : '—';
+  const usdMissing = usd.filter((t) => t.netUsd === null);
+
+  // ── Snapshot: rolling 30 días ──
+  const gwWindow = (side: typeof A, name: string): number =>
+    Math.round(side.netUsdByPlatform.find((p) => p.platformName === name)?.netUsd ?? 0);
+  const netA = sumBy(A.netUsdByPlatform, (p) => p.netUsd ?? 0);
+  const netB = sumBy(B.netUsdByPlatform, (p) => p.netUsd ?? 0);
+  const gwNames = Array.from(new Set([...A.netUsdByPlatform, ...B.netUsdByPlatform].map((p) => p.platformName))).sort();
+
+  // ── Series mensuales ──
+  const mList = m.list;
+  const bk = (month: string) => m.buckets.get(month);
+  const combTx = mList.map((x) => { const b = bk(x); return b ? b.newSubscribers + b.recurring + b.reactivated + b.oneOff : 0; });
+
+  // ── Últimos 15 días ──
+  const dLabels = lc.daily.map((r) => r.day.slice(5).replace('-', '/'));
+  const dTitles = lc.daily.map((r) => r.day);
+
+  // ── Antigüedad del último cargo ──
+  const lcRows = lc.lastCharge.filter((r) => lcPlatform === 'all' || r.platformName === lcPlatform);
+  const lcVals = LC_BUCKETS.map((b) => sumBy(lcRows.filter((r) => r.bucket === b), (r) => r.count));
+  const lcUnknown = sumBy(lcRows.filter((r) => r.bucket === 'unknown'), (r) => r.count);
+
+  // ── Ingresos netos por mes, una línea por moneda de liquidación ──
+  const revCurrencies = Array.from(m.netLocal.keys()).sort();
+
+  // ── Cancelaciones oficiales ──
+  const cancelPlatforms = Array.from(new Set(g.subscriptionsByMonth.map((r) => r.platformName))).sort();
+  const cancelByGw = cancelPlatforms.map((p) => ({
+    platformName: p,
+    data: mList.map((x) => sumBy(g.subscriptionsByMonth.filter((r) => r.platformName === p && ym(r.month) === x), (r) => r.canceled)),
+  }));
+  const churned = g.subscriptionsByStatus.filter((r) => r.lifecycle === 'churned');
+  const canceledTotal = sumBy(churned, (r) => r.count);
+  const undated = canceledTotal - sumBy(churned, (r) => r.withCanceledAt);
+
+  // ── Comisiones por Proveedor en USD ──
+  const feePlatforms = Array.from(new Set(g.netUsdByMonth.map((r) => r.platformName))).sort();
+  const feesByGw = feePlatforms.map((p) => ({ platformName: p, data: mList.map((x) => m.feesUsdByGw.get(x)?.get(p) ?? 0) }));
+
+  // ── Tabla ingresos mes a mes: las dos monedas grandes con columna propia ──
+  const mainCcys = ['ARS', 'USD'].filter((c) => m.netLocal.has(c));
+  const otherCcys = revCurrencies.filter((c) => !mainCcys.includes(c));
+  const ccyPlatforms = (c: string) => Array.from(m.netLocalPlatforms.get(c) ?? []).map((p) => (p === 'MercadoPago' ? 'MP' : p)).join('+');
+
+  const lifetime = lc.lifetime;
+  const fmtMonths = (v: number | null): string => (v === null ? '—' : `${v.toLocaleString('es-AR', { maximumFractionDigits: 1 })} meses`);
 
   return (
     <div>
-      {/* ── Mes en curso vs mes anterior ── */}
-      <SectionLabel>📅 Mes en curso vs mes anterior</SectionLabel>
-      <div className="proto-ms-grid" style={{ marginBottom: 8 }}>
-        <div className="proto-ms-col tx">
-          <h4>
-            Transacciones · {curMonth ? monthLabel(curMonth.month) : '—'}
-            <InfoHint text="Cantidad de Pagos exitosos del último mes del rango, todos los Proveedores y monedas juntos: un conteo sí se puede sumar entre monedas. La variación compara contra el mes anterior." />
-          </h4>
-          <div className="proto-ms-big">{curMonth ? fmtNum(curMonth.tx) : '—'}</div>
-          <div className={`proto-ms-delta ${txDelta.dir}`}>
-            {txDelta.dir === 'up' ? '▲' : txDelta.dir === 'down' ? '▼' : '='} {txDelta.text}
-            {prevMonth && <span style={{ color: 'var(--text3)', fontWeight: 500 }}>vs {fmtNum(prevMonth.tx)}</span>}
-          </div>
-          <div className="proto-ms-items">
-            <div className="row">
-              <span>Pagadores únicos</span>
-              <span className="num">{curMonth ? fmtNum(curMonth.payers) : '—'}</span>
-            </div>
-            <div className="row">
-              <span>Mes anterior</span>
-              <span className="num">{prevMonth ? fmtNum(prevMonth.tx) : '—'}</span>
-            </div>
-          </div>
-        </div>
-        <div className="proto-ms-col active">
-          <h4>
-            Suscripciones activas hoy
-            <InfoHint text="Suscripciones vivas según el espejo de cada Proveedor: «active», «en prueba» y «atrasada» en Stripe, «authorized» en MercadoPago. Es una foto de hoy, no del mes, y cuenta suscripciones, no personas." />
-          </h4>
-          <div className="proto-ms-big">{fmtNum(activeSubs)}</div>
-          <div className="proto-ms-items">
-            {activeByPlatform.map((line) => (
-              <div className="row" key={line}>
-                <span>{line.split(' ')[0]}</span>
-                <span className="num">{line.split(' ').slice(1).join(' ')}</span>
-              </div>
-            ))}
-            <div className="row">
-              <span>Pausadas</span>
-              <span className="num">{fmtNum(pausedSubs)}</span>
-            </div>
-          </div>
-        </div>
-        <div className="proto-ms-col revenue">
-          <h4>
-            Ingresos netos USD · {curUsd ? monthLabel(curUsd.month) : '—'}
-            <InfoHint text="Neto del último mes en el plano de liquidación: bruto liquidado menos comisión y retención, convertido a USD con la cotización de cada día (ARS al blue venta). Sin PayPal, que no tiene feed de comisiones." />
-          </h4>
-          <div className="proto-ms-big">{curUsd ? fmtRound(curUsd.netUsd, 'USD') : '—'}</div>
-          <div className={`proto-ms-delta ${usdDelta.dir}`}>
-            {usdDelta.dir === 'up' ? '▲' : usdDelta.dir === 'down' ? '▼' : '='} {usdDelta.text}
-            {prevUsd && (
-              <span style={{ color: 'var(--text3)', fontWeight: 500 }}>vs {fmtRound(prevUsd.netUsd, 'USD')}</span>
-            )}
-          </div>
-          <div className="proto-ms-items">
-            <div className="row">
-              <span>Plano de liquidación, convertido día por día</span>
-            </div>
-          </div>
-        </div>
+      {/* ── Snapshot rolling ── */}
+      <SectionLabel first>
+        📅 Últimos {pc.windowDays} días ({fmtDayShort(A.start)} → {fmtDayShort(A.end)}) vs {pc.windowDays} días anteriores ({fmtDayShort(B.start)} → {fmtDayShort(B.end)})
+      </SectionLabel>
+      <div className="proto-ms-grid">
+        <MsCol
+          tone="tx"
+          title="Transacciones"
+          hint="Pagos exitosos de los últimos 30 días hasta el último día con Pagos, contra los 30 anteriores. Cada Pago se clasifica por lo que significó para su Subscriber: alta si es el primero de su vida, recurrente si llega antes de 37 días tras el vencimiento anterior, reactivado si llega después. Bajas: Subscribers que salieron del pool en la ventana. Responde a los filtros."
+          big={fmt(A.tx.total)}
+          bigDelta={{ d: delta(A.tx.total, B.tx.total), prev: fmt(B.tx.total) }}
+          rows={[
+            { swatch: '#10b981', label: 'Altas', value: fmt(A.tx.newSubscribers), d: delta(A.tx.newSubscribers, B.tx.newSubscribers) },
+            { swatch: '#3b82f6', label: 'Recurrentes', value: fmt(A.tx.recurring), d: delta(A.tx.recurring, B.tx.recurring) },
+            { swatch: '#f59e0b', label: 'Reactivados', value: fmt(A.tx.reactivated), d: delta(A.tx.reactivated, B.tx.reactivated) },
+            { swatch: '#ef4444', label: 'Bajas', value: fmt(A.tx.churned), d: delta(A.tx.churned, B.tx.churned, true) },
+            { swatch: '#94a3b8', label: 'Partido único', value: fmt(A.tx.oneOff), d: delta(A.tx.oneOff, B.tx.oneOff) },
+            { swatch: '#1d4ed8', label: 'Mensuales', value: fmt(A.tx.mensual), d: delta(A.tx.mensual, B.tx.mensual) },
+            { swatch: '#d97706', label: 'Anuales', value: fmt(A.tx.anual), d: delta(A.tx.anual, B.tx.anual) },
+          ]}
+        />
+        <MsCol
+          tone="active"
+          title="Suscriptores activos"
+          hint="Subscribers con un Pago exitoso que cubre el último día de cada ventana (vencimiento más 7 días de gracia). Mensuales y Anuales cuentan por Período del Pago; Total y Básico por familia del plan. Una persona con dos derechos cuenta en dos filas y una vez en el total."
+          big={fmt(A.active.total)}
+          bigDelta={{ d: delta(A.active.total, B.active.total), prev: fmt(B.active.total) }}
+          rows={[
+            { swatch: '#3b82f6', label: 'Mensuales', value: fmt(A.active.mensual), d: delta(A.active.mensual, B.active.mensual) },
+            { swatch: '#f59e0b', label: 'Anuales', value: fmt(A.active.anual), d: delta(A.active.anual, B.active.anual) },
+            { head: 'Por familia' },
+            { swatch: '#8b5cf6', label: 'Total', value: fmt(A.active.famTotal), d: delta(A.active.famTotal, B.active.famTotal) },
+            { swatch: '#10b981', label: 'Básico', value: fmt(A.active.famBasico), d: delta(A.active.famBasico, B.active.famBasico) },
+          ]}
+        />
+        <MsCol
+          tone="revenue"
+          title="Ingresos netos USD"
+          hint="Neto de liquidación de cada Proveedor en la ventana — bruto liquidado menos comisión y retención, por fecha de captura — convertido a USD con la cotización de cada día (ARS al blue venta). PayPal no tiene feed de comisiones y no aparece."
+          big={fmtUsd(Math.round(netA))}
+          bigDelta={{ d: delta(netA, netB), prev: fmtUsd(Math.round(netB)) }}
+          rows={gwNames.map((name) => ({
+            swatch: GW_COLOR[name] ?? '#64748b',
+            label: name,
+            value: fmtUsdRound(gwWindow(A, name)),
+            d: delta(gwWindow(A, name), gwWindow(B, name)),
+          }))}
+        />
       </div>
 
-      {/* ── KPIs ── */}
+      {/* ── KPIs · Suscriptores y transacciones ── */}
       <SectionLabel>👥 Suscriptores y transacciones</SectionLabel>
       <div className="proto-kpis">
-        <KpiCard
-          label="Transacciones en rango"
-          value={totalTx}
-          variant="blue"
-          hint="Pagos exitosos con suscriptor conocido dentro del rango y los filtros, sumando todos los Proveedores y monedas. Cuenta eventos de pago, no personas ni importes."
-        />
-        <KpiCard
-          label="Transacciones del último mes"
-          value={curMonth ? curMonth.tx : '—'}
-          sub={curMonth ? monthLabel(curMonth.month) : undefined}
-          hint="Pagos exitosos del último mes con datos en el rango, todos los Proveedores. El mes se asigna por la fecha del Pago (hora de Argentina), no por la fecha de captura de la comisión."
-        />
-        <KpiCard
-          label={`Suscripciones activas · ${g.subscriptionPlatformName}`}
-          value={activeSubs}
-          sub={activeByPlatform.join(' · ') || undefined}
-          variant="yellow"
-          hint="Suscripciones vivas hoy según el espejo de cada Proveedor («active», «en prueba», «atrasada» en Stripe; «authorized» en MercadoPago). Foto actual: no respeta el rango ni los filtros. Cuenta suscripciones, no personas."
-        />
-        <KpiCard
-          label="Suscripciones cerradas"
-          value={canceledSubs}
-          sub={`${totalSubs.toLocaleString()} con historia de cobro · ${pausedSubs.toLocaleString()} pausadas`}
-          hint={`Suscripciones canceladas o impagas en cualquiera de los dos Proveedores, foto de hoy. Se excluyen ${neverStarted.toLocaleString()} preaprobaciones de MercadoPago que nunca facturaron (un checkout abierto y abandonado): no son suscriptores ni bajas.`}
-        />
+        <Kpi
+          tone="purple"
+          icon="👥"
+          title="Suscriptores activos"
+          value={fmt(A.active.total)}
+          hint="Foto al último día con Pagos: Subscribers únicos con un Pago exitoso que cubre ese día (vencimiento más 7 días de gracia). Es la misma regla de «activo» de todo el dashboard. Responde a los filtros."
+        >
+          snapshot al {fmtDayShort(lc.asOf)} · total actualmente activos en la plataforma
+          <Breakdown
+            rows={[
+              { swatch: '#3b82f6', label: 'Mensuales', value: fmt(A.active.mensual), pct: pctOf(A.active.mensual, A.active.mensual + A.active.anual), color: '#1d4ed8' },
+              { swatch: '#f59e0b', label: 'Anuales', value: fmt(A.active.anual), pct: pctOf(A.active.anual, A.active.mensual + A.active.anual), color: '#d97706' },
+              { head: 'Por familia' },
+              { swatch: '#8b5cf6', label: 'Total', value: fmt(A.active.famTotal), pct: pctOf(A.active.famTotal, A.active.famTotal + A.active.famBasico), color: '#7c3aed' },
+              { swatch: '#10b981', label: 'Básico', value: fmt(A.active.famBasico), pct: pctOf(A.active.famBasico, A.active.famTotal + A.active.famBasico), color: '#059669' },
+            ]}
+          />
+        </Kpi>
+        <Kpi
+          tone="blue"
+          icon="📊"
+          title="Transacciones"
+          value={fmt(txTotal)}
+          hint="Pagos exitosos de los meses que toca el rango, clasificados: alta (primer Pago de la vida del Subscriber), recurrente (antes de 37 días tras el vencimiento anterior), reactivado (después), partido único (sin derecho recurrente). Bajas: Subscribers cuya cobertura venció ese mes sin renovación; van aparte porque son otro flujo."
+        >
+          eventos de pago · {monthsWithTx} {monthsWithTx === 1 ? 'mes' : 'meses'} en rango
+          <Breakdown
+            rows={[
+              { swatch: '#10b981', label: 'Altas (nuevos)', value: fmt(totals.nuevos), pct: pctOf(totals.nuevos, txTotal), color: '#059669' },
+              { swatch: '#f59e0b', label: 'Reactivados', value: fmt(totals.reactivados), pct: pctOf(totals.reactivados, txTotal), color: '#d97706' },
+              { swatch: '#3b82f6', label: 'Recurrentes', value: fmt(totals.recurrentes), pct: pctOf(totals.recurrentes, txTotal), color: '#1d4ed8' },
+              { swatch: '#94a3b8', label: 'Partido único', value: fmt(totals.oneOff), pct: pctOf(totals.oneOff, txTotal), color: '#475569' },
+              { swatch: '#ef4444', label: 'Bajas', value: `−${fmt(totals.bajas)}`, pct: 'flujo', color: '#dc2626', sep: true },
+            ]}
+          />
+        </Kpi>
+        <Kpi
+          tone="amber"
+          icon="📅"
+          title="Mensual vs Anual"
+          value={fmt(freqTot)}
+          hint="Pagos de suscripción (sin partido único) por Período del Pago: mensual o anual. «Otro» son los Pagos de suscripción bajo un Tier Free u Otros, que no tienen Período."
+        >
+          transacciones de suscripción · {freqLead !== '—' ? `${freqLead} domina con ${freqLeadPct}` : 'sin datos'}
+          <Breakdown
+            rows={[
+              { swatch: '#3b82f6', label: 'Mensual', value: fmt(totals.mensual), pct: pctOf(totals.mensual, freqTot), color: '#1d4ed8' },
+              { swatch: '#f59e0b', label: 'Anual', value: fmt(totals.anual), pct: pctOf(totals.anual, freqTot), color: '#d97706' },
+              ...(freqOtro > 0 ? [{ swatch: '#94a3b8', label: 'Otro / Único', value: fmt(freqOtro), pct: pctOf(freqOtro, freqTot), color: '#475569' }] : []),
+            ]}
+          />
+        </Kpi>
+        <Kpi
+          tone="green"
+          icon="🎟"
+          title="Por plan"
+          value={fmt(planTot)}
+          hint="Pagos exitosos del rango por familia de plan (Total, Básico, Free…), inferida del Tier de cada Pago. Cuenta Pagos, no importes ni personas; el top 5."
+        >
+          transacciones · top: {planSorted[0]?.[0] ?? '—'}{planSorted[0] && planTot > 0 ? ` (${pctOf(planSorted[0][1], planTot)})` : ''}
+          <Breakdown
+            rows={planSorted.slice(0, 5).map(([name, v]) => ({
+              swatch: PLAN_PALETTE[name] ?? '#64748b',
+              label: name,
+              value: fmt(v),
+              pct: pctOf(v, planTot),
+            }))}
+          />
+        </Kpi>
       </div>
 
+      {/* ── KPIs · Ingresos y costes ── */}
       <SectionLabel>💰 Ingresos y costes</SectionLabel>
       <div className="proto-kpis">
-        <KpiCard
-          label={`Bruto ${topCcy?.currency ?? '—'} · cobro`}
-          value={topCcy ? fmtRound(topCcy.gross, topCcy.currency) : '—'}
-          sub={`moneda más grande del rango · ${currencies.length} monedas en total`}
-          hint="Suma de lo facturado al suscriptor en esa moneda (plano de cobro) sobre los Pagos exitosos del rango, sin descontar comisiones. Se muestra la moneda con mayor bruto; las demás no se suman."
-        />
-        <KpiCard
-          label={`Neto ${usd?.settlementCurrency ?? 'USD'} · liquidación ${g.platformName}`}
-          value={usd ? fmtExact(usd.net, usd.settlementCurrency) : '—'}
-          sub={usd ? `comisión ${fmtExact(usd.fees, usd.settlementCurrency)} · ${usd.feePct}% · ${usd.txCount.toLocaleString()} tx` : 'sin comisiones en rango'}
-          variant="green"
-          hint="Sólo lo liquidado en USD (hoy Stripe): bruto liquidado menos comisión y retención según el feed de comisiones, bucketeado por fecha de captura. El % es comisión ÷ bruto liquidado, no sobre el bruto de cobro."
-        />
-        <KpiCard
-          label="Neto USD del último mes"
-          value={curUsd ? fmtRound(curUsd.netUsd, 'USD') : '—'}
-          sub={curUsd ? `${monthLabel(curUsd.month)} · convertido día por día` : undefined}
-          variant="green"
-          hint="Neto de liquidación del último mes convertible, sumando Proveedores y monedas ya pasadas a USD con la cotización de cada día. Un mes con algún día sin cotización queda ausente, no en cero."
-        />
-        <KpiCard
-          label={`Retenciones ${taxCcy?.settlementCurrency ?? ''}`.trim()}
-          value={taxCcy ? fmtRound(totalTaxes, taxCcy.settlementCurrency) : '—'}
-          sub="impuesto retenido en la fuente: vuelve como crédito fiscal, no es comisión"
-          variant="red"
-          hint="Impuesto que el Proveedor retiene en la fuente sobre el bruto liquidado en el rango (MercadoPago, en ARS). No es comisión: vuelve como crédito fiscal, y por eso se muestra aparte del neto."
-        />
+        <Kpi
+          tone="green"
+          icon="💵"
+          title="Ingresos netos (USD)"
+          value={fmtUsd(totalUsdNet)}
+          hint="Neto de liquidación del rango — bruto liquidado menos comisión y retención según el feed de comisiones de cada Proveedor — convertido a USD día por día (ARS al blue venta; lo liquidado en USD sin convertir). El desglose es el neto en cada moneda de liquidación, sin convertir. PayPal no tiene feed y queda afuera."
+        >
+          por moneda de liquidación
+          <Breakdown
+            rows={
+              netByCurSorted.length
+                ? netByCurSorted.map(([cu, v]) => ({ swatch: CUR_PALETTE[cu] ?? '#94a3b8', label: cu, value: fmt(Math.round(v)) }))
+                : [{ swatch: '#94a3b8', label: 'sin ingresos', value: '' }]
+            }
+          />
+        </Kpi>
+        <Kpi
+          tone="blue"
+          icon="🏦"
+          title="Ingresos por pasarela (netos)"
+          value={fmtUsd(sumBy(netByGw, (x) => x.v))}
+          hint="El mismo neto en USD, repartido por Proveedor. Dos cifras en USD sí se suman; una moneda sin cotización (hoy EUR) queda ausente y no resta."
+        >
+          neto combinado en USD
+          <Breakdown rows={netByGw.map((x) => ({ swatch: GW_COLOR[x.name] ?? '#64748b', label: x.name, value: fmtUsdRound(x.v), pct: pctOf(x.v, sumBy(netByGw, (y) => y.v)) }))} />
+        </Kpi>
+        <Kpi
+          tone="slate"
+          icon="💰"
+          title="Ingresos brutos (USD)"
+          value={fmtUsd(totalUsdGross)}
+          hint="Bruto liquidado por cada Proveedor en el rango, convertido a USD día por día, antes de comisión y retención. Es el bruto del plano de liquidación, no lo facturado al suscriptor en su moneda."
+        >
+          antes de fees · por pasarela
+          <Breakdown rows={grossByGw.map((x) => ({ swatch: GW_COLOR[x.name] ?? '#64748b', label: x.name, value: fmtUsdRound(x.v), pct: pctOf(x.v, totalUsdGross) }))} />
+        </Kpi>
+        <Kpi
+          tone="red"
+          icon="💳"
+          title="Fees pagados (USD)"
+          value={fmtUsd(totalFeeUsd)}
+          hint="La comisión de cada Proveedor en el rango, en USD día por día. Sólo comisión: la retención impositiva de MercadoPago no es un fee, vuelve como crédito fiscal y no está acá. El % es comisión ÷ bruto liquidado."
+        >
+          {feePct} del bruto · por pasarela
+          <Breakdown rows={feeByGw.map((x) => ({ swatch: GW_COLOR[x.name] ?? '#64748b', label: x.name, value: fmtUsdRound(x.v), pct: pctOf(x.v, totalFeeUsd) }))} />
+        </Kpi>
       </div>
+      {usdMissing.length > 0 && (
+        <div className="proto-foot" style={{ margin: '6px 2px 0' }}>
+          Sin cotización, y por eso ausentes de toda cifra en USD: {usdMissing.map((t) => `${t.platformName} ${t.settlementCurrency}`).join(', ')}.
+        </div>
+      )}
 
       {/* ── Vista consolidada ── */}
-      <div style={{ marginTop: 18 }} />
+      <div style={{ marginTop: 20 }} />
       <Card
         title="📈 Vista consolidada: ingresos, activos y transacciones"
-        hint="Neto de liquidación por mes convertido a USD día por día, contra la cantidad de Pagos exitosos de ese mes y los suscriptores con acceso vigente al cierre del mes. Las series usan relojes distintos: fecha de captura, fecha del Pago y último día del mes."
-        desc={
-          <>
-            Barras: <b>ingresos netos en USD</b> por mes (eje izquierdo). Líneas:{' '}
-            <b>número de transacciones</b> y <b>suscriptores activos</b> al cierre de cada mes
-            (eje derecho). Permite ver de un vistazo si los ingresos crecen en línea con el
-            volumen transaccional y con la base de suscriptores.
-          </>
-        }
-        foot="El neto sale del plano de liquidación y se convierte día por día; las transacciones se cuentan sobre los Pagos ingestados; los activos son Subscribers únicos con un Pago que cubre el último día del mes (más 7 días de gracia)."
+        hint="Neto de liquidación por mes convertido a USD día por día, contra la cantidad de Pagos exitosos de ese mes y los Subscribers con acceso vigente al cierre del mes. Las series usan relojes distintos: fecha de captura, fecha del Pago y último día del mes."
+        desc="Barras: ingresos netos en USD por mes (eje izquierdo). Líneas: suscriptores activos reales y número de transacciones (eje derecho). Permite ver de un vistazo si los ingresos crecen en línea con la base de suscriptores activa y el volumen transaccional."
       >
-        {netUsdByMonth.length === 0 ? (
-          <div className="no-data">Sin ingresos convertibles en rango</div>
+        {mList.length === 0 ? (
+          <div className="no-data">Sin datos en rango</div>
         ) : (
-          <ComboChart
-            height={360}
-            labels={netUsdByMonth.map((r) => monthLabel(r.month))}
-            tooltipTitles={bucketTitles(netUsdByMonth.map((r) => `${r.month}-01`), 'month')}
-            bars={[{ label: 'Ingresos netos USD', data: netUsdByMonth.map((r) => r.netUsd), color: '#10b981' }]}
-            lines={[
-              {
-                label: 'Transacciones',
-                data: netUsdByMonth.map((r) => txByMonth.find((t) => t.month === r.month)?.tx ?? 0),
-                color: '#a78bfa',
-                dashed: true,
-              },
-              {
-                label: 'Suscriptores activos',
-                data: netUsdByMonth.map((r) => lifecycle.activeTotalByMonth[r.month] ?? 0),
-                color: '#4f8ef7',
-              },
-            ]}
-            barAxisTitle="USD netos"
-            lineAxisTitle="Activos / Transacciones"
+          <CombinedChart
+            labels={mList}
+            usd={mList.map((x) => m.netUsd.get(x) ?? 0)}
+            active={mList.map((x) => m.active.get(x)?.total ?? 0)}
+            tx={combTx}
           />
         )}
       </Card>
@@ -770,68 +600,82 @@ export function FinancieroView() {
       {/* ── Últimos 15 días ── */}
       <Card
         title="📅 Últimos 15 días — altas, reactivados, bajas y suscripciones netas (por día)"
-        note={lifecycle.asOf ? `· hasta el ${lifecycle.asOf.slice(8, 10)}/${lifecycle.asOf.slice(5, 7)}, último día con Pagos` : undefined}
-        hint="Un Subscriber está activo un día si algún Pago exitoso lo cubre (desde su fecha hasta su vencimiento más 7 días de gracia). Alta nueva: entra al pool con su primer Pago de la vida. Reactivado: vuelve al pool tras haber salido. Baja: estaba ayer y hoy no. Las netas coinciden exactamente con la variación diaria de activos."
+        note={`${countryNote} · hasta el ${asOfShort}`}
+        hint="Un Subscriber está activo un día si algún Pago exitoso lo cubre (desde su fecha hasta su vencimiento más 7 días de gracia). Alta nueva: entra al pool con su primer Pago de la vida. Reactivado: vuelve al pool tras haber salido. Baja: estaba ayer y hoy no. Las netas coinciden exactamente con la variación diaria de activos. La serie termina en el último día con Pagos, no en hoy."
         desc={
           <>
-            Barras verdes (<b>altas nuevas</b>): Subscribers que pagan por primera vez.
-            Naranjas (<b>reactivados</b>): ya habían pagado, salieron del pool y vuelven.
-            Rojas (<b>bajas</b>): estaban activos ayer y hoy ya no. Línea azul (<b>netas</b>)
-            = altas + reactivados − bajas, que es la variación diaria de la curva de activos
-            de abajo. Responde a los filtros de país, acceso y plan.
+            Barras verdes (<b>altas nuevas</b>): suscriptores que pagan por primera vez en su vida. Barras naranjas (<b>reactivados</b>): ya pagaron antes, salieron del pool y vuelven hoy. Barras rojas (<b>bajas</b>): estaban activos ayer y hoy ya no. Línea azul (<b>netas</b>) = altas + reactivados − bajas, que coincide con el delta diario de la curva de activos. Responde a los filtros de arriba.
           </>
         }
-        foot="La serie termina en el último día con Pagos y no en hoy: después de la última carga no hay altas y sí vencimientos, y dibujar esos días leería como un derrumbe que no ocurrió."
       >
-        {lifecycle.daily.length === 0 ? (
+        {lc.daily.length === 0 ? (
           <div className="no-data">Sin Pagos</div>
         ) : (
-          <LifecycleChart
-            height={360}
-            labels={lifecycle.dayLabels}
-            tooltipTitles={lifecycle.dayTitles}
-            bars={[
-              { label: 'Altas nuevas', data: lifecycle.daily.map((r) => r.newSubscribers), color: '#10b981', stack: 'pos' },
-              { label: 'Reactivados', data: lifecycle.daily.map((r) => r.reactivated), color: '#f59e0b', stack: 'pos' },
-              { label: 'Bajas', data: lifecycle.daily.map((r) => -r.churned), color: '#ef4444', stack: 'neg' },
-            ]}
-            lines={[{ label: 'Netas (altas + react − bajas)', data: lifecycle.daily.map((r) => r.net), color: '#1e3a8a' }]}
+          <Daily15Chart
+            labels={dLabels}
+            titles={dTitles}
+            nuevas={lc.daily.map((r) => r.newSubscribers)}
+            reactivados={lc.daily.map((r) => r.reactivated)}
+            bajas={lc.daily.map((r) => r.churned)}
+            netas={lc.daily.map((r) => r.net)}
           />
         )}
       </Card>
 
       <Card
         title="👥 Últimos 15 días — suscriptores activos vigentes"
-        note={lifecycle.asOf ? `· hasta el ${lifecycle.asOf.slice(8, 10)}/${lifecycle.asOf.slice(5, 7)}` : undefined}
-        hint="Subscribers únicos con un Pago exitoso que cubre ese día, vencimiento más 7 días de gracia incluidos. Es la misma regla de «activo» de todo el dashboard. El eje no arranca en cero para que se vea el movimiento diario."
-        desc="Snapshot diario de Subscribers con acceso vigente: cada persona cuenta una vez por día aunque tenga varios Pagos. La diferencia entre dos barras consecutivas es la línea de netas del gráfico anterior."
+        note={`${countryNote} · hasta el ${asOfShort}`}
+        hint="Subscribers únicos con un Pago exitoso que cubre ese día, vencimiento más 7 días de gracia incluidos. Cada persona cuenta una vez por día aunque tenga varios Pagos. El eje no arranca en cero para que se vea el movimiento diario."
+        desc="Snapshot diario de suscriptores activos (personas únicas con suscripción vigente al cierre del día): mensuales y anuales dentro de su cobertura pagada más 7 días de gracia. Responde a los filtros de arriba."
       >
-        {lifecycle.daily.length === 0 ? (
+        {lc.daily.length === 0 ? (
           <div className="no-data">Sin Pagos</div>
         ) : (
-          <LifecycleChart
-            height={300}
-            legend={false}
-            labels={lifecycle.dayLabels}
-            tooltipTitles={lifecycle.dayTitles}
-            yMin={lifecycle.activeMin}
-            yMax={lifecycle.activeMax}
-            bars={[{ label: 'Suscriptores activos vigentes', data: lifecycle.daily.map((r) => r.active), color: '#1e3a8a' }]}
-          />
+          <DailyActive15Chart labels={dLabels} titles={dTitles} active={lc.daily.map((r) => r.active)} />
         )}
       </Card>
 
       {/* ── Real vs Plan ── */}
       <Card
         title="📊 Mes en curso — Real vs Plan vs Mes Anterior"
+        hint="Compara, día por día del mes en curso y por Proveedor, lo cobrado neto contra el objetivo del plan y contra el mismo día del mes anterior. El objetivo llega de una planilla que todavía no está conectada."
         desc={
           <>
-            Día por día del mes en curso, por Proveedor y en moneda nativa:{' '}
-            <b>Real</b> = ingresos netos cobrados; <b>Plan</b> = lo que se preveía
-            facturar; <b>Real Mes Anterior</b> = lo facturado el mismo día del mes pasado.
+            Día por día del mes en curso, por pasarela y en moneda nativa: <b>Real</b> = ingresos netos cobrados; <b>Plan</b> = lo que se preveía facturar; <b>Real Mes Anterior</b> = lo facturado el mismo día del mes pasado. Diferencias absolutas en moneda nativa; porcentajes relativos. Verde = mejor que la referencia, rojo = peor.
           </>
         }
       >
+        <div className="proto-controls">
+          <label>
+            Pasarela
+            <select disabled defaultValue="mercadopago">
+              <option value="mercadopago">Mercado Pago (ARS)</option>
+              <option value="stripe">Stripe (USD)</option>
+            </select>
+          </label>
+          <label>
+            Mes a mostrar
+            <select disabled defaultValue="">
+              <option value="">{lc.asOf.slice(0, 7)}</option>
+            </select>
+          </label>
+        </div>
+        <div className="proto-table-scroll" style={{ marginBottom: 14 }}>
+          <table className="tbl-mt">
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th className="right">Real</th>
+                <th className="right">Plan</th>
+                <th className="right">Dif vs Plan</th>
+                <th className="right">Var Real vs Plan</th>
+                <th className="right">Real Mes Ant.</th>
+                <th className="right">Dif vs Mes Ant.</th>
+                <th className="right">Var Real vs Mes Ant.</th>
+              </tr>
+            </thead>
+          </table>
+        </div>
         <Pending kind="plan" />
       </Card>
 
@@ -842,104 +686,83 @@ export function FinancieroView() {
           hint="Cada Pago exitoso del mes, clasificado: nuevo si es el primero del Subscriber, recurrente si llega antes de 37 días tras el vencimiento del anterior, reactivación si llega después, partido único si es un Pago sin derecho recurrente. Las bajas, hacia abajo, son los Subscribers cuya cobertura venció ese mes sin ningún Pago posterior que la solape. Todo sale de los Pagos, así que MercadoPago y Stripe cuentan igual."
           desc={
             <>
-              Altas, recurrentes y reactivaciones hacia arriba; <b>bajas</b> hacia abajo. Las
-              bajas se derivan de los Pagos (cobertura vencida sin renovación), no de las
-              cancelaciones que declara cada Proveedor: esas están en la tarjeta de al lado y
-              MercadoPago no les pone fecha.
+              Altas, recurrentes, reactivaciones y bajas mes a mes. Las <b>bajas</b> salen de los Pagos (cobertura vencida sin renovación), con fecha real; las cancelaciones que declara cada Proveedor están en la tarjeta de abajo.
             </>
           }
-          foot="El umbral de 37 días entre recurrente y reactivación es el mismo que usa la pestaña de Retención."
         >
-          {lifecycle.monthly.length === 0 ? (
+          {mList.length === 0 ? (
             <div className="no-data">Sin Pagos en rango</div>
           ) : (
-            <LifecycleChart
-              height={300}
-              labels={lifecycle.monthLabels}
-              tooltipTitles={lifecycle.monthTitles}
-              bars={[
-                { label: 'Recurrentes', data: lifecycle.monthly.map((r) => r.recurring), color: '#3b82f6', stack: 'pos' },
-                { label: 'Nuevos', data: lifecycle.monthly.map((r) => r.newSubscribers), color: '#10b981', stack: 'pos' },
-                { label: 'Reactivados', data: lifecycle.monthly.map((r) => r.reactivated), color: '#f59e0b', stack: 'pos' },
-                { label: 'Partido único', data: lifecycle.monthly.map((r) => r.oneOff), color: '#94a3b8', stack: 'pos', hidden: true },
-                { label: 'Bajas', data: lifecycle.monthly.map((r) => -r.churned), color: '#ef4444', stack: 'neg' },
-              ]}
+            <FlowChart
+              labels={mList}
+              recurring={mList.map((x) => bk(x)?.recurring ?? 0)}
+              nuevos={mList.map((x) => bk(x)?.newSubscribers ?? 0)}
+              reactivados={mList.map((x) => bk(x)?.reactivated ?? 0)}
+              oneOff={mList.map((x) => bk(x)?.oneOff ?? 0)}
+              bajas={mList.map((x) => bk(x)?.churned ?? 0)}
             />
           )}
         </Card>
         <Card
           title="Mix de planes"
-          hint="Reparto de los Pagos exitosos del rango por plan y frecuencia (Básico/Total · Mensual/Anual/Free), inferidos de la recurrencia y el precio de cada Pago. Cuenta Pagos, no importes ni suscriptores."
-          desc="Distribución de transacciones por tipo de suscripción, en todo el rango."
+          hint="Reparto de los Pagos exitosos del rango por plan y frecuencia (Básico/Total · Mensual/Anual/Free), inferidos del Tier de cada Pago. Cuenta Pagos, no importes ni suscriptores."
+          desc="Distribución de eventos por tipo de suscripción"
         >
-          <div style={{ height: 260 }}>
-            {planMix.length === 0 ? (
-              <div className="no-data">Sin datos</div>
-            ) : (
-              <DoughnutChart
-                height={260}
-                labels={planMix.map((p) => p.label)}
-                values={planMix.map((p) => p.txCount)}
-              />
-            )}
-          </div>
-          <div className="proto-foot">
-            Conteo de transacciones, no importe: es la única métrica de esta pantalla que se
-            puede sumar entre monedas.
-          </div>
+          {data.catalog.length === 0 ? (
+            <div className="no-data">Sin datos</div>
+          ) : (
+            (() => {
+              const idx = new Map<string, number>();
+              for (const r of data.catalog) {
+                if (!r.planFamily || !r.planFrequency) continue;
+                // «Free · Free» no dice nada dos veces: una familia igual a su
+                // frecuencia se nombra una sola vez.
+                const k = r.planFamily === r.planFrequency ? r.planFamily : `${r.planFamily} · ${r.planFrequency}`;
+                idx.set(k, (idx.get(k) ?? 0) + r.txCount);
+              }
+              const entries = Array.from(idx.entries()).sort((a, b) => b[1] - a[1]);
+              return <PlansDonut labels={entries.map(([k]) => k)} values={entries.map(([, v]) => v)} />;
+            })()
+          )}
         </Card>
       </div>
 
       {/* ── Cancelaciones · antigüedad del último cargo ── */}
       <div className="proto-grid2">
         <Card
-          title={`📉 Altas y cancelaciones de suscripción por mes · ${g.subscriptionPlatformName}`}
-          hint="Suscripciones creadas y canceladas en cada mes del rango, por Proveedor, según su fecha de alta y de cancelación. Las preaprobaciones de MercadoPago que nunca facturaron no cuentan como alta. Sólo las cancelaciones con fecha entran al gráfico; el total por estado está más abajo."
-          desc={
-            <>
-              Eventos oficiales de cada Proveedor, con su fecha real. El churn se lee del estado de
-              la suscripción y no de su fecha de cancelación: {undatedCancels.toLocaleString()} de{' '}
-              {canceledSubs.toLocaleString()} cancelaciones no traen fecha, y bucketear por ella las
-              dejaría afuera.
-            </>
-          }
-          foot={
-            g.subscriptionsIgnoreFilters
-              ? 'MercadoPago no registra cuándo se canceló una preaprobación, así que sus bajas no tienen serie mensual. No afectado por los filtros.'
-              : 'MercadoPago no registra cuándo se canceló una preaprobación, así que sus bajas no tienen serie mensual.'
-          }
+          title="📉 Cancelaciones por mes (MP + Stripe oficial)"
+          hint="Cancelaciones registradas por cada Proveedor, bucketeadas por su fecha de cancelación. Sólo las que traen fecha entran al gráfico; MercadoPago no registra cuándo se canceló una preaprobación, así que su serie está vacía y su churn se lee del estado de la suscripción. No afectado por los filtros: una suscripción no tiene país ni plan propios."
+          desc="Cancelaciones registradas oficialmente por cada pasarela: MP cuando una suscripción pasa a status «cancelled», Stripe cuando pasa a «canceled». A diferencia del cómputo heurístico, estos son eventos auténticos con su fecha exacta."
+          foot={`${fmt(undated)} de ${fmt(canceledTotal)} cancelaciones no traen fecha y no se pueden dibujar en el tiempo; el churn se lee del estado.${g.subscriptionsIgnoreFilters ? ' No afectado por los filtros.' : ''}`}
         >
-          <div style={{ height: 300 }}>
-            {subsMonthly.labels.length === 0 ? (
-              <div className="no-data">Sin suscripciones en rango</div>
-            ) : (
-              <StackedBarChart
-                height={300}
-                labels={subsMonthly.labels}
-                tooltipTitles={bucketTitles(subsMonthly.labels, 'month')}
-                series={subsMonthly.series}
-              />
-            )}
-          </div>
+          {mList.length === 0 ? (
+            <div className="no-data">Sin suscripciones en rango</div>
+          ) : (
+            <CancelMonthlyChart labels={mList} byPlatform={cancelByGw} />
+          )}
         </Card>
         <Card
           title="📅 Suscriptores activos por antigüedad del último cargo"
-          note={lifecycle.asOf ? `· al ${lifecycle.asOf.slice(8, 10)}/${lifecycle.asOf.slice(5, 7)}` : undefined}
-          hint="Suscripciones que el Proveedor da por vivas (Stripe active/past_due/trialing, MercadoPago authorized), agrupadas por los días desde su último Pago exitoso, medidos al último día con Pagos. El Pago se une a la suscripción por el id de preaprobación en MercadoPago y por el email del cliente en Stripe; la que no se alcanza queda en su propia barra en vez de desaparecer. No afectado por los filtros: una suscripción no tiene país ni plan propios."
-          desc="Distribución de suscripciones vivas según cuándo fue su último cobro: lo sano es 0–30 días. Las bandas viejas (61+) son suscripciones que el Proveedor sigue llamando vivas sin haber cobrado en meses — zombies o en mora — y anticipan churn."
-          foot={
-            lifecycle.lastCharge.live > 0
-              ? `${lifecycle.lastCharge.live.toLocaleString()} suscripciones vivas; ${lifecycle.lastCharge.unknown.toLocaleString()} sin Pago vinculado (cliente sin Subscriber conocido). No afectado por los filtros.`
-              : undefined
-          }
+          note={`· al ${asOfShort}`}
+          hint="Suscripciones que el Proveedor da por vivas (Stripe active/past_due/trialing, MercadoPago authorized), agrupadas por los días desde su último Pago exitoso, medidos al último día con Pagos. El Pago se une a la suscripción por el id de preaprobación en MercadoPago y por el email del cliente en Stripe. No afectado por los filtros."
+          desc="Distribución de suscriptores actualmente authorized/active según cuándo fue su último cobro: ideal 0-30 días (al día). Las bandas más viejas (61+) son zombies o subs en mora — buena señal preventiva de churn próximo. Filtrable por pasarela."
+          foot={lcUnknown > 0 ? `${fmt(lcUnknown)} suscripciones vivas sin Pago vinculado (cliente sin Subscriber conocido) quedan fuera de las barras.` : undefined}
         >
-          <div style={{ height: 300 }}>
-            {lifecycle.lastCharge.series.length === 0 ? (
-              <div className="no-data">Sin suscripciones vivas</div>
-            ) : (
-              <StackedBarChart height={300} labels={lifecycle.lastCharge.labels} series={lifecycle.lastCharge.series} />
-            )}
+          <div className="proto-controls">
+            <label>
+              Pasarela
+              <select value={lcPlatform} onChange={(e) => setLcPlatform(e.target.value as typeof lcPlatform)} style={{ minWidth: 180 }}>
+                <option value="all">Todas</option>
+                <option value="MercadoPago">Mercado Pago</option>
+                <option value="Stripe">Stripe</option>
+              </select>
+            </label>
           </div>
+          {lcVals.every((v) => v === 0) ? (
+            <div className="no-data" style={{ height: 280 }}>Sin suscripciones vivas</div>
+          ) : (
+            <LastChargeChart values={lcVals} />
+          )}
         </Card>
       </div>
 
@@ -947,461 +770,214 @@ export function FinancieroView() {
       <Card
         title="⏱️ Promedio de vida de un suscriptor"
         hint="Meses de cobertura pagada por Subscriber, sumando la duración de todos sus Pagos exitosos (un mes por Pago mensual, doce por uno anual). Sólo entran los ciclos cerrados: Subscribers sin acceso vigente al último día con Pagos. Quien se fue y volvió es un solo ciclo con sus meses sumados. Responde a los filtros."
-        desc="Meses que un suscriptor se mantuvo pagando, sumando reactivaciones (quien canceló y volvió cuenta como un solo ciclo extendido). Sólo se promedian ciclos cerrados — sin acceso vigente hoy — para no inflar con clientes vivos cuyo ciclo aún no terminó."
+        desc="Meses promedio que un suscriptor se mantuvo activo, sumando reactivaciones (un cliente que canceló y volvió cuenta como un solo lifetime extendido). Sólo se promedian clientes «cerrados» (sin suscripción activa hoy) para no inflar con clientes vivos cuyo ciclo aún no terminó. Responde a los filtros."
+        foot="Para Argentina (mayoría MP) la mediana es la mejor métrica — distribución muy sesgada por una larga cola de clientes legacy con muchos meses de antigüedad."
       >
-        {!lifecycle.lifetime || lifecycle.lifetime.closed === 0 ? (
-          <div className="no-data">Sin ciclos cerrados en el filtro</div>
-        ) : (
-          <div className="kpi-grid" style={{ marginTop: 8 }}>
-            <KpiCard
-              label="Promedio"
-              value={`${(lifecycle.lifetime.meanMonths ?? 0).toLocaleString('es-UY', { maximumFractionDigits: 1 })} meses`}
-              sub={`${lifecycle.lifetime.closed.toLocaleString()} ciclos cerrados`}
-              variant="blue"
-            />
-            <KpiCard
-              label="Mediana"
-              value={`${(lifecycle.lifetime.medianMonths ?? 0).toLocaleString('es-UY', { maximumFractionDigits: 1 })} meses`}
-              sub={`P25 ${(lifecycle.lifetime.p25Months ?? 0).toLocaleString('es-UY', { maximumFractionDigits: 1 })} · P75 ${(lifecycle.lifetime.p75Months ?? 0).toLocaleString('es-UY', { maximumFractionDigits: 1 })} · máx ${(lifecycle.lifetime.maxMonths ?? 0).toLocaleString('es-UY', { maximumFractionDigits: 1 })}`}
-            />
-            <KpiCard
-              label="Ciclos abiertos"
-              value={lifecycle.lifetime.open}
-              sub="con acceso vigente: no se promedian"
-              variant="green"
-            />
+        <div className="proto-mini-kpis">
+          <div className="proto-mini-kpi">
+            <div className="lbl">Promedio</div>
+            <div className="val">{fmtMonths(lifetime.meanMonths)}</div>
+            <div className="sub">{countryLabel.toLowerCase() === 'todos los países' ? 'todos los países (MP+Stripe)' : countryLabel} · {fmt(lifetime.closed)} clientes cerrados</div>
           </div>
-        )}
+          <div className="proto-mini-kpi blue">
+            <div className="lbl">Mediana</div>
+            <div className="val">{fmtMonths(lifetime.medianMonths)}</div>
+            <div className="sub">P25 {fmt(lifetime.p25Months ?? 0)} · P75 {fmt(lifetime.p75Months ?? 0)} · max {fmt(lifetime.maxMonths ?? 0)}</div>
+          </div>
+        </div>
       </Card>
 
       {/* ── Ingresos netos por mes · activos reales ── */}
       <div className="proto-grid2">
         <Card
           title="Ingresos netos por mes"
-          hint="Por Proveedor y moneda de liquidación, mes a mes por fecha de captura: neto, comisión y, donde existe, retención; apiladas suman el bruto liquidado. Fuente: el feed de comisiones de cada Proveedor."
+          hint="Neto de liquidación por mes y moneda, por fecha de captura: bruto liquidado menos comisión y retención, según el feed de comisiones de cada Proveedor. La línea punteada es la suma de todo convertido a USD con la cotización de cada día."
           desc={
             <>
-              Ingresos <b>netos</b> por Proveedor y moneda de liquidación: bruto liquidado
-              menos comisión, y menos retención donde el Proveedor retiene. Una tarjeta por
-              moneda, porque apilar dos monedas no da un total.
+              Ingresos <b>netos</b> (ya restados los fees de MP y Stripe), una línea por moneda de liquidación. La línea punteada negra es el total neto en USD. ARS se convierte al dólar blue de cada día; lo liquidado en USD no se convierte; EUR no tiene cotización y no entra al total.
             </>
           }
-          foot="Plano de liquidación: lo que el Proveedor movió, no lo que se facturó. La comisión se gasta; la retención vuelve como crédito fiscal, y por eso va aparte."
         >
-          {netMonthly.length === 0 ? (
+          {mList.length === 0 ? (
             <div className="no-data">Sin datos de liquidación en rango</div>
           ) : (
-            netMonthly.map((c) => (
-              <div key={`${c.platformName}:${c.ccy}`} style={{ marginBottom: 14 }}>
-                <div className="proto-note" style={{ marginBottom: 6 }}>
-                  {c.platformName} · {c.ccy}
-                </div>
-                <div style={{ height: 200 }}>
-                  {c.labels.length === 0 ? (
-                    <div className="no-data">Sin datos</div>
-                  ) : (
-                    <StackedBarChart
-                      height={200}
-                      labels={c.labels}
-                      tooltipTitles={bucketTitles(c.labels, 'month')}
-                      series={c.series}
-                    />
-                  )}
-                </div>
-              </div>
-            ))
+            <RevenueChart
+              labels={mList}
+              byCurrency={revCurrencies.map((c) => ({ currency: c, data: mList.map((x) => m.netLocal.get(c)?.get(x) ?? 0) }))}
+              totalUsd={mList.map((x) => m.netUsd.get(x) ?? 0)}
+            />
           )}
         </Card>
         <Card
           title="Suscriptores activos reales"
-          hint="Subscribers únicos con un Pago exitoso que cubre el último día del mes (vencimiento más 7 días de gracia). Barras: bajo un plan mensual, uno anual, u otro acceso (Free, partido único); una persona con dos derechos cuenta en dos barras. Línea: personas únicas. El mes en curso (⏳) se mide al último día con Pagos."
-          desc="Personas únicas con acceso vigente al cierre de cada mes: cada una cuenta una sola vez aunque tenga varios Pagos. Las barras apilan por tipo de acceso y la línea punteada es el total sin duplicar."
+          hint="Subscribers únicos con un Pago exitoso que cubre el último día del mes (vencimiento más 7 días de gracia). Barras: bajo un plan mensual y bajo uno anual; una persona con dos derechos cuenta en dos barras. Línea: personas únicas. El mes en curso se mide al último día con Pagos."
+          desc={
+            <>
+              Personas únicas con una <b>suscripción vigente</b> al cierre de cada mes: mensuales y anuales dentro de su cobertura pagada más 7 días de gracia. A diferencia del resto del dashboard, aquí cada persona cuenta una sola vez por mes aunque tenga varias transacciones.
+            </>
+          }
         >
-          <div style={{ height: 300 }}>
-            {lifecycle.activeByMonth.length === 0 ? (
-              <div className="no-data">Sin Pagos en rango</div>
-            ) : (
-              <LifecycleChart
-                height={300}
-                labels={lifecycle.activeLabels}
-                tooltipTitles={lifecycle.activeTitles}
-                bars={[
-                  { label: 'Mensuales', data: lifecycle.activeByMonth.map((r) => r.mensual), color: '#3b82f6' },
-                  { label: 'Anuales', data: lifecycle.activeByMonth.map((r) => r.anual), color: '#f59e0b' },
-                  { label: 'Otros accesos', data: lifecycle.activeByMonth.map((r) => r.otros), color: '#94a3b8' },
-                ]}
-                lines={[{ label: 'Total únicos', data: lifecycle.activeByMonth.map((r) => r.total), color: '#0f172a', dashed: true }]}
-              />
-            )}
-          </div>
-        </Card>
-      </div>
-
-      {/* ── USD, con la cotización a la vista ── */}
-      <Card
-        title="💵 Ingresos netos en USD · convertidos día por día"
-        hint="Neto de liquidación pasado a USD con la cotización de cada día: ARS al blue venta de dolarapi, lo ya liquidado en USD sin convertir. Un mes con algún día sin cotización no se dibuja."
-        desc={
-          <>
-            Una línea por Proveedor y moneda de liquidación. Un mes sin cotización rompe la
-            línea en vez de dibujar un cero: el sentido de la tabla de FX es que una
-            cotización que falta se vea faltando.
-          </>
-        }
-        foot={
-          <>
-            Plano de <strong>liquidación</strong> convertido a USD <strong>por día</strong>,
-            nunca al tipo de cambio de hoy ni al promedio del mes: con la inflación
-            argentina, convertir un Pago de 2024 a la cotización actual no es un redondeo,
-            es otro número. ARS usa el <strong>blue venta</strong> de dolarapi; lo ya
-            liquidado en USD no se convierte. Una moneda que ninguna fuente cotiza — hoy EUR
-            — queda <strong>ausente</strong>, no en cero.
-          </>
-        }
-      >
-        <div style={{ height: 280 }}>
-          {usdMonthly.series.length === 0 ? (
-            <div className="no-data">Sin cotización para las monedas del rango</div>
+          {mList.length === 0 ? (
+            <div className="no-data">Sin Pagos en rango</div>
           ) : (
-            <LineChart
-              height={280}
-              labels={usdMonthly.labels}
-              tooltipTitles={bucketTitles(usdMonthly.labels.map((m) => `${m}-01`), 'month')}
-              series={usdMonthly.series}
-              yFormat="currency"
+            <ActiveChart
+              labels={mList.map((x) => (m.active.get(x)?.partial ? `${x} ⏳` : x))}
+              mensual={mList.map((x) => m.active.get(x)?.mensual ?? 0)}
+              anual={mList.map((x) => m.active.get(x)?.anual ?? 0)}
+              total={mList.map((x) => m.active.get(x)?.total ?? 0)}
             />
           )}
-        </div>
-        <table className="data-table" style={{ marginTop: 12 }}>
-          <thead>
-            <tr>
-              <th>Plataforma</th>
-              <th>Moneda</th>
-              <th style={{ textAlign: 'right' }}>Neto USD</th>
-              <th>Cotización usada</th>
-              <th style={{ textAlign: 'right' }}>Días</th>
-            </tr>
-          </thead>
-          <tbody>
-            {g.usdTotals.map((t) => (
-              <tr key={`${t.platform}:${t.settlementCurrency}`}>
-                <td>{t.platformName}</td>
-                <td>{t.settlementCurrency}</td>
-                <td style={{ textAlign: 'right' }}>
-                  {/* Ausente, no cero: una moneda sin cotización no vale nada en
-                      USD sólo porque nadie la cotiza. */}
-                  {t.netUsd === null ? '—' : fmtExact(t.netUsd, 'USD')}
-                </td>
-                <td>
-                  {t.rateLabel}
-                  {t.effectiveRate !== null && (
-                    <> · promedio ponderado {t.effectiveRate.toLocaleString('es-UY')} {t.settlementCurrency}/USD</>
-                  )}
-                </td>
-                <td style={{ textAlign: 'right' }}>
-                  {t.daysConverted.toLocaleString()}
-                  {t.daysMissingRate > 0 && (
-                    <span style={{ color: 'var(--red)' }}> · {t.daysMissingRate.toLocaleString()} sin cotización</span>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </Card>
+        </Card>
+      </div>
 
       {/* ── Temporadas ── */}
       <div className="proto-grid2">
         <Card
           title="🏆 Comparativa por temporadas deportivas"
-          hint="Pagos exitosos y neto USD (liquidación, convertido por día) agrupados por temporada deportiva, del 1 de septiembre al 31 de agosto. La temporada en curso está incompleta y se compara contra temporadas enteras."
+          hint="Pagos exitosos, bajas y pico mensual de activos por temporada deportiva (1 de septiembre a 31 de agosto), y el neto en USD de liquidación convertido por día. Una temporada con menos de 12 meses en el rango se marca con * y la que sigue en curso con ⏳."
           desc={
             <>
-              Cada temporada va del <b>1 de septiembre</b> al <b>31 de agosto</b> del año
-              siguiente. Se comparan transacciones e ingresos netos en USD. La tercera serie
-              del prototipo — suscriptores activos, pico mensual de la temporada — depende de
-              Suscripciones y no se dibuja.
+              Cada temporada va del <b>1 de septiembre</b> al <b>31 de agosto</b> del año siguiente. Se comparan transacciones (eventos), suscriptores activos (pico mensual de personas únicas en la temporada), bajas e ingresos netos en USD. Las temporadas aún en curso se marcan con ⏳; las parcialmente incluidas en el rango, con *.
             </>
           }
-          foot="La temporada en curso compara una parte del año contra temporadas completas: mírala como parcial, no como caída."
         >
-          <div style={{ height: 300 }}>
-            {seasons.length === 0 ? (
-              <div className="no-data">Sin datos</div>
-            ) : (
-              <ComboChart
-                height={300}
-                labels={seasons.map((s) => s.label)}
-                bars={[{ label: 'Ingresos netos USD', data: seasons.map((s) => s.netUsd), color: '#10b981' }]}
-                lines={[{ label: 'Transacciones', data: seasons.map((s) => s.tx), color: '#4f8ef7' }]}
-                barAxisTitle="USD netos"
-                lineAxisTitle="Transacciones"
-              />
-            )}
-          </div>
+          {seasons.length === 0 ? (
+            <div className="no-data">Sin datos</div>
+          ) : (
+            <SeasonsChart
+              labels={seasons.map((s) => s.label)}
+              tx={seasons.map((s) => s.tx)}
+              activePeak={seasons.map((s) => s.activePeak)}
+              bajas={seasons.map((s) => s.bajas)}
+              netUsd={seasons.map((s) => Math.round(s.netUsd))}
+              footers={seasons.map((s) => s.footer)}
+            />
+          )}
         </Card>
         <Card
           title="📊 Transacciones por plan · Mensual vs Anual"
-          hint="Pagos exitosos por frecuencia de plan (Mensual, Anual, Free) y temporada sep→ago, según el período de cada Pago. Es un conteo de Pagos, no de suscriptores."
+          hint="Pagos de suscripción exitosos de cada mes (sin partido único) por Período del Pago: mensual o anual. Es un conteo de Pagos, no de suscriptores."
           desc={
             <>
-              Transacciones de suscripción por frecuencia de plan. El eje son{' '}
-              <b>temporadas</b> y no meses: el catálogo se deriva con grano de temporada, y
-              mensualizarlo pediría un corte plan×mes que la base todavía no tiene.
+              Histórico mensualizado de transacciones de suscripción por tipo de plan (excluye partidos únicos y bajas). Las barras apiladas muestran cuántas transacciones fueron de planes <b>mensuales</b> y cuántas de planes <b>anuales</b> cada mes.
             </>
           }
         >
-          <div style={{ height: 300 }}>
-            {planFreqBySeason.labels.length === 0 ? (
-              <div className="no-data">Sin datos</div>
-            ) : (
-              <StackedBarChart
-                height={300}
-                labels={planFreqBySeason.labels}
-                series={planFreqBySeason.series}
-              />
-            )}
-          </div>
+          {mList.length === 0 ? (
+            <div className="no-data">Sin datos</div>
+          ) : (
+            <PlansFreqChart labels={mList} mensual={mList.map((x) => bk(x)?.mensual ?? 0)} anual={mList.map((x) => bk(x)?.anual ?? 0)} />
+          )}
         </Card>
       </div>
 
       {/* ── Tabla mes × temporada ── */}
       <Card
         title="📅 Comparativa mensual por temporadas"
-        hint="Cada celda es el valor del mes en la métrica elegida: Pagos exitosos, neto USD (liquidación, convertido por día) o bruto de cobro en una moneda. Las columnas son temporadas sep→ago y el Total suma la columna."
+        hint="Cada celda es el valor del mes en la métrica elegida: Pagos por Período o por clasificación, activos al cierre, bajas, neto en USD (liquidación, convertido por día) o neto en la moneda de liquidación dominante. Las columnas son temporadas sep→ago; % Incremento compara contra el mes inmediatamente anterior en el tiempo."
         desc={
           <>
-            Cada columna es una temporada deportiva (sep→ago) y cada fila un mes en orden de
-            temporada. El <b>% incremento</b> compara cada celda con el mes inmediatamente
-            anterior en el tiempo: octubre contra septiembre de la misma temporada,
-            septiembre contra agosto de la anterior.
-          </>
-        }
-        foot={
-          <>
-            Métricas del prototipo que todavía no se pueden calcular:{' '}
-            {SEASON_METRICS_PENDING.join(' · ')} — todas dependen de Suscripciones.
+            Cada columna es una temporada deportiva (1 de septiembre a 31 de agosto). Las filas son los 12 meses en orden de temporada (sep → ago). El <b>% Incremento</b> compara cada celda con el <b>mes inmediatamente anterior en el tiempo</b>: octubre vs septiembre de la misma temporada, septiembre vs agosto de la temporada anterior, etc. La fila <b>Total</b> compara la suma de la temporada con la suma de la temporada previa. Respeta los filtros y el rango de arriba.
           </>
         }
       >
         <div className="proto-controls">
           <label>
             Métrica a comparar
-            <select value={seasonMetric} onChange={(e) => setSeasonMetric(e.target.value as SeasonMetric)}>
-              {SEASON_METRICS.map((m) => (
-                <option key={m.key} value={m.key}>
-                  {m.label}
-                </option>
-              ))}
-              {SEASON_METRICS_PENDING.map((m) => (
-                <option key={m} value={m} disabled>
-                  {m} · pendiente
-                </option>
+            <select value={seasonMetric} onChange={(e) => setSeasonMetric(e.target.value as SeasonMetric)} style={{ minWidth: 260 }}>
+              {SEASON_METRICS.map((x) => (
+                <option key={x.key} value={x.key}>{x.label}</option>
               ))}
             </select>
           </label>
-          {seasonMetric === 'bruto_local' && (
-            <label>
-              Moneda
-              <select value={activeCcy ?? ''} onChange={(e) => setGrossCcy(e.target.value)}>
-                {currencies.map((c) => (
-                  <option key={c.currency} value={c.currency}>
-                    {c.currency}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
+          <label>
+            País
+            <select disabled value="" style={{ minWidth: 220 }}>
+              <option value="">{countryLabel}</option>
+            </select>
+          </label>
         </div>
-        <div className="table-scroll" style={{ maxHeight: 520, overflow: 'auto' }}>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Mes</th>
-                {seasonTable.seasons.map((s) => (
-                  <th key={s} style={{ textAlign: 'right' }}>
-                    {seasonLabel(s)}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {seasonTable.rows.map((r) => (
-                <tr key={r.month}>
-                  <td>{MONTHS_ES[r.month - 1]}</td>
-                  {r.cells.map((v, i) => (
-                    <td key={i} style={{ textAlign: 'right', fontFamily: 'DM Mono, monospace' }}>
-                      {seasonFmt(v)}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-              <tr className="row-active">
-                <td style={{ fontWeight: 600 }}>Total</td>
-                {seasonTable.totals.map((v, i) => (
-                  <td key={i} style={{ textAlign: 'right', fontWeight: 600, fontFamily: 'DM Mono, monospace' }}>
-                    {seasonFmt(v)}
-                  </td>
-                ))}
-              </tr>
-            </tbody>
-          </table>
+        <div className="proto-table-scroll" style={{ maxHeight: 520 }}>
+          {!seasonTable ? (
+            <table className="tbl-seasons"><tbody><tr><td>Sin datos</td></tr></tbody></table>
+          ) : (
+            <SeasonTable t={seasonTable} countryLabel={countryLabel} />
+          )}
         </div>
       </Card>
 
       {/* ── Comisiones ── */}
       <Card
         title="💳 Comisiones de pasarela"
-        hint="Comisión del Proveedor por mes (por fecha de captura) en su moneda de liquidación, sin retenciones. El % efectivo es comisión ÷ bruto liquidado del mismo Proveedor y moneda."
-        desc={
-          <>
-            Comisiones cobradas por cada Proveedor mes a mes (barras) y el{' '}
-            <b>% efectivo</b> sobre su propio bruto liquidado (línea punteada, eje derecho).
-            Las barras no se apilan: cada una está en su moneda.
-          </>
-        }
-        foot={
-          <>
-            {g.platformName}: {payCoverage.withFee.toLocaleString()} de{' '}
-            {payCoverage.successful.toLocaleString()} Pagos con id de Proveedor traen comisión.
-            {payCoverage.preapprovals > 0 && (
-              <> Quedan afuera {payCoverage.preapprovals.toLocaleString()} preaprobaciones de
-              MercadoPago: son suscripciones, no cobros, y nunca tuvieron comisión que informar.</>
-            )}{' '}
-            El % se calcula contra el monto liquidado y no contra el bruto de
-            cobro: dividir una comisión en USD por un bruto en UYU da 0,16% y no significa
-            nada.
-          </>
-        }
+        hint="Comisión de cada Proveedor por mes (por fecha de captura), convertida a USD con la cotización de cada día. Sólo comisión: la retención de MercadoPago no es un fee. El «% efectivo» de arriba es comisión ÷ bruto liquidado."
+        desc="Fees cobrados por MercadoPago y Stripe mes a mes, en USD. PayPal no tiene feed de comisiones y no aparece."
       >
-        <div style={{ height: 320 }}>
-          {feesCombo.labels.length === 0 ? (
-            <div className="no-data">Sin comisiones en rango</div>
-          ) : (
-            <ComboChart
-              height={320}
-              labels={feesCombo.labels.map(monthLabel)}
-              tooltipTitles={bucketTitles(feesCombo.labels.map((m) => `${m}-01`), 'month')}
-              bars={feesCombo.bars}
-              lines={feesCombo.lines}
-              barAxisTitle="Comisión (moneda de liquidación)"
-              lineAxisTitle="% efectivo"
-            />
-          )}
-        </div>
-      </Card>
-
-      <Card
-        title="💳 Neto diario por moneda de liquidación"
-        hint="Neto de liquidación por día y moneda: bruto liquidado menos comisión y retención, sumando los Proveedores que liquidan en esa moneda. Bucketeado por fecha de captura, UTC real."
-        desc="El pulso de las comisiones día por día. Bucketeado por fecha de captura (UTC real), no por la fecha del Pago (hora local de Argentina): los dos relojes están a 3 horas."
-        foot={
-          g.netExcludesUnmatchedFees
-            ? 'Con filtros activos sólo entran las comisiones cuyo Pago está ingestado; el titular sin filtros lee el espejo completo.'
-            : undefined
-        }
-      >
-        <div style={{ height: 280 }}>
-          {netDaily.labels.length === 0 ? (
-            <div className="no-data">Sin comisiones en rango</div>
-          ) : (
-            <LineChart
-              height={280}
-              labels={netDaily.labels.map((day) => day.slice(5))}
-              tooltipTitles={bucketTitles(netDaily.labels, 'day')}
-              series={netDaily.series}
-              yFormat="currency"
-            />
-          )}
-        </div>
+        {mList.length === 0 ? (
+          <div className="no-data">Sin comisiones en rango</div>
+        ) : (
+          <FeesChart labels={mList} byPlatform={feesByGw} />
+        )}
       </Card>
 
       {/* ── Ingresos mes a mes ── */}
       <Card
         title="Ingresos mes a mes"
-        hint="Bruto y neto de liquidación por mes y moneda según el feed de comisiones; NETO USD es la suma de esos netos convertidos día por día. Las barras, en cambio, son el bruto de cobro en la moneda elegida."
+        hint="Bruto y neto de liquidación por mes y moneda según el feed de comisiones de cada Proveedor. BRUTO USD y NETO USD son la suma de todo convertido a USD día por día; un mes con algún día sin cotización queda ausente en esas dos columnas."
         desc={
           <>
-            Bruto vs neto por mes y por moneda de liquidación. Bruto = lo que el Proveedor
-            movió; neto = lo que quedó después de comisión y retención. La última columna es
-            el total convertido a USD día por día.
+            Bruto vs neto por mes. Bruto = lo que el Proveedor liquidó. Neto = lo que queda después de los fees y la retención de la pasarela. El dashboard usa el <b>neto</b> como referencia principal.
           </>
         }
         foot={
-          data.grossOnlyPlatforms.length > 0 ? (
-            <>
-              {data.grossOnlyPlatforms.join(', ')} no aparece
-              {data.grossOnlyPlatforms.length > 1 ? 'n' : ''} en esta tabla: no tenemos su feed
-              de comisiones, y contarlo con comisión cero lo haría parecer gratis.
-            </>
-          ) : undefined
+          <>
+            Conversión a USD por día: ARS al blue venta de dolarapi, USD sin convertir, EUR sin cotización (ausente).
+            {data.grossOnlyPlatforms.length > 0 && <> {data.grossOnlyPlatforms.join(', ')} no aparece en esta tabla: sin feed de comisiones, contarlo con comisión cero lo haría parecer gratis.</>}
+          </>
         }
       >
-        <div className="proto-controls">
-          <label>
-            Moneda del gráfico de bruto
-            <select value={activeCcy ?? ''} onChange={(e) => setGrossCcy(e.target.value)}>
-              {currencies.map((c) => (
-                <option key={c.currency} value={c.currency}>
-                  {c.currency}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-        <div style={{ height: 260, marginBottom: 14 }}>
-          {grossMonthly.labels.length === 0 ? (
-            <div className="no-data">Sin ingresos en rango</div>
-          ) : (
-            <StackedBarChart
-              height={260}
-              labels={grossMonthly.labels}
-              tooltipTitles={bucketTitles(grossMonthly.labels, 'month')}
-              series={grossMonthly.series}
-            />
-          )}
-        </div>
-        <div className="proto-foot" style={{ marginBottom: 14 }}>
-          Barras: bruto de <strong>cobro</strong> en {activeCcy}, apilado por plataforma —
-          una moneda por vez, porque apilar monedas distintas no daría un total.
-        </div>
-        <div className="table-scroll" style={{ maxHeight: 420, overflow: 'auto' }}>
-          <table className="data-table">
+        <div className="proto-table-scroll" style={{ maxHeight: 420 }}>
+          <table>
             <thead>
               <tr>
                 <th>Mes</th>
-                {revenueTable.ccys.map((c) => (
-                  <th key={`g-${c}`} style={{ textAlign: 'right' }}>
-                    Bruto {c}
-                  </th>
+                {mainCcys.map((c) => (
+                  <SeasonCells key={c}>
+                    <th className="right">Bruto {c} ({ccyPlatforms(c)})</th>
+                    <th className="right">Neto {c} ({ccyPlatforms(c)})</th>
+                  </SeasonCells>
                 ))}
-                {revenueTable.ccys.map((c) => (
-                  <th key={`n-${c}`} style={{ textAlign: 'right' }}>
-                    Neto {c}
-                  </th>
-                ))}
-                <th style={{ textAlign: 'right' }}>NETO USD</th>
+                <th className="right">Otras monedas (neto)</th>
+                <th className="right">BRUTO USD</th>
+                <th className="right">NETO USD</th>
               </tr>
             </thead>
             <tbody>
-              {revenueTable.rows.map((r) => (
-                <tr key={r.month}>
-                  <td>{monthLabel(r.month)}</td>
-                  {revenueTable.ccys.map((c) => (
-                    <td key={`g-${c}`} style={{ textAlign: 'right', fontFamily: 'DM Mono, monospace' }}>
-                      {r.byCcy[c] ? fmtRound(r.byCcy[c].gross, c) : '—'}
-                    </td>
-                  ))}
-                  {revenueTable.ccys.map((c) => (
-                    <td key={`n-${c}`} style={{ textAlign: 'right', fontFamily: 'DM Mono, monospace' }}>
-                      {r.byCcy[c] ? fmtRound(r.byCcy[c].net, c) : '—'}
-                    </td>
-                  ))}
-                  <td style={{ textAlign: 'right', fontFamily: 'DM Mono, monospace', color: 'var(--green)' }}>
-                    {r.netUsd === null ? '—' : fmtRound(r.netUsd, 'USD')}
-                  </td>
-                </tr>
-              ))}
+              {[...mList].map((x) => {
+                const others = otherCcys
+                  .map((c) => { const v = m.netLocal.get(c)?.get(x) ?? 0; return v > 0 ? `${c} ${fmt(Math.round(v))}` : ''; })
+                  .filter(Boolean)
+                  .join(' · ');
+                const gU = m.grossUsd.get(x);
+                const nU = m.netUsd.get(x);
+                return (
+                  <tr key={x}>
+                    <td className="mono ink" style={{ fontWeight: 600 }}>{x}</td>
+                    {mainCcys.map((c) => {
+                      const gv = Math.round(m.grossLocal.get(c)?.get(x) ?? 0);
+                      const nv = Math.round(m.netLocal.get(c)?.get(x) ?? 0);
+                      return (
+                        <SeasonCells key={c}>
+                          <td className="right mono" style={{ color: '#94a3b8' }}>{gv ? fmt(gv) : '—'}</td>
+                          <td className="right mono" style={{ color: c === 'ARS' ? '#0891b2' : '#1d4ed8', fontWeight: 600 }}>{nv ? fmt(nv) : '—'}</td>
+                        </SeasonCells>
+                      );
+                    })}
+                    <td className="right mono muted" style={{ fontSize: 11 }}>{others || '—'}</td>
+                    <td className="right mono" style={{ color: '#94a3b8' }}>{gU && Math.round(gU) ? fmtUsdRound(gU) : '—'}</td>
+                    <td className="right mono ink" style={{ fontWeight: 700 }}>{nU && Math.round(nU) ? fmtUsdRound(nU) : '—'}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -1409,293 +985,261 @@ export function FinancieroView() {
 
       {/* ── Detalle mensual ── */}
       <Card
-        title={`Detalle mensual · ${activeCcy ?? '—'}`}
-        hint="Por mes, sobre los Pagos exitosos en la moneda elegida: bruto de cobro, cantidad de Pagos y suscriptores distintos. La columna Neto USD es el total del mes en liquidación, con todas las monedas."
+        title="Detalle mensual"
+        hint="Por mes: los Pagos exitosos clasificados (eventos), los Subscribers con acceso vigente al cierre del mes por Período (personas únicas) y el neto en USD de liquidación convertido por día. Bajas son Subscribers cuya cobertura venció ese mes sin renovación."
         desc={
           <>
-            Las columnas de <i>transacciones</i> son eventos de pago: un mismo email puede
-            aparecer varias veces en el mes. Las columnas de <i>suscriptores activos únicos</i>{' '}
-            del prototipo — mensuales, anuales y su suma — dependen de Suscripciones y no
-            están.
+            Las columnas <i>Nuevos</i> a <i>Partido único</i> son <b>transacciones</b> (eventos, no personas únicas — un mismo suscriptor puede aparecer varias veces al mes). Las columnas <i>Mensuales</i> y <i>Anuales</i> son <b>suscriptores activos únicos</b> al cierre del mes (cada persona cuenta una vez).
           </>
         }
-        foot="Más reciente arriba. El corte por bucket (nuevos · recurrentes · reactivados · bajas · partido único) llega con Suscripciones."
       >
-        <div className="table-scroll" style={{ maxHeight: 480, overflow: 'auto' }}>
-          {detailByCcy.length === 0 ? (
-            <div className="no-data">Sin datos</div>
-          ) : (
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Mes</th>
-                  <th style={{ textAlign: 'right' }}>Bruto {activeCcy}</th>
-                  <th style={{ textAlign: 'right' }}>Transacciones</th>
-                  <th style={{ textAlign: 'right' }}>Pagadores</th>
-                  <th style={{ textAlign: 'right' }}>Neto USD</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[...detailByCcy].reverse().map((r) => {
-                  const m = r.month.slice(0, 7);
-                  const netUsd = netUsdByMonth.find((x) => x.month === m)?.netUsd ?? null;
-                  return (
-                    <tr key={r.month}>
-                      <td>{monthLabel(m)}</td>
-                      <td style={{ textAlign: 'right', fontFamily: 'DM Mono, monospace' }}>
-                        {fmtRound(r.gross, r.currency)}
-                      </td>
-                      <td style={{ textAlign: 'right' }}>{r.txCount.toLocaleString()}</td>
-                      <td style={{ textAlign: 'right', color: 'var(--green)' }}>
-                        {r.payers.toLocaleString()}
-                      </td>
-                      <td style={{ textAlign: 'right', fontFamily: 'DM Mono, monospace' }}>
-                        {netUsd === null ? '—' : fmtRound(netUsd, 'USD')}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </Card>
-
-      {/* ── Ingresos por país ── */}
-      <div className="proto-grid2">
-        <Card
-          title="🌎 Ingresos por país · plano de cobro"
-          hint="Bruto de cobro, Pagos exitosos y suscriptores distintos por país del suscriptor (no del contenido) y moneda, en el rango. «N/A» es un suscriptor sin país; nada se convierte ni se suma entre monedas."
-          desc="Una fila por país y moneda; sin fila de total, porque sumar ARS con UYU no da un número."
-          foot={`Top 40 de ${data.byCountry.length} filas.`}
-        >
-          <div className="table-scroll" style={{ maxHeight: 340, overflow: 'auto' }}>
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>País</th>
-                  <th>Moneda</th>
-                  <th style={{ textAlign: 'right' }}>Bruto</th>
-                  <th style={{ textAlign: 'right' }}>Tx</th>
-                  <th style={{ textAlign: 'right' }}>Pagadores</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.byCountry.slice(0, 40).map((r) => (
-                  <tr key={`${r.country}-${r.currency}`}>
-                    <td>{r.country}</td>
-                    <td>
-                      <span
-                        style={{
-                          display: 'inline-block',
-                          width: 8,
-                          height: 8,
-                          borderRadius: 2,
-                          background: CURRENCY_COLORS[r.currency] ?? '#94a3b8',
-                          marginRight: 8,
-                        }}
-                      />
-                      {r.currency}
-                    </td>
-                    <td style={{ textAlign: 'right', fontFamily: 'DM Mono, monospace' }}>
-                      {fmtRound(r.gross, r.currency)}
-                    </td>
-                    <td style={{ textAlign: 'right' }}>{r.txCount.toLocaleString()}</td>
-                    <td style={{ textAlign: 'right', color: 'var(--green)' }}>
-                      {r.payers.toLocaleString()}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-        <Card
-          title={`Suscripciones por estado · ${g.subscriptionPlatformName}`}
-          hint="Cuántas suscripciones hay hoy en cada estado del espejo de cada Proveedor («activa», «cancelada», «pausada»…). Foto actual, no ventana: ignora el rango y los filtros. Las preaprobaciones de MercadoPago que nunca facturaron quedan fuera del gráfico."
-          desc="Estado actual, en el vocabulario de cada Proveedor, traducido."
-          foot={
-            <>
-              El churn se lee del estado de la suscripción: {undatedCancels.toLocaleString()} de{' '}
-              {canceledSubs.toLocaleString()} cancelaciones no traen fecha. Fuera del gráfico:{' '}
-              {neverStarted.toLocaleString()} preaprobaciones sin iniciar.
-              {g.subscriptionsIgnoreFilters && <> No afectado por los filtros.</>}
-            </>
-          }
-        >
-          <div style={{ height: 260 }}>
-            {statusDonut.length === 0 ? (
-              <div className="no-data">Sin suscripciones</div>
-            ) : (
-              <DoughnutChart
-                height={260}
-                labels={statusDonut.map((r) => `${statusLabel(r.status)} · ${r.platformName}`)}
-                values={statusDonut.map((r) => r.count)}
-                colors={statusDonut.map((r) => STATUS_COLORS[r.status] ?? '#64748b')}
-              />
-            )}
-          </div>
-        </Card>
-      </div>
-
-      {/* ── Catálogo ── */}
-      <Card
-        title="🏷️ Catálogo de precios inferido por plan, mercado y temporada"
-        hint="Precios distintos que realmente pagaron los suscriptores, por plan, frecuencia, país, moneda y temporada, con cuántos Pagos exitosos cayeron en cada uno. Sale de los Pagos, no de una lista de precios."
-        desc={
-          <>
-            <b>Precios detectados directamente desde las transacciones.</b> Si aparecen
-            varios precios en el mismo plan, mercado y temporada, puede ser un cambio de
-            tarifa, un descuento o un error de catálogo. Un punto de precio que nadie pagó no
-            aparece; uno que cambió a mitad de temporada aparece dos veces.
-          </>
-        }
-        foot={`Temporada deportiva sep→ago. ${catalogView.rows.length.toLocaleString()} combinaciones tras los filtros, de ${data.catalog.length.toLocaleString()} en rango; se listan las primeras 80.`}
-      >
-        <div className="proto-controls">
-          <label>
-            Mercado
-            <select
-              value={catFilters.market}
-              onChange={(e) => setCatFilters({ ...catFilters, market: e.target.value })}
-            >
-              <option value="ALL">Todos</option>
-              {catalogView.markets.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Temporada
-            <select
-              value={catFilters.season}
-              onChange={(e) => setCatFilters({ ...catFilters, season: e.target.value })}
-            >
-              <option value="ALL">Todas</option>
-              {catalogView.seasons.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Plan
-            <select
-              value={catFilters.plan}
-              onChange={(e) => setCatFilters({ ...catFilters, plan: e.target.value })}
-            >
-              <option value="ALL">Todos</option>
-              {catalogView.plans.map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Moneda
-            <select
-              value={catFilters.currency}
-              onChange={(e) => setCatFilters({ ...catFilters, currency: e.target.value })}
-            >
-              <option value="ALL">Todas</option>
-              {catalogView.ccys.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-        <div className="table-scroll" style={{ maxHeight: 520, overflow: 'auto' }}>
-          <table className="data-table">
+        <div className="proto-table-scroll" style={{ maxHeight: 480 }}>
+          <table>
             <thead>
               <tr>
-                <th>Plan</th>
-                <th>Frecuencia</th>
-                <th>Mercado</th>
-                <th>Temporada</th>
-                <th>Moneda</th>
-                <th style={{ textAlign: 'right' }}>Precio</th>
-                <th style={{ textAlign: 'right' }}>Transacciones</th>
+                <th rowSpan={2}>Mes</th>
+                <th colSpan={6} style={{ textAlign: 'center' }}>Transacciones (eventos)</th>
+                <th colSpan={3} style={{ textAlign: 'center', background: 'color-mix(in srgb, #10b981 12%, var(--p-thead))' }}>Suscriptores activos (únicos)</th>
+                <th rowSpan={2} className="right">Ingreso neto USD</th>
+              </tr>
+              <tr>
+                <th className="right" style={{ top: 37 }}>🟢 Nuevos</th>
+                <th className="right" style={{ top: 37 }}>🔵 Recurrentes</th>
+                <th className="right" style={{ top: 37 }}>🟡 Reactivados</th>
+                <th className="right" style={{ top: 37 }}>🔴 Bajas</th>
+                <th className="right" style={{ top: 37 }}>⚪️ Partido único</th>
+                <th className="right" style={{ top: 37 }}>Total</th>
+                <th className="right" style={{ top: 37 }}>📅 Mensuales</th>
+                <th className="right" style={{ top: 37 }}>🗓️ Anuales</th>
+                <th className="right" style={{ top: 37 }}>∑ Únicos</th>
               </tr>
             </thead>
             <tbody>
-              {catalogView.rows.slice(0, 80).map((r) => (
-                <tr key={`${r.planFamily}-${r.planFrequency}-${r.market}-${r.season}-${r.currency}-${r.price}`}>
-                  <td>{r.planFamily}</td>
-                  <td>{r.planFrequency}</td>
-                  <td>{r.market}</td>
-                  <td>{r.season}</td>
-                  <td>{r.currency}</td>
-                  <td style={{ textAlign: 'right', fontFamily: 'DM Mono, monospace' }}>
-                    {fmtExact(r.price, r.currency)}
-                  </td>
-                  <td style={{ textAlign: 'right' }}>{r.txCount.toLocaleString()}</td>
-                </tr>
-              ))}
+              {mList.map((x) => {
+                const b = bk(x);
+                const a = m.active.get(x);
+                const totalEv = b ? b.newSubscribers + b.recurring + b.reactivated + b.churned + b.oneOff : 0;
+                const nU = m.netUsd.get(x);
+                return (
+                  <tr key={x}>
+                    <td className="mono ink" style={{ fontWeight: 600 }}>{x}{a?.partial ? ' ⏳' : ''}</td>
+                    <td className="right" style={{ color: '#059669', fontWeight: 600 }}>{fmt(b?.newSubscribers ?? 0)}</td>
+                    <td className="right">{fmt(b?.recurring ?? 0)}</td>
+                    <td className="right" style={{ color: '#d97706', fontWeight: 600 }}>{fmt(b?.reactivated ?? 0)}</td>
+                    <td className="right" style={{ color: '#dc2626', fontWeight: 600 }}>{fmt(b?.churned ?? 0)}</td>
+                    <td className="right">{fmt(b?.oneOff ?? 0)}</td>
+                    <td className="right"><b>{fmt(totalEv)}</b></td>
+                    <td className="right cell-blue">{a?.mensual ? fmt(a.mensual) : '—'}</td>
+                    <td className="right cell-amber">{a?.anual ? fmt(a.anual) : '—'}</td>
+                    <td className="right cell-green">{a?.total ? fmt(a.total) : '—'}</td>
+                    <td className="right mono ink" style={{ fontWeight: 700 }}>{nU && Math.round(nU) ? fmtUsdRound(nU) : '—'}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       </Card>
 
+      {/* ── Catálogo ── */}
+      <details className="proto-details" open>
+        <summary>
+          Catálogo de precios inferido por plan, mercado y temporada
+        </summary>
+        <div style={{ marginTop: 14 }}>
+          <div className="proto-note-box">
+            <span className="ico">⚠️</span>
+            <div>
+              <b>Precios detectados directamente desde las transacciones.</b> Si ves varios precios en el mismo plan/temporada/mercado, puede ser por cambios de tarifa, descuentos, o errores de catálogo. Revisa los que no deberían estar.
+            </div>
+          </div>
+          {catalog && (
+            <>
+              <div className="proto-controls">
+                <label>
+                  Mercado
+                  <select value={cat.market} onChange={(e) => setCat({ ...cat, market: e.target.value })} style={{ minWidth: 200 }}>
+                    <option value="ALL">Todos los mercados</option>
+                    {catalog.markets.map((x) => <option key={x} value={x}>{MARKET_LABEL[x] ?? x}</option>)}
+                  </select>
+                </label>
+                <label>
+                  Temporada
+                  <select value={cat.season} onChange={(e) => setCat({ ...cat, season: e.target.value })}>
+                    <option value="ALL">Todas las temporadas</option>
+                    {catalog.seasons.map((x) => <option key={x} value={x}>{x}</option>)}
+                  </select>
+                </label>
+                <label>
+                  Plan
+                  <select value={cat.plan} onChange={(e) => setCat({ ...cat, plan: e.target.value })} style={{ minWidth: 200 }}>
+                    <option value="ALL">Todos los planes</option>
+                    {catalog.plans.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+                  </select>
+                </label>
+                <label>
+                  Moneda
+                  <select value={cat.currency} onChange={(e) => setCat({ ...cat, currency: e.target.value })} style={{ minWidth: 140 }}>
+                    <option value="ALL">Todas las monedas</option>
+                    {catalog.currencies.map((x) => <option key={x} value={x}>{x}</option>)}
+                  </select>
+                </label>
+                <label>
+                  Precio
+                  <select value={catalog.prices.some((p) => `${p.currency}|${p.price}` === cat.price) ? cat.price : 'ALL'} onChange={(e) => setCat({ ...cat, price: e.target.value })} style={{ minWidth: 180 }}>
+                    <option value="ALL">Todos los precios</option>
+                    {catalog.prices.map((p) => (
+                      <option key={`${p.currency}|${p.price}`} value={`${p.currency}|${p.price}`}>
+                        {cat.currency === 'ALL' ? `${p.currency} ` : ''}{p.price.toLocaleString('es')} ({p.count.toLocaleString('es')} tx)
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="proto-table-scroll" style={{ maxHeight: 520 }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Plan</th><th>Mercado</th><th>Moneda</th><th>Temporada</th>
+                      <th className="right">Precio</th><th className="right">Transacciones</th><th>Ranking</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {catalog.rows.length === 0 ? (
+                      <tr><td colSpan={7} style={{ textAlign: 'center', padding: 30 }} className="muted">Sin entradas para este filtro.</td></tr>
+                    ) : (
+                      catalog.rows.map((r) => (
+                        <tr key={`${r.planFamily}|${r.planFrequency}|${r.market}|${r.season}|${r.currency}|${r.price}`}>
+                          <td className="ink" style={{ fontWeight: 600 }}>{r.planFamily} · {r.planFrequency}</td>
+                          <td><span className="proto-tag-market">{r.market}</span></td>
+                          <td>{r.currency}</td>
+                          <td>{r.season}</td>
+                          <td className="right mono">{r.price.toLocaleString('es', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                          <td className="right">{fmt(r.txCount)}</td>
+                          <td>{r.rank === 1 ? <span className="pill recurring" style={{ margin: 0 }}>★ principal</span> : <span className="muted">#{r.rank}</span>}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
+      </details>
+
       {/* ── Asistente ── */}
       <Card
         title="💬 Asistente de datos"
+        hint="Preguntas en lenguaje natural sobre los datos de esta pantalla. Todavía no está conectado a la base viva."
         desc="Preguntas sobre los datos del dashboard en lenguaje natural: ingresos por Proveedor y moneda, activos, transacciones, comisiones, precios."
       >
-        {/* El plan y su orden viven en docs/handoff/financiero-dashboard-port.md,
-            paso 6; acá va sólo el porqué, que es lo único que le sirve a quien
-            mira la pantalla. */}
         <Pending kind="asistente">
-          El asistente del prototipo respondía sobre una copia de los datos embebida y
-          congelada. Contra la base viva necesita una superficie de consulta propia, y cada
-          número que citaría sale de los bloques de arriba: es lo último de la portación, no
-          lo primero.
+          El asistente del prototipo respondía sobre una copia de los datos embebida y congelada. Contra la base viva necesita una superficie de consulta propia, y cada número que citaría sale de los bloques de arriba: es lo último de la portación, no lo primero.
         </Pending>
       </Card>
-
-      {/* ── Notas metodológicas ── */}
-      <details className="proto-card">
-        <summary style={{ cursor: 'pointer', fontWeight: 600, fontSize: 14 }}>
-          Notas metodológicas
-        </summary>
-        <div className="proto-desc" style={{ marginTop: 12 }}>
-          <p style={{ marginBottom: 8 }}>
-            <b>Dos planos.</b> El de <b>cobro</b> es lo que se le facturó al suscriptor, en
-            su moneda; el de <b>liquidación</b> es lo que el Proveedor movió, en la moneda de
-            la cuenta. Toda la aritmética de esta pantalla ocurre dentro de un plano.
-            Dividir una comisión en USD por un bruto en UYU da 0,16% y no significa nada.
-          </p>
-          <p style={{ marginBottom: 8 }}>
-            <b>Comisión y retención no son lo mismo.</b> MercadoPago descuenta las dos y su
-            Export nombra sólo la primera: la comisión es 1,80% y el neto queda 7,31% abajo
-            del bruto. La diferencia es impuesto retenido en la fuente. Sumarlas y llamar al
-            resultado &quot;comisión&quot; haría parecer a MercadoPago cuatro veces más caro
-            que Stripe cuando en realidad es más barato.
-          </p>
-          <p style={{ marginBottom: 8 }}>
-            <b>Conversión a USD, por día.</b> El blue se movió 9,5% dentro de julio de 2024 y
-            de 1.000 a 1.565 en el período que cubren los Pagos: una cotización mensual no es
-            un redondeo de la diaria. Stripe convierte con su propia
-            cotización; ARS con el blue venta de dolarapi. EUR no lo cotiza
-            ninguna fuente y sus figuras USD quedan ausentes.
-          </p>
-          <p style={{ marginBottom: 8 }}>
-            <b>Dos relojes.</b> La fecha del Pago es hora de Argentina guardada como UTC; la
-            fecha de captura de la comisión es UTC real. Son 3 horas, y sólo
-            importan en los bordes de mes.
-          </p>
-          <p>
-            <b>PayPal es sólo bruto.</b> 90 Suscripciones y ningún feed de comisiones:
-            aparece en el bruto y se lo declara excluido de toda cifra neta, en vez de
-            contarlo como si no costara nada.
-          </p>
-        </div>
-      </details>
     </div>
   );
+}
+
+/** La tabla mes × temporada del prototipo: cabecera con país y métrica, una
+ *  columna por temporada con su «% Incremento», y las filas Total y Media. */
+function SeasonTable({
+  t,
+  countryLabel,
+}: {
+  t: {
+    seasonKeys: number[];
+    values: Map<number, Map<number, number | null>>;
+    totals: Map<number, number>;
+    counts: Map<number, number>;
+    fmtVal: (v: number) => string;
+    title: string;
+    invert: boolean;
+  };
+  countryLabel: string;
+}) {
+  const pickCls = (isPositive: boolean): 'up' | 'down' => (t.invert ? (isPositive ? 'down' : 'up') : isPositive ? 'up' : 'down');
+  const fmtPct = (cur: number, prev: number | null | undefined): { cls: string; txt: string } => {
+    if (prev === null || prev === undefined) return { cls: 'na', txt: '' };
+    if (prev === 0) return cur === 0 ? { cls: 'na', txt: '—' } : { cls: pickCls(true), txt: '+∞' };
+    const pct = ((cur - prev) / prev) * 100;
+    return { cls: pickCls(pct >= 0), txt: `${pct >= 0 ? '+' : ''}${pct.toFixed(2).replace('.', ',')}%` };
+  };
+  const cell = (v: number | null, prev: number | null | undefined) =>
+    v === null ? (
+      <>
+        <td className="none">—</td>
+        <td className="pct na" />
+      </>
+    ) : (
+      <>
+        <td className="num">{t.fmtVal(v)}</td>
+        <td className={`pct ${fmtPct(v, prev).cls}`}>{fmtPct(v, prev).txt}</td>
+      </>
+    );
+
+  // Cada total se compara con el de la temporada anterior que tenga datos:
+  // se recorre una vez y se arrastra el previo, sin reasignar en el render.
+  const totalCells = t.seasonKeys.reduce<{ prev: number | null; out: React.ReactNode[] }>(
+    (acc, s) => {
+      const has = (t.counts.get(s) ?? 0) > 0;
+      const tot = t.totals.get(s) ?? 0;
+      acc.out.push(<SeasonCells key={s}>{has ? cell(tot, acc.prev) : cell(null, null)}</SeasonCells>);
+      return { prev: has ? tot : null, out: acc.out };
+    },
+    { prev: null, out: [] },
+  ).out;
+  const avgCells = t.seasonKeys.reduce<{ prev: number | null; out: React.ReactNode[] }>(
+    (acc, s) => {
+      const n = t.counts.get(s) ?? 0;
+      if (n === 0) {
+        acc.out.push(<SeasonCells key={s}>{cell(null, null)}</SeasonCells>);
+        return { prev: null, out: acc.out };
+      }
+      const avg = (t.totals.get(s) ?? 0) / n;
+      acc.out.push(<SeasonCells key={s}>{cell(Math.round(avg * 100) / 100, acc.prev)}</SeasonCells>);
+      return { prev: avg, out: acc.out };
+    },
+    { prev: null, out: [] },
+  ).out;
+
+  return (
+    <table className="tbl-seasons">
+      <thead>
+        <tr>
+          <th className="country-cell">{countryLabel}</th>
+          <th className="metric-title" colSpan={t.seasonKeys.length * 2}>{t.title}</th>
+        </tr>
+        <tr>
+          <th style={{ top: 33 }} />
+          {t.seasonKeys.map((s) => (
+            <SeasonCells key={s}>
+              <th className="season" style={{ top: 33 }}>{seasonLabel(s)}</th>
+              <th className="pcth" style={{ top: 33 }}>% Incremento</th>
+            </SeasonCells>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        <tr className="summary"><td>Total</td>{totalCells}</tr>
+        {SEASON_MONTH_ORDER.map((mo, idx) => (
+          <tr key={mo}>
+            <td>{MONTH_FULL_ES[mo]}</td>
+            {t.seasonKeys.map((s) => {
+              const v = t.values.get(s)?.get(mo) ?? null;
+              const prev = idx === 0 ? (t.values.get(s - 1)?.get(8) ?? null) : (t.values.get(s)?.get(SEASON_MONTH_ORDER[idx - 1]) ?? null);
+              return <SeasonCells key={s}>{cell(v, prev)}</SeasonCells>;
+            })}
+          </tr>
+        ))}
+        <tr className="summary"><td>Media</td>{avgCells}</tr>
+      </tbody>
+    </table>
+  );
+}
+
+/** Un par de celdas con una sola key: React quiere una por hijo del array. */
+function SeasonCells({ children }: { children: React.ReactNode }) {
+  return <>{children}</>;
 }
