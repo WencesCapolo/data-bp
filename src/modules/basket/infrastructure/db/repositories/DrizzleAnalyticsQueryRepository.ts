@@ -15,7 +15,14 @@ import type {
 import type { EvolutionDTO } from '@basket/core/dtos/EvolutionDTO';
 import type { TeamsDTO, TeamRankRow, TeamDailyDTO } from '@basket/core/dtos/TeamsDTO';
 import type { FinanceDTO } from '@basket/core/dtos/FinanceDTO';
-import type { GatewayNetDTO, NetDailyPoint } from '@basket/core/dtos/GatewayNetDTO';
+import type {
+  ExcludedOutsidePagos,
+  GatewayNetDTO,
+  NetDailyPoint,
+  NetMonthlyPoint,
+  RefundTotal,
+  SettlementTotal,
+} from '@basket/core/dtos/GatewayNetDTO';
 import { LIVE_STATUSES, subscriptionLifecycle } from '@basket/core/entities/GatewaySubscription';
 import {
   indexRates,
@@ -220,6 +227,82 @@ const DAILY_CHART_DAYS = 15;
 const GRP_DAY = 1; // day kept, month grouped   -> 01
 const GRP_MONTH = 2; // day grouped, month kept -> 10
 const GRP_TOTAL = 3; // both grouped            -> 11
+
+// The money rows both gateway paths return — `grain`, `grp`, day, month,
+// platform, ccy, and the sums — mapped onto the DTO shapes. Shared by the
+// counted side and its complement so the two can never drift in shape.
+const bySettlementKey = <T extends { settlementCurrency: string }>(k: keyof T) =>
+  (a: T, b: T): number => {
+    const x = a[k] as unknown as string;
+    const y = b[k] as unknown as string;
+    return x < y ? -1 : x > y ? 1 : a.settlementCurrency < b.settlementCurrency ? -1 : 1;
+  };
+
+function settlementRows(rows: RowAny[], grp: number): RowAny[] {
+  return rows.filter((r) => s(r.grain) === 'settlement' && n(r.grp) === grp);
+}
+
+function netDailyPoints(rows: RowAny[]): NetDailyPoint[] {
+  return settlementRows(rows, GRP_DAY)
+    .map((r) => ({
+      day: d(r.day),
+      platform: n(r.platform),
+      platformName: gatewayName(n(r.platform)),
+      settlementCurrency: s(r.ccy),
+      grossSettlement: n(r.gross),
+      fees: n(r.fees),
+      taxes: n(r.taxes),
+      net: n(r.net),
+      txCount: n(r.tx_count),
+    }))
+    .sort(bySettlementKey<NetDailyPoint>('day'));
+}
+
+function netMonthlyPoints(rows: RowAny[]): NetMonthlyPoint[] {
+  return settlementRows(rows, GRP_MONTH)
+    .map((r) => ({
+      month: d(r.month),
+      platform: n(r.platform),
+      platformName: gatewayName(n(r.platform)),
+      settlementCurrency: s(r.ccy),
+      grossSettlement: n(r.gross),
+      fees: n(r.fees),
+      taxes: n(r.taxes),
+      net: n(r.net),
+      txCount: n(r.tx_count),
+    }))
+    .sort(bySettlementKey<NetMonthlyPoint>('month'));
+}
+
+function settlementTotals(rows: RowAny[]): SettlementTotal[] {
+  return settlementRows(rows, GRP_TOTAL)
+    .map((r) => ({
+      platform: n(r.platform),
+      platformName: gatewayName(n(r.platform)),
+      settlementCurrency: s(r.ccy),
+      grossSettlement: n(r.gross),
+      fees: n(r.fees),
+      taxes: n(r.taxes),
+      net: n(r.net),
+      txCount: n(r.tx_count),
+      feePct: feePct(n(r.fees), n(r.gross)),
+      taxPct: feePct(n(r.taxes), n(r.gross)),
+    }))
+    .sort((a, b) => b.grossSettlement - a.grossSettlement);
+}
+
+function refundTotals(rows: RowAny[]): RefundTotal[] {
+  return rows
+    .filter((r) => s(r.grain) === 'refund' && n(r.grp) === GRP_TOTAL)
+    .map((r) => ({
+      platform: n(r.platform),
+      platformName: gatewayName(n(r.platform)),
+      currency: s(r.ccy),
+      refundedAmount: n(r.refunded),
+      refundCount: n(r.refund_count),
+    }))
+    .sort((a, b) => b.refundCount - a.refundCount);
+}
 
 // fee_amount / settlement_amount — same plane. Dividing a fee by a presentment
 // gross reads 0.16% on a UYU row because the two numbers are in different
@@ -1373,8 +1456,8 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
     const totalsRow = all.find((r) => n(r.grp) === GRP_TOTALS);
     // Both sides of the comparison were cut at `asOf`; the Provider net is
     // joined here because it comes from the fee mirror, not from Pagos.
-    lifecycle.periodComparison.current.netUsdByPlatform = windowNet.current;
-    lifecycle.periodComparison.previous.netUsdByPlatform = windowNet.previous;
+    Object.assign(lifecycle.periodComparison.current, windowNet.current);
+    Object.assign(lifecycle.periodComparison.previous, windowNet.previous);
     return {
       range,
       totals: {
@@ -1581,29 +1664,19 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
   private async windowNetUsd(
     asOf: string,
     filters?: CommonFilters,
-  ): Promise<Record<'current' | 'previous', PeriodWindow['netUsdByPlatform']>> {
+  ): Promise<Record<'current' | 'previous', Pick<PeriodWindow, 'netUsdByPlatform' | 'outsidePagosNetUsdByPlatform'>>> {
     const W = PERIOD_WINDOW_DAYS;
     const from = shiftDay(asOf, -(2 * W - 1));
     const split = shiftDay(asOf, -W);
-    const [moneyRows, fxRows] = await Promise.all([
+    const [moneyRows, outsideRows, fxRows] = await Promise.all([
       hasFilters(filters)
         ? this.gatewayMoneyFiltered(from, asOf, filters!)
-        : this.gatewayMoneyUnfiltered(from, asOf),
+        : this.gatewayMoneyUnfiltered(from, asOf, 'basket_mat_gateway_net_daily'),
+      this.gatewayMoneyUnfiltered(from, asOf, 'basket_mat_gateway_net_outside_pagos'),
       this.fxRates(from, asOf),
     ]);
-    const days = ((moneyRows as unknown) as RowAny[])
-      .filter((r) => s(r.grain) === 'settlement' && n(r.grp) === GRP_DAY)
-      .map((r): NetDailyPoint => ({
-        day: d(r.day),
-        platform: n(r.platform),
-        platformName: gatewayName(n(r.platform)),
-        settlementCurrency: s(r.ccy),
-        grossSettlement: n(r.gross),
-        fees: n(r.fees),
-        taxes: n(r.taxes),
-        net: n(r.net),
-        txCount: n(r.tx_count),
-      }));
+    const days = netDailyPoints((moneyRows as unknown) as RowAny[]);
+    const outsideDays = netDailyPoints((outsideRows as unknown) as RowAny[]);
     const rates = indexRates(fxRows);
     // Per Provider, its settlement currencies added — two USD figures can be
     // summed, and a Provider settling in two currencies is still one Provider.
@@ -1620,8 +1693,14 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
         .sort((x, y) => x.platform - y.platform);
     };
     return {
-      current: perPlatform(days.filter((r) => r.day > split)),
-      previous: perPlatform(days.filter((r) => r.day <= split)),
+      current: {
+        netUsdByPlatform: perPlatform(days.filter((r) => r.day > split)),
+        outsidePagosNetUsdByPlatform: perPlatform(outsideDays.filter((r) => r.day > split)),
+      },
+      previous: {
+        netUsdByPlatform: perPlatform(days.filter((r) => r.day <= split)),
+        outsidePagosNetUsdByPlatform: perPlatform(outsideDays.filter((r) => r.day <= split)),
+      },
     };
   }
 
@@ -1944,6 +2023,7 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
         },
         // Filled by getEconomia, which holds the fee mirror's side of the window.
         netUsdByPlatform: [],
+        outsidePagosNetUsdByPlatform: [],
       };
     };
 
@@ -2304,10 +2384,13 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
     const t = to.toISOString().slice(0, 10);
     const filtered = hasFilters(filters);
 
-    const [moneyRows, statusRows, subMonthRows, coverageRows, fxRows] = await Promise.all([
+    const [moneyRows, outsideRows, statusRows, subMonthRows, coverageRows, fxRows] = await Promise.all([
       filtered
         ? this.gatewayMoneyFiltered(f, t, filters!)
-        : this.gatewayMoneyUnfiltered(f, t),
+        : this.gatewayMoneyUnfiltered(f, t, 'basket_mat_gateway_net_daily'),
+      // The complement is never filtered: a filter is a predicate on the Pago,
+      // and these rows have none. Same range, same shapes.
+      this.gatewayMoneyUnfiltered(f, t, 'basket_mat_gateway_net_outside_pagos'),
       // Status is a current-state snapshot, so it is deliberately not windowed
       // by the range: "how many subscriptions are canceled today" has no
       // meaningful restriction to a past month. Churn reads status, never
@@ -2395,7 +2478,6 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
 
     const money = (moneyRows as unknown) as RowAny[];
     const settlement = money.filter((r) => s(r.grain) === 'settlement');
-    const refunds = money.filter((r) => s(r.grain) === 'refund');
 
     // The Providers actually present in this range, not the whole seam: a range
     // with no MercadoPago Pagos should not label itself as covering MercadoPago.
@@ -2409,21 +2491,7 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
     // conversion wrong by whole percent, not by rounding. The day rows are
     // already in hand for both the filtered and unfiltered paths, so the two
     // convert identically and neither needs its own SQL.
-    const netByDay: NetDailyPoint[] = settlement
-      .filter((r) => n(r.grp) === GRP_DAY)
-      .map((r) => ({
-        day: d(r.day),
-        platform: n(r.platform),
-        platformName: gatewayName(n(r.platform)),
-        settlementCurrency: s(r.ccy),
-        grossSettlement: n(r.gross),
-        fees: n(r.fees),
-        taxes: n(r.taxes),
-        net: n(r.net),
-        txCount: n(r.tx_count),
-      }))
-      .sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : a.settlementCurrency < b.settlementCurrency ? -1 : 1));
-
+    const netByDay = netDailyPoints(money);
     const rates = indexRates(((fxRows as unknown) as RowAny[]).map((r): DailyRate => ({
       day: d(r.day),
       quoteCurrency: s(r.quote_currency),
@@ -2431,50 +2499,22 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
       rate: n(r.rate),
     })));
 
+    const outside = (outsideRows as unknown) as RowAny[];
+    const excludedOutsidePagos: ExcludedOutsidePagos = {
+      settlementTotals: settlementTotals(outside),
+      netByMonth: netMonthlyPoints(outside),
+      refundsByCurrency: refundTotals(outside),
+      usdTotals: usdTotals(netDailyPoints(outside), rates),
+    };
+
     return {
       platformName: presentPlatforms.map(gatewayName).join(' · ') || GATEWAY_PLATFORM_NAMES[4],
       platformNames: presentPlatforms.map(gatewayName),
       subscriptionPlatformName: subscriptionPlatforms.map(gatewayName).join(' · ') || GATEWAY_PLATFORM_NAMES[4],
-      settlementTotals: settlement
-        .filter((r) => n(r.grp) === GRP_TOTAL)
-        .map((r) => ({
-          platform: n(r.platform),
-          platformName: gatewayName(n(r.platform)),
-          settlementCurrency: s(r.ccy),
-          grossSettlement: n(r.gross),
-          fees: n(r.fees),
-          taxes: n(r.taxes),
-          net: n(r.net),
-          txCount: n(r.tx_count),
-          feePct: feePct(n(r.fees), n(r.gross)),
-          taxPct: feePct(n(r.taxes), n(r.gross)),
-        }))
-        .sort((a, b) => b.grossSettlement - a.grossSettlement),
+      settlementTotals: settlementTotals(money),
       netByDay,
-      netByMonth: settlement
-        .filter((r) => n(r.grp) === GRP_MONTH)
-        .map((r) => ({
-          month: d(r.month),
-          platform: n(r.platform),
-          platformName: gatewayName(n(r.platform)),
-          settlementCurrency: s(r.ccy),
-          grossSettlement: n(r.gross),
-          fees: n(r.fees),
-          taxes: n(r.taxes),
-          net: n(r.net),
-          txCount: n(r.tx_count),
-        }))
-        .sort((a, b) => (a.month < b.month ? -1 : a.month > b.month ? 1 : a.settlementCurrency < b.settlementCurrency ? -1 : 1)),
-      refundsByCurrency: refunds
-        .filter((r) => n(r.grp) === GRP_TOTAL)
-        .map((r) => ({
-          platform: n(r.platform),
-          platformName: gatewayName(n(r.platform)),
-          currency: s(r.ccy),
-          refundedAmount: n(r.refunded),
-          refundCount: n(r.refund_count),
-        }))
-        .sort((a, b) => b.refundCount - a.refundCount),
+      netByMonth: netMonthlyPoints(money),
+      refundsByCurrency: refundTotals(money),
       subscriptionsByStatus: ((statusRows as unknown) as RowAny[]).map((r) => ({
         platform: n(r.platform),
         platformName: gatewayName(n(r.platform)),
@@ -2504,19 +2544,29 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
       usdTotals: usdTotals(netByDay, rates),
       netUsdByMonth: usdByMonth(netByDay, rates),
       subscriptionsIgnoreFilters: filtered,
-      netExcludesUnmatchedFees: filtered,
+      // Both paths are Pago-anchored since migration 0020; see the DTO.
+      netExcludesUnmatchedFees: true,
+      excludedOutsidePagos,
     };
   }
 
-  // One scan of the pre-aggregated view, split by GROUPING SETS into the day,
+  // One scan of a pre-aggregated view, split by GROUPING SETS into the day,
   // month and total grains. `grain` is already a column of the view — the two
   // currency planes never share a row, so grouping by it keeps them apart.
-  private gatewayMoneyUnfiltered(f: string, t: string): Promise<unknown> {
+  //
+  // The two views (migration 0020) partition the fee mirror: the headline holds
+  // fee rows anchored to a Pago, the other holds every fee row that is not. Same
+  // columns, so one query reads either.
+  private gatewayMoneyUnfiltered(
+    f: string,
+    t: string,
+    view: 'basket_mat_gateway_net_daily' | 'basket_mat_gateway_net_outside_pagos',
+  ): Promise<unknown> {
     return this.conn.execute(sql.raw(`
       WITH base AS (
         SELECT grain, day, DATE_TRUNC('month', day)::date AS month, platform, ccy,
                gross, fees, taxes, net, tx_count, refunded, refund_count
-        FROM basket_mat_gateway_net_daily
+        FROM ${view}
         WHERE day BETWEEN '${f}'::date AND '${t}'::date
       )
       SELECT GROUPING(day, month)::int AS grp,
@@ -2547,11 +2597,10 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
   // is applied to captured_at, matching the view's clock, so the two paths
   // bucket identically.
   //
-  // They do NOT cover the same population, and cannot: joining to payments
-  // drops the 8,675 fee rows (4.7%) whose Pago was never ingested or whose
-  // Subscriber is unknown. Reported as netExcludesUnmatchedFees rather than
-  // papered over by making the unfiltered path join too — the headline total
-  // should be the whole mirror.
+  // Same population as the unfiltered path, by construction: the `pay` CTE with
+  // its filter removed is exactly the EXISTS in basket_mat_gateway_net_daily
+  // (migration 0020). Fee rows with no Pago are in neither; they are read from
+  // basket_mat_gateway_net_outside_pagos and reported as excludedOutsidePagos.
   private gatewayMoneyFiltered(f: string, t: string, filters: CommonFilters): Promise<unknown> {
     const fw = buildActiveFilterWhere(filters);
     return this.conn.execute(sql.raw(`

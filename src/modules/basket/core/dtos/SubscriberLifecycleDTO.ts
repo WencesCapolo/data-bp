@@ -97,6 +97,13 @@ export interface PeriodWindow {
   tx: WindowTx;
   active: WindowActive;
   netUsdByPlatform: { platform: number; platformName: string; netUsd: number | null }[];
+  /**
+   * Gateway net in the same window that is NOT a Pago (migration 0020): charges
+   * the gateway account took that the Control Panel never ledgered. Same shape,
+   * never added to `netUsdByPlatform`; the tab footnotes it. Ignores filters —
+   * these rows have no Subscriber to filter on.
+   */
+  outsidePagosNetUsdByPlatform: { platform: number; platformName: string; netUsd: number | null }[];
 }
 
 /**

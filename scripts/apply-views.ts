@@ -3,7 +3,14 @@ import { resolve } from 'node:path';
 import { sql } from 'drizzle-orm';
 import { connection, db } from '@shared/db/client';
 
-const SQL_PATH = resolve(process.cwd(), 'migrations/sql/0001_views.sql');
+// 0001 drops basket_v_active_payments CASCADE, which takes down every view
+// built on it — including 0019's lifecycle views and 0020's Pago-anchored net
+// views — so those files are re-applied here, in order, after it.
+const SQL_FILES = [
+  'migrations/sql/0001_views.sql',
+  'migrations/sql/0019_subscriber_lifecycle_views.sql',
+  'migrations/sql/0020_gateway_net_pago_anchored.sql',
+].map((f) => resolve(process.cwd(), f));
 
 const MAT_VIEWS = [
   'basket_mat_daily_active',
@@ -12,15 +19,21 @@ const MAT_VIEWS = [
   'basket_mat_team_daily',
   'basket_mat_revenue_daily',
   'basket_mat_gateway_net_daily',
+  'basket_mat_gateway_net_outside_pagos',
+  'basket_mat_subscriber_days',
+  'basket_mat_subscriber_months',
+  'basket_mat_subscription_last_charge',
+  'basket_mat_subscriber_lifetime',
 ] as const;
 
 async function applyAndVerify(): Promise<void> {
   const startedAt = Date.now();
   console.log('=== Apply Mat Views ===\n');
 
-  const content = readFileSync(SQL_PATH, 'utf8');
-  console.log('→ Executing 0001_views.sql');
-  await db.execute(sql.raw(content));
+  for (const file of SQL_FILES) {
+    console.log(`→ Executing ${file.split('/').pop()}`);
+    await db.execute(sql.raw(readFileSync(file, 'utf8')));
+  }
   console.log(`  ✓ applied in ${((Date.now() - startedAt) / 1000).toFixed(1)}s\n`);
 
   console.log('→ Row counts per mat view');

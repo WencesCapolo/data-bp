@@ -73,3 +73,28 @@ brings the charge — and with it the PaymentIntent id we join on — inline.
 - **Zero-decimal currencies are handled explicitly.** Stripe quotes minor units,
   and CLP — 33k Pagos — has no minor unit. Dividing it by 100 would report
   Chilean revenue at 1% of its true value.
+
+## Addendum 2026-09-09 — the headline net is anchored to Pagos
+
+The mirror is still pulled and stored whole, as above. What changed is what
+the dashboard *counts* from it (migration 0020, GitHub #5). Until then the
+unfiltered net on /financiero summed every fee row, while any filter joined to
+Pagos — so toggling a country changed the population, not just the slice, and
+in months where the MercadoPago account also charged for things that are not a
+basquetpass.tv subscription the headline was up to 50% too high.
+
+Now both paths count a fee row only when a successful Pago with the same
+Provider and Provider payment id exists and its Subscriber is known. That is the
+one rule, stated in `basket_mat_gateway_net_daily` and in the filtered path's
+`pay` CTE, and `smoke:gateway-net` asserts they agree. Every counted peso
+therefore traces fee → Pago → Subscriber → team and country.
+
+The complement is not dropped. `basket_mat_gateway_net_outside_pagos` holds
+every fee row with no Pago, same grain and planes, and reaches the DTO as
+`excludedOutsidePagos` so the tab footnotes the headline with "Fuera de Pagos".
+Two things land there and the fee-coverage panel is how to tell them apart: a
+product sold through the same gateway account, and Pagos not yet uploaded.
+
+Commission and withholding are untouched by this: the join selects rows, each
+row keeps its own `fee_amount`, `tax_amount` and `net_amount`.
+

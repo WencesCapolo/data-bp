@@ -341,11 +341,14 @@ all. It is a limit of window-sliced Exports, not of the fold — no single file 
 all three movements. `smoke:gateway-net` names and counts these rather than
 hiding them; a wider periodic report is what would close it.
 
-**The seam is two lines in two files.** `basket_mat_gateway_net_daily`'s
-`WHERE platform IN (0, 4)` and `GATEWAY_PLATFORMS` in
-`DrizzleAnalyticsQueryRepository`. A Provider added to one and not the other
-gives a total that is right on the unfiltered path and wrong on the filtered one
-— and both paths return numbers, so nothing throws. The list is a whitelist
+**The seam is three lines in two files.** `WHERE platform IN (0, 4)` in both
+views of `migrations/sql/0020_gateway_net_pago_anchored.sql` and
+`GATEWAY_PLATFORMS` in `DrizzleAnalyticsQueryRepository`. A Provider added to
+one and not the other gives a total that is right on the unfiltered path and
+wrong on the filtered one — and both paths return numbers, so nothing throws.
+Since 0020 both paths are Pago-anchored (see ADR 0005's addendum): the
+headline view keeps fee rows whose Pago exists, `_outside_pagos` keeps the rest,
+and `smoke:gateway-net` asserts the two add back up to the raw mirror. The list is a whitelist
 rather than "every platform" because PayPal takes real money with no fee feed at
 all: including it renders its transactions as costing nothing.
 

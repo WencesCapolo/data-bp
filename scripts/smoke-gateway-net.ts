@@ -202,9 +202,11 @@ async function main(): Promise<void> {
     `${mpFeePct.toFixed(2)}% commission · ${((num(mp.taxes) / num(mp.gross)) * 100).toFixed(2)}% withheld · ${num(mp.with_tax).toLocaleString()} rows carry tax`,
   );
 
+  // Both Providers: MercadoPago preapprovals are mirrored too, and the DTO
+  // reports them alongside Stripe's.
   const churn = await rows(`
     SELECT status, COUNT(*)::int AS c FROM basket_gateway_subscriptions
-    WHERE platform = 4 GROUP BY 1 ORDER BY 2 DESC
+    WHERE platform IN (0, 4) GROUP BY 1 ORDER BY 2 DESC
   `);
   const churnTotal = churn.reduce((s, r) => s + num(r.c), 0);
   check(
@@ -213,39 +215,80 @@ async function main(): Promise<void> {
     `${churnTotal.toLocaleString()} rows · ${churn.map((r) => `${r.status} ${num(r.c).toLocaleString()}`).join(' · ')}`,
   );
 
-  const truth = await rows(`
-    SELECT settlement_currency AS ccy,
-           SUM(settlement_amount)::numeric AS gross,
-           SUM(fee_amount)::numeric        AS fees,
-           SUM(net_amount)::numeric        AS net,
-           COUNT(*)::int                   AS tx
-    FROM basket_payment_fees WHERE platform = 4 GROUP BY 1 ORDER BY 1
+  // Since migration 0020 the headline is Pago-anchored: a Stripe fee row counts
+  // only when a successful Pago with its id exists and its Subscriber is known.
+  // `truth` is that population, straight off the tables; `outsideTruth` is the
+  // complement. Together they must be the whole mirror — that partition is the
+  // invariant the two views exist to keep.
+  const anchoredWhere = `
+    f.platform = 4 AND f.captured_at IS NOT NULL
+    AND EXISTS (SELECT 1 FROM basket_v_active_payments p
+                WHERE p.platform = f.platform AND p.platform_payment_id = f.platform_payment_id)`;
+  const outsideWhere = anchoredWhere.replace('AND EXISTS', 'AND NOT EXISTS');
+  const settlementByCcy = (where: string) => rows(`
+    SELECT f.settlement_currency AS ccy,
+           SUM(f.settlement_amount)::numeric AS gross,
+           SUM(f.fee_amount)::numeric        AS fees,
+           SUM(f.net_amount)::numeric        AS net,
+           COUNT(*)::int                     AS tx
+    FROM basket_payment_fees f WHERE ${where} GROUP BY 1 ORDER BY 1
   `);
+  const [truth, outsideTruth, rawTruth] = await Promise.all([
+    settlementByCcy(anchoredWhere),
+    settlementByCcy(outsideWhere),
+    settlementByCcy('f.platform = 4 AND f.captured_at IS NOT NULL'),
+  ]);
   for (const r of truth) {
+    const o = outsideTruth.find((x) => x.ccy === r.ccy);
     check(
       `settlement total · ${r.ccy}`,
       true,
-      `gross ${cents(num(r.gross))} · fees ${cents(num(r.fees))} · net ${cents(num(r.net))} · ${num(r.tx).toLocaleString()} tx`,
+      `anchored: gross ${cents(num(r.gross))} · fees ${cents(num(r.fees))} · net ${cents(num(r.net))} · ${num(r.tx).toLocaleString()} tx` +
+        ` · outside Pagos: net ${cents(num(o?.net))} · ${num(o?.tx).toLocaleString()} tx`,
+    );
+  }
+  for (const r of rawTruth) {
+    const a = truth.find((x) => x.ccy === r.ccy);
+    const o = outsideTruth.find((x) => x.ccy === r.ccy);
+    check(
+      `anchored + outside = mirror · ${r.ccy}`,
+      cents(num(a?.net) + num(o?.net)) === cents(num(r.net)) && num(a?.tx) + num(o?.tx) === num(r.tx),
+      `${cents(num(a?.net))} + ${cents(num(o?.net))} = ${cents(num(r.net))}`,
     );
   }
 
-  console.log('\n=== basket_mat_gateway_net_daily reproduces them ===\n');
-  const view = await rows(`
+  console.log('\n=== the two views reproduce the partition ===\n');
+  const viewTotals = (view: string) => rows(`
     SELECT ccy,
            SUM(gross)::numeric AS gross, SUM(fees)::numeric AS fees,
            SUM(net)::numeric   AS net,   SUM(tx_count)::int AS tx
-    FROM basket_mat_gateway_net_daily WHERE grain = 'settlement' GROUP BY 1 ORDER BY 1
+    FROM ${view} WHERE grain = 'settlement' AND platform = 4 GROUP BY 1 ORDER BY 1
   `);
-  for (const t of truth) {
-    const v = view.find((r) => r.ccy === t.ccy);
-    const ok =
-      !!v &&
-      cents(num(v.gross)) === cents(num(t.gross)) &&
-      cents(num(v.fees)) === cents(num(t.fees)) &&
-      cents(num(v.net)) === cents(num(t.net)) &&
-      num(v.tx) === num(t.tx);
-    check(`view matches to the cent · ${t.ccy}`, ok, ok ? 'exact' : JSON.stringify(v));
-  }
+  const matchesTruth = (label: string, view: Row[], want: Row[]) => {
+    for (const t of want) {
+      const v = view.find((r) => r.ccy === t.ccy);
+      const ok =
+        !!v &&
+        cents(num(v.gross)) === cents(num(t.gross)) &&
+        cents(num(v.fees)) === cents(num(t.fees)) &&
+        cents(num(v.net)) === cents(num(t.net)) &&
+        num(v.tx) === num(t.tx);
+      check(`${label} · ${t.ccy}`, ok, ok ? 'exact' : JSON.stringify(v));
+    }
+  };
+  matchesTruth('basket_mat_gateway_net_daily matches anchored to the cent', await viewTotals('basket_mat_gateway_net_daily'), truth);
+  matchesTruth('basket_mat_gateway_net_outside_pagos matches the complement', await viewTotals('basket_mat_gateway_net_outside_pagos'), outsideTruth);
+  // MercadoPago too, in one line: the partition must hold for every Provider.
+  const [mpPart] = await rows(`
+    SELECT (SELECT SUM(net) FROM basket_mat_gateway_net_daily WHERE grain = 'settlement' AND platform = 0)::numeric AS anchored,
+           (SELECT SUM(net) FROM basket_mat_gateway_net_outside_pagos WHERE grain = 'settlement' AND platform = 0)::numeric AS outside,
+           (SELECT SUM(net_amount) FROM basket_payment_fees WHERE platform = 0 AND captured_at IS NOT NULL)::numeric AS raw
+  `);
+  check(
+    'MercadoPago: anchored + outside = mirror',
+    cents(num(mpPart.anchored) + num(mpPart.outside)) === cents(num(mpPart.raw)),
+    `${cents(num(mpPart.anchored))} + ${cents(num(mpPart.outside))} = ${cents(num(mpPart.raw))}`,
+  );
 
   console.log('\n=== the DTO, unfiltered path ===\n');
   const dto = await repo.getEconomia(ALL);
@@ -308,7 +351,32 @@ async function main(): Promise<void> {
   const refundRows = g.refundsByCurrency.reduce((a, r) => a + r.refundCount, 0);
   check('refunds stay in the presentment plane', g.refundsByCurrency.length > 1, `${refundRows} refund rows across ${g.refundsByCurrency.length} currencies`);
   check('churn reaches the DTO by status', g.subscriptionsByStatus.reduce((a, r) => a + r.count, 0) === churnTotal, `${churnTotal.toLocaleString()} rows`);
-  check('unfiltered path claims no exclusions', !g.netExcludesUnmatchedFees && !g.subscriptionsIgnoreFilters, 'both flags false');
+  check('unfiltered path is Pago-anchored and says so', g.netExcludesUnmatchedFees && !g.subscriptionsIgnoreFilters,
+    `netExcludesUnmatchedFees ${g.netExcludesUnmatchedFees} · subscriptionsIgnoreFilters ${g.subscriptionsIgnoreFilters}`);
+  // The complement travels with the DTO, in the same shapes, and closes the
+  // partition from the DTO's side too.
+  const ex = g.excludedOutsidePagos;
+  for (const t of outsideTruth) {
+    const e = ex.settlementTotals.find((r) => r.platform === 4 && r.settlementCurrency === t.ccy);
+    check(
+      `DTO excludedOutsidePagos total · ${t.ccy}`,
+      !!e && cents(e.net) === cents(num(t.net)) && e.txCount === num(t.tx),
+      e ? `net ${cents(e.net)} · ${e.txCount} tx` : 'missing',
+    );
+  }
+  for (const r of rawTruth) {
+    const c = g.settlementTotals.find((x) => x.platform === 4 && x.settlementCurrency === r.ccy);
+    const e = ex.settlementTotals.find((x) => x.platform === 4 && x.settlementCurrency === r.ccy);
+    check(
+      `DTO counted + excluded = mirror · ${r.ccy}`,
+      cents((c?.net ?? 0) + (e?.net ?? 0)) === cents(num(r.net)),
+      `${cents(c?.net ?? 0)} + ${cents(e?.net ?? 0)} = ${cents(num(r.net))}`,
+    );
+  }
+  for (const e of ex.settlementTotals) {
+    const month = ex.netByMonth.filter((r) => r.platform === e.platform && r.settlementCurrency === e.settlementCurrency).reduce((a, r) => a + r.net, 0);
+    check(`excluded month grain adds up · ${e.platformName} ${e.settlementCurrency}`, cents(month) === cents(e.net), `${cents(month)} = ${cents(e.net)}`);
+  }
 
   console.log('\n=== the DTO, filtered path ===\n');
   const filteredDto = await repo.getEconomia(ALL, { countries: ['Uruguay'] });
@@ -328,6 +396,29 @@ async function main(): Promise<void> {
   check('filtered USD net is a strict subset', filteredNet > 0 && filteredNet < unfilteredNet,
     `${cents(filteredNet)} of ${cents(unfilteredNet)}`);
   check('filtered path admits its exclusions', fg.netExcludesUnmatchedFees && fg.subscriptionsIgnoreFilters, 'both flags true');
+  // Same population on both paths: a filter narrows, it no longer redefines.
+  // Filtering by every country there is should reproduce the unfiltered total
+  // exactly, minus only the anchored rows whose Subscriber has no country.
+  const countries = await rows(`
+    SELECT DISTINCT p.user_country AS c FROM basket_v_active_payments p
+    WHERE p.platform IN (0, 4) AND p.user_country IS NOT NULL
+  `);
+  const [nullCountry] = await rows(`
+    SELECT COALESCE(SUM(f.net_amount), 0)::numeric AS net FROM basket_payment_fees f
+    JOIN basket_v_active_payments p ON p.platform = f.platform AND p.platform_payment_id = f.platform_payment_id
+    WHERE f.platform = 4 AND f.captured_at IS NOT NULL AND p.user_country IS NULL
+  `);
+  const allDto = await repo.getEconomia(ALL, { countries: countries.map((r) => String(r.c)) });
+  const allNet = allDto.gateway.settlementTotals.find((r) => r.platform === 4 && r.settlementCurrency === 'USD')?.net ?? 0;
+  const gap = unfilteredNet - allNet;
+  check(
+    'filtered by every country = unfiltered (same population)',
+    gap >= -0.01 && gap <= num(nullCountry.net) + 0.01,
+    `${cents(allNet)} filtered · ${cents(unfilteredNet)} unfiltered · gap ${cents(gap)} ≤ ${cents(num(nullCountry.net))} without country`,
+  );
+  const exAll = allDto.gateway.excludedOutsidePagos.settlementTotals.find((r) => r.platform === 4 && r.settlementCurrency === 'USD')?.net ?? 0;
+  const exNone = ex.settlementTotals.find((r) => r.platform === 4 && r.settlementCurrency === 'USD')?.net ?? 0;
+  check('excluded bucket ignores filters', cents(exAll) === cents(exNone), `${cents(exAll)} either way`);
   check('churn is unchanged by filters',
     fg.subscriptionsByStatus.reduce((a, r) => a + r.count, 0) === churnTotal,
     'subscriptions have no user dimension');

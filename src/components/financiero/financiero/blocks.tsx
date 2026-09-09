@@ -147,6 +147,7 @@ export function MsCol({
   big,
   bigDelta,
   rows,
+  foot,
 }: {
   tone: 'tx' | 'active' | 'revenue';
   title: string;
@@ -154,6 +155,8 @@ export function MsCol({
   big: string;
   bigDelta: { d: Delta; prev: string };
   rows: ({ swatch: string; label: string; value: string; d: Delta } | { head: string })[];
+  /** Una línea al pie, en cursiva y gris: lo que la cifra grande deja afuera. */
+  foot?: ReactNode;
 }) {
   return (
     <div className={`proto-ms-col ${tone}`}>
@@ -186,8 +189,40 @@ export function MsCol({
           ),
         )}
       </div>
+      {foot && <div className="proto-foot">{foot}</div>}
     </div>
   );
+}
+
+/**
+ * Lo que un neto deja afuera: cobros del Proveedor sin Pago en el Control Panel,
+ * por Proveedor y en su moneda de liquidación, o nada si no hubo. Ningún total
+ * cruza monedas — "12,3 M ARS (MercadoPago) · 4.500 USD (Stripe)" son dos
+ * cifras, no una.
+ */
+export function OutsidePagosFoot({
+  rows,
+  prefix = 'Fuera de Pagos',
+}: {
+  rows: { platformName: string; currency: string; amount: number }[];
+  prefix?: string;
+}) {
+  const shown = rows.filter((r) => Math.round(r.amount) !== 0);
+  if (shown.length === 0) return null;
+  const parts = shown.map((r) => `${fmtAmount(r.amount)} ${r.currency} (${r.platformName})`);
+  return (
+    <>
+      {prefix}: {parts.join(' · ')}
+      <InfoHint text="Cobros que MercadoPago o Stripe registran en la cuenta pero que no tienen un Pago en el Control Panel: otro producto vendido por la misma cuenta, o un Pagos Export todavía no subido. No están en la cifra de arriba; se muestran para que no desaparezcan." />
+    </>
+  );
+}
+
+function fmtAmount(v: number): string {
+  const a = Math.abs(v);
+  const sign = v < 0 ? '-' : '';
+  if (a >= 1_000_000) return `${sign}${(a / 1_000_000).toLocaleString('es-AR', { maximumFractionDigits: 1 })} M`;
+  return `${sign}${Math.round(a).toLocaleString('es-AR')}`;
 }
 
 /**

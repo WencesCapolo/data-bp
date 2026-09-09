@@ -12,7 +12,10 @@ const ALL_VIEWS: MatViewName[] = [
   'basket_mat_team_monthly',
   'basket_mat_team_daily',
   'basket_mat_revenue_daily',
+  // Both read the fee mirror AND basket_v_active_payments (migration 0020), so
+  // they belong after the Pagos-only views: a Pagos upload moves them too.
   'basket_mat_gateway_net_daily',
+  'basket_mat_gateway_net_outside_pagos',
   'basket_mat_fixture_ranges',
   // The subscriber lifecycle /financiero draws, migration 0019. Off the Pagos
   // view like the first two, so they refresh after them for no reason but order.

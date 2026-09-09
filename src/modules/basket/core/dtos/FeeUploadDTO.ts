@@ -211,7 +211,7 @@ export interface FeeUploadResultDTO {
   netTotal: number;
   windowFrom: string | null;
   windowTo: string | null;
-  /** Milliseconds spent rebuilding `basket_mat_gateway_net_daily`, or null when
+  /** Milliseconds spent rebuilding the two gateway net views (0020), or null when
    *  the refresh failed — the rows are in either way and the view catches up on
    *  the next cron, so a failed refresh is reported, not thrown. */
   viewRefreshMs: number | null;

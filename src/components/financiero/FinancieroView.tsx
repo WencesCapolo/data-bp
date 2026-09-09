@@ -5,7 +5,7 @@ import { fetcher } from '@/lib/client/fetcher';
 import { useFilterQS, useFilters } from '@/lib/client/filterStore';
 import { TabSkeleton } from '@/components/ui/Skeleton';
 import { ErrorBox } from '@/components/ui/ErrorBox';
-import { Breakdown, Card, Kpi, MsCol, Pending, SectionLabel, delta } from './financiero/blocks';
+import { Breakdown, Card, Kpi, MsCol, OutsidePagosFoot, Pending, SectionLabel, delta } from './financiero/blocks';
 import {
   ActiveChart,
   CancelMonthlyChart,
@@ -82,6 +82,18 @@ const SEASON_METRICS: { key: SeasonMetric; label: string; title: string }[] = [
 ];
 
 const sumBy = <T,>(rows: T[], f: (r: T) => number): number => rows.reduce((a, r) => a + f(r), 0);
+
+/** Los meses del gráfico de netos sumados por Proveedor × moneda de liquidación. */
+function mListOutsideTotal(rows: { platformName: string; settlementCurrency: string; net: number }[]) {
+  const idx = new Map<string, { platformName: string; currency: string; amount: number }>();
+  for (const r of rows) {
+    const k = `${r.platformName}|${r.settlementCurrency}`;
+    const cur = idx.get(k) ?? { platformName: r.platformName, currency: r.settlementCurrency, amount: 0 };
+    cur.amount += r.net;
+    idx.set(k, cur);
+  }
+  return Array.from(idx.values()).sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
+}
 
 export function FinancieroView() {
   const url = `/api/financiero/economia?${useFilterQS()}`;
@@ -357,6 +369,16 @@ export function FinancieroView() {
   const netB = sumBy(B.netUsdByPlatform, (p) => p.netUsd ?? 0);
   const gwNames = Array.from(new Set([...A.netUsdByPlatform, ...B.netUsdByPlatform].map((p) => p.platformName))).sort();
 
+  // ── Fuera de Pagos: lo que ningún neto de arriba cuenta (migración 0020) ──
+  // En la moneda de liquidación de cada Proveedor, sin cruzar monedas. La
+  // ventana de 30 días llega en USD porque ese bloque es USD.
+  const outside = g.excludedOutsidePagos;
+  const outsideRangeRows = outside.settlementTotals.map((t) => ({ platformName: t.platformName, currency: t.settlementCurrency, amount: t.net }));
+  const outsideWindowRows = A.outsidePagosNetUsdByPlatform
+    .filter((p) => p.netUsd !== null)
+    .map((p) => ({ platformName: p.platformName, currency: 'USD', amount: p.netUsd ?? 0 }));
+  const outsideSeriesTotal = mListOutsideTotal(outside.netByMonth);
+
   // ── Series mensuales ──
   const mList = m.list;
   const bk = (month: string) => m.buckets.get(month);
@@ -436,7 +458,7 @@ export function FinancieroView() {
         <MsCol
           tone="revenue"
           title="Ingresos netos USD"
-          hint="Neto de liquidación de cada Proveedor en la ventana — bruto liquidado menos comisión y retención, por fecha de captura — convertido a USD con la cotización de cada día (ARS al blue venta). PayPal no tiene feed de comisiones y no aparece."
+          hint="Neto de liquidación de cada Proveedor en la ventana — bruto liquidado menos comisión y retención, por fecha de captura — convertido a USD con la cotización de cada día (ARS al blue venta). Sólo cobros con un Pago en el Control Panel; lo que la cuenta cobró sin Pago va al pie. PayPal no tiene feed de comisiones y no aparece."
           big={fmtUsd(Math.round(netA))}
           bigDelta={{ d: delta(netA, netB), prev: fmtUsd(Math.round(netB)) }}
           rows={gwNames.map((name) => ({
@@ -445,6 +467,7 @@ export function FinancieroView() {
             value: fmtUsdRound(gwWindow(A, name)),
             d: delta(gwWindow(A, name), gwWindow(B, name)),
           }))}
+          foot={<OutsidePagosFoot rows={outsideWindowRows} prefix="Fuera de Pagos en la ventana" />}
         />
       </div>
 
@@ -530,7 +553,7 @@ export function FinancieroView() {
           icon="💵"
           title="Ingresos netos (USD)"
           value={fmtUsd(totalUsdNet)}
-          hint="Neto de liquidación del rango — bruto liquidado menos comisión y retención según el feed de comisiones de cada Proveedor — convertido a USD día por día (ARS al blue venta; lo liquidado en USD sin convertir). El desglose es el neto en cada moneda de liquidación, sin convertir. PayPal no tiene feed y queda afuera."
+          hint="Neto de liquidación del rango — bruto liquidado menos comisión y retención según el feed de comisiones de cada Proveedor — convertido a USD día por día (ARS al blue venta; lo liquidado en USD sin convertir). Cuenta sólo cobros con un Pago en el Control Panel, con o sin filtros; lo que la cuenta cobró sin Pago va al pie. El desglose es el neto en cada moneda de liquidación, sin convertir. PayPal no tiene feed y queda afuera."
         >
           por moneda de liquidación
           <Breakdown
@@ -540,6 +563,7 @@ export function FinancieroView() {
                 : [{ swatch: '#94a3b8', label: 'sin ingresos', value: '' }]
             }
           />
+          <div className="proto-foot"><OutsidePagosFoot rows={outsideRangeRows} /></div>
         </Kpi>
         <Kpi
           tone="blue"
@@ -791,12 +815,13 @@ export function FinancieroView() {
       <div className="proto-grid2">
         <Card
           title="Ingresos netos por mes"
-          hint="Neto de liquidación por mes y moneda, por fecha de captura: bruto liquidado menos comisión y retención, según el feed de comisiones de cada Proveedor. La línea punteada es la suma de todo convertido a USD con la cotización de cada día."
+          hint="Neto de liquidación por mes y moneda, por fecha de captura: bruto liquidado menos comisión y retención, según el feed de comisiones de cada Proveedor, sólo de cobros con un Pago en el Control Panel. La línea punteada es la suma de todo convertido a USD con la cotización de cada día."
           desc={
             <>
               Ingresos <b>netos</b> (ya restados los fees de MP y Stripe), una línea por moneda de liquidación. La línea punteada negra es el total neto en USD. ARS se convierte al dólar blue de cada día; lo liquidado en USD no se convierte; EUR no tiene cotización y no entra al total.
             </>
           }
+          foot={<OutsidePagosFoot rows={outsideSeriesTotal} prefix="Fuera de Pagos en estos meses" />}
         >
           {mList.length === 0 ? (
             <div className="no-data">Sin datos de liquidación en rango</div>

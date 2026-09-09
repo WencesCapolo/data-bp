@@ -39,8 +39,10 @@ import {
 } from '@shared/lib/uploadStaging';
 import { DrizzleFeeUploadLookups } from './DrizzleUploadLookups';
 
-/** The only view that reads the fee mirror. */
-const GATEWAY_NET_VIEW = 'basket_mat_gateway_net_daily';
+/** The two views that read the fee mirror: the Pago-anchored headline and its
+ *  complement (migration 0020). Always refreshed together — one without the
+ *  other leaves counted + excluded ≠ mirror until the next cron. */
+const GATEWAY_NET_VIEWS = ['basket_mat_gateway_net_daily', 'basket_mat_gateway_net_outside_pagos'] as const;
 
 export interface FeeUploadIntakeDeps {
   inspect: InspectFeeExportUseCase;
@@ -253,13 +255,16 @@ export class FeeUploadIntake {
 
     let viewRefreshMs: number | null = null;
     if (input.refreshView) {
-      // Only the view that reads this table. Rebuilding all of them would cost
-      // minutes and change nothing else. A failed refresh is reported, not
+      // Only the two views that read this table. Rebuilding all of them would
+      // cost minutes and change nothing else. A failed refresh is reported, not
       // thrown: the rows are in, and the view catches up on the next cron.
       try {
-        viewRefreshMs = (await this.deps.matViews.refresh(GATEWAY_NET_VIEW, true)).durationMs;
+        viewRefreshMs = 0;
+        for (const view of GATEWAY_NET_VIEWS) {
+          viewRefreshMs += (await this.deps.matViews.refresh(view, true)).durationMs;
+        }
       } catch (err) {
-        console.error('gateway net view not refreshed:', (err as Error).message);
+        console.error('gateway net views not refreshed:', (err as Error).message);
       }
     }
 

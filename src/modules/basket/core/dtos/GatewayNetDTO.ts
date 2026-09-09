@@ -8,6 +8,13 @@
 // basket_mat_gateway_net_daily. PayPal is deliberately outside it: it has no fee
 // feed, and including it would render its transactions as costing nothing.
 //
+// Every counted figure is anchored to a Pago (migration 0020, GitHub #5): a fee
+// row counts only when a successful Pago with the same Provider and Provider
+// payment id exists and its Subscriber is known. Fee rows with no such Pago —
+// another product sold through the same gateway account, or a Pagos Export not
+// yet uploaded — are not dropped; they travel in `excludedOutsidePagos`, same
+// shapes, so the tab can footnote the headline instead of silently shrinking it.
+//
 // Every money row carries its own `platform`, and totals are never summed
 // across Providers OR across currencies. Today the two happen to coincide (MP
 // settles ARS, Stripe USD/EUR) and that is an accident of the accounts, not a
@@ -219,12 +226,29 @@ export interface GatewayNetDTO {
    */
   subscriptionsIgnoreFilters: boolean;
   /**
-   * True whenever filters are active. A filter is a predicate on the *payment*
-   * (country, access type, sub type), so filtering can only reach fee rows
-   * whose Pago is ingested and whose Subscriber is known: 174,962 of the
-   * 183,637 Stripe fee rows, 95.3%. The unfiltered path reads the mirror whole,
-   * so a filtered total is always slightly below the unfiltered one — not a
-   * rounding difference, a smaller population.
+   * Always true since migration 0020: both the filtered and the unfiltered path
+   * count only fee rows anchored to a Pago, so toggling a filter narrows the
+   * population instead of redefining it. Kept as a field so a consumer written
+   * against the old contract still reads a truthful answer.
    */
   netExcludesUnmatchedFees: boolean;
+  /**
+   * The complement: fee rows with no Pago, over the same range and in the same
+   * shapes as the counted side. Never affected by filters — a filter is a
+   * predicate on the Pago, and these rows have none — so with a filter active
+   * this is the whole account's complement, not the slice's.
+   */
+  excludedOutsidePagos: ExcludedOutsidePagos;
+}
+
+/**
+ * Gateway money that is NOT a Pago. Per Provider × currency, never summed
+ * across either — the same rule as the counted side. Empty arrays when every
+ * fee row in range has its Pago.
+ */
+export interface ExcludedOutsidePagos {
+  settlementTotals: SettlementTotal[];
+  netByMonth: NetMonthlyPoint[];
+  refundsByCurrency: RefundTotal[];
+  usdTotals: UsdSettlementTotal[];
 }
