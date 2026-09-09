@@ -16,7 +16,7 @@ import type { EvolutionDTO } from '@basket/core/dtos/EvolutionDTO';
 import type { TeamsDTO, TeamRankRow, TeamDailyDTO } from '@basket/core/dtos/TeamsDTO';
 import type { FinanceDTO } from '@basket/core/dtos/FinanceDTO';
 import type { GatewayNetDTO, NetDailyPoint } from '@basket/core/dtos/GatewayNetDTO';
-import { subscriptionLifecycle } from '@basket/core/entities/GatewaySubscription';
+import { LIVE_STATUSES, subscriptionLifecycle } from '@basket/core/entities/GatewaySubscription';
 import {
   indexRates,
   usdByMonth,
@@ -24,6 +24,10 @@ import {
   type DailyRate,
 } from '@basket/core/services/usdConversion';
 import type { EconomiaDTO } from '@basket/core/dtos/EconomiaDTO';
+import type {
+  LastChargeBucket,
+  SubscriberLifecycleDTO,
+} from '@basket/core/dtos/SubscriberLifecycleDTO';
 import type {
   ContenidoDTO,
   ContenidoEventDayRow,
@@ -1310,7 +1314,7 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
       )
     `));
 
-    const [grossRows, liveRows, gateway] = await Promise.all([
+    const [grossRows, liveRows, gateway, lifecycle] = await Promise.all([
       hasFilters(filters)
         ? this.conn.execute(sql.raw(`
             SELECT DATE_TRUNC('month', created_at)::date AS month,
@@ -1331,6 +1335,7 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
           `)),
       groupedLive,
       this.getGatewayNet(range, filters),
+      this.getSubscriberLifecycle(range, filters),
     ]);
 
     const platformsWithGross = new Set(
@@ -1392,6 +1397,356 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
         payers: n(r.payers),
       })),
       gateway,
+      lifecycle,
+    };
+  }
+
+  // --------------------------------------------------------------------------
+  // SUBSCRIBER LIFECYCLE — altas, bajas and actives at day grain, off Pagos.
+  //
+  // One rule, used four times: a Subscriber is in the pool on a day when some
+  // successful Pago has created_at ≤ day ≤ expires_at + 7 days. It is the rule
+  // basket_mat_daily_active and every KPI already use, so an "active" here is
+  // the same person an "active" is anywhere else on the screen.
+  //
+  // Everything is anchored at `asOf` — the last day with a Pago, capped at
+  // yesterday — and not at today. Pagos arrive by Upload, so the days after the
+  // last one hold no altas and every scheduled expiry: drawn to today, the pool
+  // reads as collapsing at exactly the rate people were due to renew.
+  // --------------------------------------------------------------------------
+  private async getSubscriberLifecycle(
+    range: DateRange,
+    filters?: CommonFilters,
+  ): Promise<SubscriberLifecycleDTO> {
+    const [anchorRow] = ((await this.conn.execute(sql.raw(`
+      SELECT LEAST(MAX(created_at)::date, CURRENT_DATE - 1)::text AS as_of
+      FROM basket_v_active_payments
+    `))) as unknown) as RowAny[];
+    const asOf = s(anchorRow?.as_of) || yesterdayEndUtc().toISOString().slice(0, 10);
+    const a = `'${asOf}'::date`;
+
+    // Months the range touches, clamped to the anchor month — the same "keep
+    // the whole month" rule monthWindowWhere applies to the Retención tab.
+    const { from, to } = rangeBounds(range);
+    const monthFrom = `DATE_TRUNC('month', '${from.toISOString().slice(0, 10)}'::date)::date`;
+    const monthTo = `LEAST(DATE_TRUNC('month', '${to.toISOString().slice(0, 10)}'::date), DATE_TRUNC('month', ${a}))::date`;
+
+    const liveStatuses = LIVE_STATUSES.map((st) => `'${escStr(st)}'`).join(', ');
+
+    // The last-charge distribution has no Subscriber dimension, so it has no
+    // filtered form: always the mirror's precomputed bridge (migration 0019),
+    // aged at the anchor and restricted to the statuses the entity calls live.
+    const lastChargeRowsP = this.conn.execute(sql.raw(`
+      SELECT lc.platform,
+        CASE WHEN lc.last_charge_at IS NULL THEN 'unknown'
+             WHEN ${a} - lc.last_charge_at::date <= 30  THEN '0-30'
+             WHEN ${a} - lc.last_charge_at::date <= 60  THEN '31-60'
+             WHEN ${a} - lc.last_charge_at::date <= 90  THEN '61-90'
+             WHEN ${a} - lc.last_charge_at::date <= 180 THEN '91-180'
+             ELSE '180+' END AS bucket,
+        COUNT(*)::int AS c
+      FROM basket_mat_subscription_last_charge lc
+      JOIN basket_gateway_subscriptions g
+        ON g.platform = lc.platform AND g.subscription_id = lc.subscription_id
+      WHERE lc.platform IN ${SUBSCRIPTION_PLATFORMS}
+        AND g.status IN (${liveStatuses})
+      GROUP BY 1, 2 ORDER BY 1, 2
+    `));
+
+    const [dailyRows, monthlyRows, activeRows, lifetimeRows] = hasFilters(filters)
+      ? await this.lifecycleLive(a, monthFrom, monthTo, buildActiveFilterWhere(filters))
+      : await this.lifecycleFromMatViews(a, monthFrom, monthTo);
+    const lastChargeRows = await lastChargeRowsP;
+    return this.toLifecycleDTO(asOf, dailyRows, monthlyRows, activeRows, lastChargeRows, lifetimeRows);
+  }
+
+  /**
+   * The unfiltered path: migration 0019's mat views, rebuilt at the end of
+   * every Sync, so a request reads a few hundred rows instead of merging every
+   * Subscriber's Pagos into coverage stretches on the spot (4–8 s live).
+   */
+  private lifecycleFromMatViews(a: string, monthFrom: string, monthTo: string) {
+    const run = (q: string) => this.conn.execute(sql.raw(q));
+    return Promise.all([
+      run(`
+        SELECT day::text AS day, new_subscribers, reactivated, churned, active
+        FROM basket_mat_subscriber_days
+        WHERE day BETWEEN ${a} - 15 AND ${a}
+        ORDER BY day
+      `),
+      run(`
+        SELECT month::text AS month, one_off, new_subscribers, recurring, reactivated, churned
+        FROM basket_mat_subscriber_months
+        WHERE month BETWEEN ${monthFrom} AND ${monthTo}
+        ORDER BY month
+      `),
+      // The close of a month is its last day, except for the anchor month,
+      // which is measured at the anchor and flagged partial.
+      run(`
+        WITH months AS (
+          SELECT m::date AS month,
+                 LEAST((m + INTERVAL '1 month' - INTERVAL '1 day')::date, ${a}) AS d
+          FROM generate_series(${monthFrom}, ${monthTo}, INTERVAL '1 month') m
+        )
+        SELECT months.month::text AS month,
+               d.active         AS total,
+               d.active_mensual AS mensual,
+               d.active_anual   AS anual,
+               d.active_otros   AS otros,
+               (months.d = ${a}
+                AND months.d <> (months.month + INTERVAL '1 month' - INTERVAL '1 day')::date) AS partial
+        FROM months JOIN basket_mat_subscriber_days d ON d.day = months.d
+        ORDER BY months.month
+      `),
+      run(`
+        WITH closed AS (SELECT months FROM basket_mat_subscriber_lifetime WHERE last_covered < ${a})
+        SELECT (SELECT COUNT(*) FROM closed)::int AS closed,
+               (SELECT COUNT(*) FROM basket_mat_subscriber_lifetime WHERE last_covered >= ${a})::int AS open_,
+               ROUND(AVG(months)::numeric, 1)::float8 AS mean,
+               ROUND(percentile_cont(0.5)  WITHIN GROUP (ORDER BY months)::numeric, 1)::float8 AS median,
+               ROUND(percentile_cont(0.25) WITHIN GROUP (ORDER BY months)::numeric, 1)::float8 AS p25,
+               ROUND(percentile_cont(0.75) WITHIN GROUP (ORDER BY months)::numeric, 1)::float8 AS p75,
+               ROUND(MAX(months)::numeric, 1)::float8 AS max
+        FROM closed
+      `),
+    ]);
+  }
+
+  /**
+   * The filtered path: the same figures computed live over the Pagos the filter
+   * keeps. Each query is its mat view's definition with the filter pushed into
+   * the base scan, so the two paths must agree on an empty filter — which
+   * `pnpm smoke:lifecycle` checks.
+   *
+   * Four scans of the Pagos view in flight at once, beside getGatewayNet's
+   * five. Postgres's parallel workers hand rows around through /dev/shm, and
+   * this fan-out exhausted a container's 64 MB default ("could not resize
+   * shared memory segment ... No space left on device"). Both compose files set
+   * shm_size to 256 MB; a Postgres without it fails here first.
+   */
+  private lifecycleLive(a: string, monthFrom: string, monthTo: string, fw: string) {
+    const run = (q: string) => this.conn.execute(sql.raw(q));
+      // The 15 days ending at the anchor. Membership is one row per (day,
+      // Subscriber) with two flags, so entering and leaving are one GROUP BY
+      // rather than four correlated scans of the pool.
+    const dailyRowsP = run(`
+      WITH days AS (
+        SELECT generate_series(${a} - 15, ${a}, INTERVAL '1 day')::date AS d
+      ),
+      cov AS (
+        SELECT user_id, created_at::date AS s, (expires_at + INTERVAL '7 days')::date AS e
+        FROM basket_v_active_payments
+        -- Bounds on the raw columns, so the expires_at index is used. A Pago
+        -- whose coverage ended before the window cannot change who is in the
+        -- pool on any day of it.
+        WHERE expires_at >= ${a} - INTERVAL '24 days'
+          AND created_at < ${a} + 1 ${fw}
+      ),
+      -- Gaps and islands: a Subscriber's overlapping or abutting Pagos merge
+      -- into one stretch of coverage, so entering the pool is the start of a
+      -- stretch and leaving it is the day after its end. Islands of one
+      -- Subscriber never overlap, so actives per day is a plain COUNT.
+      marked AS (
+        SELECT user_id, s, e,
+               MAX(e) OVER (PARTITION BY user_id ORDER BY s, e
+                            ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS prev_e
+        FROM cov
+      ),
+      grouped AS (
+        SELECT user_id, s, e,
+               SUM(CASE WHEN prev_e IS NULL OR s > prev_e + 1 THEN 1 ELSE 0 END)
+                 OVER (PARTITION BY user_id ORDER BY s, e) AS island
+        FROM marked
+      ),
+      islands AS (
+        SELECT user_id, MIN(s) AS s, MAX(e) AS e FROM grouped GROUP BY user_id, island
+      ),
+      -- The first Pago of a Subscriber's life, unfiltered on purpose: "pays for
+      -- the first time" is about the person, not about the Tier being looked at.
+      first_pago AS (
+        SELECT user_id, MIN(created_at)::date AS f
+        FROM basket_payments
+        WHERE status = 1 AND user_id IN (SELECT user_id FROM islands)
+        GROUP BY user_id
+      )
+      -- One join of days × islands that touch the day or the day before, so
+      -- who entered, who left and who stayed come out of a single GROUP BY.
+      SELECT d.d::text AS day,
+        COUNT(*) FILTER (WHERE i.s = d.d AND f.f = d.d)::int    AS new_subscribers,
+        COUNT(*) FILTER (WHERE i.s = d.d AND f.f < d.d)::int    AS reactivated,
+        COUNT(*) FILTER (WHERE i.e = d.d - 1)::int              AS churned,
+        COUNT(*) FILTER (WHERE i.s <= d.d AND i.e >= d.d)::int  AS active
+      FROM days d
+      LEFT JOIN islands i ON i.s <= d.d AND i.e >= d.d - 1
+      LEFT JOIN first_pago f ON f.user_id = i.user_id
+      GROUP BY d.d ORDER BY d.d
+    `);
+    // Pagos bucketed by what they meant for the Subscriber. `recurring` vs
+      // `reactivated` splits on 37 days after the previous expiry, the threshold
+      // basket_mat_monthly_lifecycle uses. A paid Pago with no recurring right
+      // is a single match and gets its own bucket rather than an alta.
+      //
+      // `churned` is the Subscribers whose coverage ran out that month with no
+      // later Pago overlapping it — the mat view's `expirations`, month by
+      // month and up to the anchor. Derived from Pagos so every Provider counts;
+      // the Providers' own dated cancellations are drawn one card over.
+    const monthlyRowsP = run(`
+        WITH p AS (
+          SELECT user_id, created_at, expires_at, recurrent, amount,
+                 (recurrent = 0 AND amount > 0) AS one_off,
+                 LAG(expires_at) OVER (PARTITION BY user_id ORDER BY created_at, id) AS prev_e,
+                 MIN(created_at) OVER (PARTITION BY user_id) AS first_at
+          FROM basket_v_active_payments
+          -- The window needs each Subscriber's whole history to know which Pago
+          -- is their first and how far the previous one reached, but only for
+          -- Subscribers who paid inside the window: on a 30-day range that is a
+          -- tenth of the table.
+          WHERE user_id IN (
+            SELECT user_id FROM basket_v_active_payments
+            WHERE created_at >= ${monthFrom} AND created_at < ${monthTo} + INTERVAL '1 month' ${fw}
+          ) ${fw}
+        ),
+        buckets AS (
+          SELECT DATE_TRUNC('month', created_at)::date AS m,
+            COUNT(*) FILTER (WHERE one_off)::int AS one_off,
+            COUNT(*) FILTER (WHERE NOT one_off AND created_at = first_at)::int AS new_subscribers,
+            COUNT(*) FILTER (WHERE NOT one_off AND created_at <> first_at
+                               AND created_at <= prev_e + INTERVAL '37 days')::int AS recurring,
+            COUNT(*) FILTER (WHERE NOT one_off AND created_at <> first_at
+                               AND created_at > prev_e + INTERVAL '37 days')::int AS reactivated
+          FROM p
+          WHERE created_at >= ${monthFrom} AND created_at < ${monthTo} + INTERVAL '1 month'
+          GROUP BY 1
+        ),
+        lapsed AS (
+          SELECT DATE_TRUNC('month', p1.expires_at + INTERVAL '7 days')::date AS m,
+                 COUNT(DISTINCT p1.user_id)::int AS churned
+          FROM basket_v_active_payments p1
+          WHERE p1.expires_at < ${a} - INTERVAL '6 days'
+            AND p1.expires_at >= ${monthFrom} - INTERVAL '7 days' ${fw}
+            AND NOT EXISTS (
+              SELECT 1 FROM basket_v_active_payments p2
+              WHERE p2.user_id = p1.user_id
+                AND p2.created_at <= p1.expires_at + INTERVAL '7 days'
+                AND p2.expires_at > p1.expires_at
+            )
+          GROUP BY 1
+        )
+        SELECT COALESCE(b.m, l.m)::text AS month,
+               COALESCE(b.one_off, 0)         AS one_off,
+               COALESCE(b.new_subscribers, 0) AS new_subscribers,
+               COALESCE(b.recurring, 0)       AS recurring,
+               COALESCE(b.reactivated, 0)     AS reactivated,
+               COALESCE(l.churned, 0)         AS churned
+        FROM buckets b FULL OUTER JOIN lapsed l ON l.m = b.m
+        ORDER BY 1
+    `);
+      // Distinct Subscribers in the pool at the close of each month. Each Pago
+      // emits the month-ends it covers (one or two for a monthly Period, ~13 for
+      // an annual one) and the count is DISTINCT per month-end, which beats
+      // joining every month-end against every Pago by a factor of five. The
+      // anchor month is measured at the anchor day and flagged partial.
+    const activeRowsP = run(`
+        WITH cov AS (
+          SELECT user_id, sub_type, created_at::date AS s, (expires_at + INTERVAL '7 days')::date AS e
+          FROM basket_v_active_payments
+          WHERE expires_at >= ${monthFrom} - INTERVAL '7 days'
+            AND created_at < LEAST(${monthTo} + INTERVAL '1 month', ${a} + 1) ${fw}
+        ),
+        me AS (
+          SELECT c.user_id, c.sub_type, c.s, c.e,
+                 DATE_TRUNC('month', m)::date AS month,
+                 LEAST((m + INTERVAL '1 month' - INTERVAL '1 day')::date, ${a}) AS d
+          FROM cov c,
+               LATERAL generate_series(DATE_TRUNC('month', c.s),
+                                       DATE_TRUNC('month', LEAST(c.e, ${a})),
+                                       INTERVAL '1 month') m
+        )
+        SELECT month::text AS month,
+               COUNT(DISTINCT user_id)::int AS total,
+               COUNT(DISTINCT user_id) FILTER (WHERE sub_type LIKE 'Mensual%')::int AS mensual,
+               COUNT(DISTINCT user_id) FILTER (WHERE sub_type = 'Anual_Total')::int AS anual,
+               COUNT(DISTINCT user_id) FILTER (WHERE sub_type NOT LIKE 'Mensual%'
+                                                 AND sub_type <> 'Anual_Total')::int AS otros,
+               BOOL_OR(d = ${a} AND d <> (month + INTERVAL '1 month' - INTERVAL '1 day')::date) AS partial
+        FROM me
+        WHERE d >= s AND d <= e AND month BETWEEN ${monthFrom} AND ${monthTo}
+        GROUP BY month ORDER BY month
+    `);
+    const lifetimeRowsP = run(`
+        WITH per_user AS (
+          SELECT user_id,
+                 SUM(GREATEST(EXTRACT(EPOCH FROM (expires_at - created_at)), 0)) / 86400.0 / 30.0 AS months,
+                 MAX((expires_at + INTERVAL '7 days')::date) AS last_e
+          FROM basket_v_active_payments WHERE TRUE ${fw}
+          GROUP BY user_id
+        ),
+        closed AS (SELECT months FROM per_user WHERE last_e < ${a})
+        SELECT (SELECT COUNT(*) FROM closed)::int                          AS closed,
+               (SELECT COUNT(*) FROM per_user WHERE last_e >= ${a})::int   AS open_,
+               ROUND(AVG(months)::numeric, 1)::float8                      AS mean,
+               ROUND(percentile_cont(0.5)  WITHIN GROUP (ORDER BY months)::numeric, 1)::float8 AS median,
+               ROUND(percentile_cont(0.25) WITHIN GROUP (ORDER BY months)::numeric, 1)::float8 AS p25,
+               ROUND(percentile_cont(0.75) WITHIN GROUP (ORDER BY months)::numeric, 1)::float8 AS p75,
+               ROUND(MAX(months)::numeric, 1)::float8                      AS max
+        FROM closed
+    `);
+
+    return Promise.all([dailyRowsP, monthlyRowsP, activeRowsP, lifetimeRowsP]);
+  }
+
+  private toLifecycleDTO(
+    asOf: string,
+    dailyRows: unknown,
+    monthlyRows: unknown,
+    activeRows: unknown,
+    lastChargeRows: unknown,
+    lifetimeRows: unknown,
+  ): SubscriberLifecycleDTO {
+    const daily = ((dailyRows as unknown) as RowAny[]).map((r) => ({
+      day: d(r.day),
+      newSubscribers: n(r.new_subscribers),
+      reactivated: n(r.reactivated),
+      churned: n(r.churned),
+      net: n(r.new_subscribers) + n(r.reactivated) - n(r.churned),
+      active: n(r.active),
+    }));
+    const [lt] = (lifetimeRows as unknown) as RowAny[];
+    const stat = (v: unknown): number | null => (v == null ? null : Number(v));
+    return {
+      asOf,
+      daily,
+      monthly: ((monthlyRows as unknown) as RowAny[]).map((r) => ({
+        month: d(r.month),
+        newSubscribers: n(r.new_subscribers),
+        recurring: n(r.recurring),
+        reactivated: n(r.reactivated),
+        oneOff: n(r.one_off),
+        churned: n(r.churned),
+      })),
+      activeByMonth: ((activeRows as unknown) as RowAny[]).map((r) => ({
+        month: d(r.month),
+        mensual: n(r.mensual),
+        anual: n(r.anual),
+        otros: n(r.otros),
+        total: n(r.total),
+        partial: Boolean(r.partial),
+      })),
+      lastCharge: ((lastChargeRows as unknown) as RowAny[]).map((r) => ({
+        platform: n(r.platform),
+        platformName: gatewayName(n(r.platform)),
+        bucket: s(r.bucket) as LastChargeBucket,
+        count: n(r.c),
+      })),
+      lifetime: {
+        closed: n(lt?.closed),
+        open: n(lt?.open_),
+        meanMonths: stat(lt?.mean),
+        medianMonths: stat(lt?.median),
+        p25Months: stat(lt?.p25),
+        p75Months: stat(lt?.p75),
+        maxMonths: stat(lt?.max),
+      },
     };
   }
 

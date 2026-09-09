@@ -67,6 +67,12 @@ export function subscriptionLifecycle(status: string): SubscriptionLifecycle {
   return LIFECYCLE[status] ?? 'other';
 }
 
+/** Every Provider word that means `live`, for a SQL predicate that has to agree
+ *  with the mapping above rather than restate it. */
+export const LIVE_STATUSES: readonly string[] = Object.keys(LIFECYCLE).filter(
+  (status) => LIFECYCLE[status] === 'live',
+);
+
 export class GatewaySubscription {
   constructor(private readonly props: GatewaySubscriptionProps) {}
 

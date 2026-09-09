@@ -42,51 +42,37 @@ export function Card({
 /**
  * El hueco donde va un gráfico cuya fuente todavía no existe.
  *
- * Todos «en desarrollo» desde 2026-09-07: el dato existe y falta la pantalla.
- * Suscripciones tiene espejo para Stripe y MercadoPago (las preaprobaciones
- * llegan por API desde que hay credencial de producción); lo que falta es el
- * ciclo de vida del suscriptor día a día sobre el que se dibujan estos
- * gráficos. Real vs Plan sólo necesita la planilla de objetivos.
+ * Quedan dos, desde 2026-09-09: Real vs Plan necesita la planilla de objetivos,
+ * y el Asistente necesita un modelo. El ciclo de vida del suscriptor — altas,
+ * bajas, activos día a día — ya se calcula sobre los Pagos y sus siete
+ * gráficos están dibujados.
  */
 export function Pending({
   kind,
   children,
 }: {
-  kind: 'suscripciones' | 'plan' | 'asistente';
+  kind: 'plan' | 'asistente';
   children?: ReactNode;
 }) {
-  const label =
-    kind === 'suscripciones'
-      ? 'Suscripciones · en desarrollo'
-      : kind === 'plan'
-        ? 'Real vs Plan · en desarrollo'
-        : 'Asistente · en desarrollo';
+  const label = kind === 'plan' ? 'Real vs Plan · en desarrollo' : 'Asistente · en desarrollo';
   return (
     <div className="proto-pending">
       <span className="proto-pending-badge dev">{label}</span>
       <div className="proto-pending-body">
-        {children ??
-          (kind === 'suscripciones' ? (
-            <>
-              Este gráfico se dibuja sobre el <strong>ciclo de vida del suscriptor</strong>{' '}
-              día a día (alta, reactivación, baja), que todavía no está calculado. Las
-              Suscripciones de Stripe y MercadoPago ya tienen espejo; sus totales por
-              estado están en esta misma pantalla.
-            </>
-          ) : (
-            // Lo que falta para encenderlo — la planilla compartida en modo
-            // lectura con la cuenta de servicio, y GOOGLE_SHEETS_ID_TARGETS /
-            // GOOGLE_SHEETS_TAB_TARGETS declaradas — está en
-            // docs/handoff/financiero-dashboard-port.md, paso 5. Acá no: el
-            // nombre de una variable de entorno no le dice nada a quien mira
-            // el dashboard.
-            <>
-              Este gráfico compara contra el <strong>Plan</strong>, que llega de una
-              planilla de objetivos todavía no compartida con el dashboard. La planilla
-              sólo debe traer el objetivo por Proveedor y mes: el real y el mes anterior
-              se calculan acá.
-            </>
-          ))}
+        {children ?? (
+          // Lo que falta para encenderlo — la planilla compartida en modo
+          // lectura con la cuenta de servicio, y GOOGLE_SHEETS_ID_TARGETS /
+          // GOOGLE_SHEETS_TAB_TARGETS declaradas — está en
+          // docs/handoff/financiero-dashboard-port.md, paso 5. Acá no: el
+          // nombre de una variable de entorno no le dice nada a quien mira
+          // el dashboard.
+          <>
+            Este gráfico compara contra el <strong>Plan</strong>, que llega de una
+            planilla de objetivos todavía no compartida con el dashboard. La planilla
+            sólo debe traer el objetivo por Proveedor y mes: el real y el mes anterior
+            se calculan acá.
+          </>
+        )}
       </div>
     </div>
   );

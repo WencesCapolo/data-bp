@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 import useSWR from 'swr';
 import { fetcher } from '@/lib/client/fetcher';
 import { useFilterQS } from '@/lib/client/filterStore';
-import { bucketTitles } from '@/lib/client/bucketTitle';
+import { bucketTitle, bucketTitles } from '@/lib/client/bucketTitle';
 import { KpiCard } from '@/components/ui/KpiCard';
 import { InfoHint } from '@/components/ui/InfoHint';
 import { LineChart } from '@/components/charts/LineChart';
@@ -13,6 +13,7 @@ import { ComboChart } from '@/components/financiero/contenido/ComboChart';
 import { TabSkeleton } from '@/components/ui/Skeleton';
 import { ErrorBox } from '@/components/ui/ErrorBox';
 import { Card, Pending, SectionLabel } from './financiero/blocks';
+import { LifecycleChart } from './financiero/LifecycleChart';
 import type { EconomiaDTO } from '@basket/core/dtos/EconomiaDTO';
 
 /**
@@ -328,6 +329,77 @@ export function FinancieroView() {
     return Object.entries(idx)
       .map(([label, txCount]) => ({ label, txCount }))
       .sort((a, b) => b.txCount - a.txCount);
+  }, [data]);
+
+  /** El ciclo de vida del suscriptor, listo para dibujar. Todo sale de
+   *  `data.lifecycle`, anclado en el último día con Pagos (`asOf`): después de
+   *  la última carga no hay altas y sí vencimientos, y dibujar hasta hoy leería
+   *  como un derrumbe que no ocurrió. */
+  const lifecycle = useMemo(() => {
+    const empty = {
+      asOf: '',
+      dayLabels: [] as string[],
+      dayTitles: [] as string[],
+      daily: [] as EconomiaDTO['lifecycle']['daily'],
+      activeMin: 0,
+      activeMax: 0,
+      monthLabels: [] as string[],
+      monthTitles: [] as string[],
+      monthly: [] as EconomiaDTO['lifecycle']['monthly'],
+      activeLabels: [] as string[],
+      activeTitles: [] as string[],
+      activeByMonth: [] as EconomiaDTO['lifecycle']['activeByMonth'],
+      activeTotalByMonth: {} as Record<string, number>,
+      lastCharge: { labels: [] as string[], series: [] as { label: string; data: number[]; color: string }[], unknown: 0, live: 0 },
+      lifetime: null as EconomiaDTO['lifecycle']['lifetime'] | null,
+    };
+    if (!data) return empty;
+    const lc = data.lifecycle;
+    const actives = lc.daily.map((r) => r.active);
+    const lo = actives.length ? Math.min(...actives) : 0;
+    const hi = actives.length ? Math.max(...actives) : 0;
+    // El eje se ancla cerca del mínimo para que se vea el movimiento diario:
+    // un pool de 24.000 que se mueve de a 60 es una línea plana desde cero.
+    const pad = Math.max(50, Math.round((hi - lo) * 0.25));
+    const activeTotalByMonth: Record<string, number> = {};
+    for (const r of lc.activeByMonth) activeTotalByMonth[r.month.slice(0, 7)] = r.total;
+    const BUCKETS: { key: EconomiaDTO['lifecycle']['lastCharge'][number]['bucket']; label: string }[] = [
+      { key: '0-30', label: '0–30 días' },
+      { key: '31-60', label: '31–60 días' },
+      { key: '61-90', label: '61–90 días' },
+      { key: '91-180', label: '91–180 días' },
+      { key: '180+', label: '180+ días' },
+      { key: 'unknown', label: 'sin Pago vinculado' },
+    ];
+    const platforms = Array.from(new Set(lc.lastCharge.map((r) => r.platformName))).sort();
+    return {
+      asOf: lc.asOf,
+      dayLabels: lc.daily.map((r) => `${r.day.slice(8, 10)}/${r.day.slice(5, 7)}`),
+      dayTitles: bucketTitles(lc.daily.map((r) => r.day), 'day'),
+      daily: lc.daily,
+      activeMin: Math.max(0, lo - pad),
+      activeMax: hi + pad,
+      monthLabels: lc.monthly.map((r) => monthLabel(r.month)),
+      monthTitles: bucketTitles(lc.monthly.map((r) => r.month), 'month'),
+      monthly: lc.monthly,
+      activeLabels: lc.activeByMonth.map((r) => (r.partial ? `${monthLabel(r.month)} ⏳` : monthLabel(r.month))),
+      activeTitles: lc.activeByMonth.map((r) =>
+        r.partial ? `Mes en curso · al ${lc.asOf.slice(8, 10)}/${lc.asOf.slice(5, 7)}/${lc.asOf.slice(0, 4)}` : bucketTitle(r.month, 'month'),
+      ),
+      activeByMonth: lc.activeByMonth,
+      activeTotalByMonth,
+      lastCharge: {
+        labels: BUCKETS.map((b) => b.label),
+        series: platforms.map((pf) => ({
+          label: pf,
+          data: BUCKETS.map((b) => lc.lastCharge.find((r) => r.platformName === pf && r.bucket === b.key)?.count ?? 0),
+          color: PLATFORM_COLORS[pf] ?? '#64748b',
+        })),
+        unknown: lc.lastCharge.filter((r) => r.bucket === 'unknown').reduce((a, r) => a + r.count, 0),
+        live: lc.lastCharge.reduce((a, r) => a + r.count, 0),
+      },
+      lifetime: lc.lifetime,
+    };
   }, [data]);
 
   /** Suscripciones creadas y canceladas por mes, una serie por Proveedor. Las
@@ -657,17 +729,16 @@ export function FinancieroView() {
       <div style={{ marginTop: 18 }} />
       <Card
         title="📈 Vista consolidada: ingresos, activos y transacciones"
-        hint="Neto de liquidación por mes convertido a USD día por día, contra la cantidad de Pagos exitosos de ese mes. Las dos series usan relojes distintos: fecha de captura y fecha del Pago."
+        hint="Neto de liquidación por mes convertido a USD día por día, contra la cantidad de Pagos exitosos de ese mes y los suscriptores con acceso vigente al cierre del mes. Las series usan relojes distintos: fecha de captura, fecha del Pago y último día del mes."
         desc={
           <>
-            Barras: <b>ingresos netos en USD</b> por mes (eje izquierdo). Línea:{' '}
-            <b>número de transacciones</b> (eje derecho). Permite ver de un vistazo si los
-            ingresos crecen en línea con el volumen transaccional. La tercera serie del
-            prototipo — <b>suscriptores activos reales</b> — todavía no se puede dibujar:
-            depende de Suscripciones.
+            Barras: <b>ingresos netos en USD</b> por mes (eje izquierdo). Líneas:{' '}
+            <b>número de transacciones</b> y <b>suscriptores activos</b> al cierre de cada mes
+            (eje derecho). Permite ver de un vistazo si los ingresos crecen en línea con el
+            volumen transaccional y con la base de suscriptores.
           </>
         }
-        foot="El neto sale del plano de liquidación y se convierte día por día; las transacciones se cuentan sobre los Pagos ingestados."
+        foot="El neto sale del plano de liquidación y se convierte día por día; las transacciones se cuentan sobre los Pagos ingestados; los activos son Subscribers únicos con un Pago que cubre el último día del mes (más 7 días de gracia)."
       >
         {netUsdByMonth.length === 0 ? (
           <div className="no-data">Sin ingresos convertibles en rango</div>
@@ -681,42 +752,73 @@ export function FinancieroView() {
               {
                 label: 'Transacciones',
                 data: netUsdByMonth.map((r) => txByMonth.find((t) => t.month === r.month)?.tx ?? 0),
+                color: '#a78bfa',
+                dashed: true,
+              },
+              {
+                label: 'Suscriptores activos',
+                data: netUsdByMonth.map((r) => lifecycle.activeTotalByMonth[r.month] ?? 0),
                 color: '#4f8ef7',
               },
             ]}
             barAxisTitle="USD netos"
-            lineAxisTitle="Transacciones"
+            lineAxisTitle="Activos / Transacciones"
           />
         )}
-        <div style={{ marginTop: 12 }}>
-          <Pending kind="suscripciones">
-            Falta la línea de <strong>suscriptores activos reales</strong>: emails únicos
-            con suscripción vigente al cierre de cada mes. El espejo de Suscripciones ya
-            cubre Stripe y MercadoPago; falta el corte mensual sobre él.
-          </Pending>
-        </div>
       </Card>
 
       {/* ── Últimos 15 días ── */}
       <Card
         title="📅 Últimos 15 días — altas, reactivados, bajas y suscripciones netas (por día)"
+        note={lifecycle.asOf ? `· hasta el ${lifecycle.asOf.slice(8, 10)}/${lifecycle.asOf.slice(5, 7)}, último día con Pagos` : undefined}
+        hint="Un Subscriber está activo un día si algún Pago exitoso lo cubre (desde su fecha hasta su vencimiento más 7 días de gracia). Alta nueva: entra al pool con su primer Pago de la vida. Reactivado: vuelve al pool tras haber salido. Baja: estaba ayer y hoy no. Las netas coinciden exactamente con la variación diaria de activos."
         desc={
           <>
-            Barras verdes (<b>altas nuevas</b>): emails que pagan por primera vez.
-            Naranjas (<b>reactivados</b>): emails que ya pagaron antes, salieron del pool y
-            vuelven. Rojas (<b>bajas</b>): emails que estaban activos ayer y hoy ya no.
-            Línea azul (<b>netas</b>) = altas + reactivados − bajas.
+            Barras verdes (<b>altas nuevas</b>): Subscribers que pagan por primera vez.
+            Naranjas (<b>reactivados</b>): ya habían pagado, salieron del pool y vuelven.
+            Rojas (<b>bajas</b>): estaban activos ayer y hoy ya no. Línea azul (<b>netas</b>)
+            = altas + reactivados − bajas, que es la variación diaria de la curva de activos
+            de abajo. Responde a los filtros de país, acceso y plan.
           </>
         }
+        foot="La serie termina en el último día con Pagos y no en hoy: después de la última carga no hay altas y sí vencimientos, y dibujar esos días leería como un derrumbe que no ocurrió."
       >
-        <Pending kind="suscripciones" />
+        {lifecycle.daily.length === 0 ? (
+          <div className="no-data">Sin Pagos</div>
+        ) : (
+          <LifecycleChart
+            height={360}
+            labels={lifecycle.dayLabels}
+            tooltipTitles={lifecycle.dayTitles}
+            bars={[
+              { label: 'Altas nuevas', data: lifecycle.daily.map((r) => r.newSubscribers), color: '#10b981', stack: 'pos' },
+              { label: 'Reactivados', data: lifecycle.daily.map((r) => r.reactivated), color: '#f59e0b', stack: 'pos' },
+              { label: 'Bajas', data: lifecycle.daily.map((r) => -r.churned), color: '#ef4444', stack: 'neg' },
+            ]}
+            lines={[{ label: 'Netas (altas + react − bajas)', data: lifecycle.daily.map((r) => r.net), color: '#1e3a8a' }]}
+          />
+        )}
       </Card>
 
       <Card
         title="👥 Últimos 15 días — suscriptores activos vigentes"
-        desc="Snapshot diario de suscriptores activos: mensuales con último pago dentro de los últimos 60–75 días, anuales dentro de su ciclo de 365 días."
+        note={lifecycle.asOf ? `· hasta el ${lifecycle.asOf.slice(8, 10)}/${lifecycle.asOf.slice(5, 7)}` : undefined}
+        hint="Subscribers únicos con un Pago exitoso que cubre ese día, vencimiento más 7 días de gracia incluidos. Es la misma regla de «activo» de todo el dashboard. El eje no arranca en cero para que se vea el movimiento diario."
+        desc="Snapshot diario de Subscribers con acceso vigente: cada persona cuenta una vez por día aunque tenga varios Pagos. La diferencia entre dos barras consecutivas es la línea de netas del gráfico anterior."
       >
-        <Pending kind="suscripciones" />
+        {lifecycle.daily.length === 0 ? (
+          <div className="no-data">Sin Pagos</div>
+        ) : (
+          <LifecycleChart
+            height={300}
+            legend={false}
+            labels={lifecycle.dayLabels}
+            tooltipTitles={lifecycle.dayTitles}
+            yMin={lifecycle.activeMin}
+            yMax={lifecycle.activeMax}
+            bars={[{ label: 'Suscriptores activos vigentes', data: lifecycle.daily.map((r) => r.active), color: '#1e3a8a' }]}
+          />
+        )}
       </Card>
 
       {/* ── Real vs Plan ── */}
@@ -737,14 +839,33 @@ export function FinancieroView() {
       <div className="proto-grid2">
         <Card
           title="Transacciones mensuales"
-          desc="Altas, recurrentes, reactivaciones y bajas mes a mes, con las cancelaciones oficiales de cada Proveedor."
+          hint="Cada Pago exitoso del mes, clasificado: nuevo si es el primero del Subscriber, recurrente si llega antes de 37 días tras el vencimiento del anterior, reactivación si llega después, partido único si es un Pago sin derecho recurrente. Las bajas, hacia abajo, son los Subscribers cuya cobertura venció ese mes sin ningún Pago posterior que la solape. Todo sale de los Pagos, así que MercadoPago y Stripe cuentan igual."
+          desc={
+            <>
+              Altas, recurrentes y reactivaciones hacia arriba; <b>bajas</b> hacia abajo. Las
+              bajas se derivan de los Pagos (cobertura vencida sin renovación), no de las
+              cancelaciones que declara cada Proveedor: esas están en la tarjeta de al lado y
+              MercadoPago no les pone fecha.
+            </>
+          }
+          foot="El umbral de 37 días entre recurrente y reactivación es el mismo que usa la pestaña de Retención."
         >
-          <Pending kind="suscripciones">
-            Los cuatro buckets (nuevo · recurrente · reactivado · baja) se calculan sobre el
-            ciclo de vida del suscriptor, que hoy sólo existe con grano de mes y sin corte
-            por país ni plan. Mientras tanto, el total de transacciones por mes está en la
-            vista consolidada de arriba.
-          </Pending>
+          {lifecycle.monthly.length === 0 ? (
+            <div className="no-data">Sin Pagos en rango</div>
+          ) : (
+            <LifecycleChart
+              height={300}
+              labels={lifecycle.monthLabels}
+              tooltipTitles={lifecycle.monthTitles}
+              bars={[
+                { label: 'Recurrentes', data: lifecycle.monthly.map((r) => r.recurring), color: '#3b82f6', stack: 'pos' },
+                { label: 'Nuevos', data: lifecycle.monthly.map((r) => r.newSubscribers), color: '#10b981', stack: 'pos' },
+                { label: 'Reactivados', data: lifecycle.monthly.map((r) => r.reactivated), color: '#f59e0b', stack: 'pos' },
+                { label: 'Partido único', data: lifecycle.monthly.map((r) => r.oneOff), color: '#94a3b8', stack: 'pos', hidden: true },
+                { label: 'Bajas', data: lifecycle.monthly.map((r) => -r.churned), color: '#ef4444', stack: 'neg' },
+              ]}
+            />
+          )}
         </Card>
         <Card
           title="Mix de planes"
@@ -803,18 +924,54 @@ export function FinancieroView() {
         </Card>
         <Card
           title="📅 Suscriptores activos por antigüedad del último cargo"
-          desc="Distribución de suscriptores activos según cuándo fue su último cobro: ideal 0–30 días. Las bandas viejas (61+) son zombies o subs en mora, y anticipan churn."
+          note={lifecycle.asOf ? `· al ${lifecycle.asOf.slice(8, 10)}/${lifecycle.asOf.slice(5, 7)}` : undefined}
+          hint="Suscripciones que el Proveedor da por vivas (Stripe active/past_due/trialing, MercadoPago authorized), agrupadas por los días desde su último Pago exitoso, medidos al último día con Pagos. El Pago se une a la suscripción por el id de preaprobación en MercadoPago y por el email del cliente en Stripe; la que no se alcanza queda en su propia barra en vez de desaparecer. No afectado por los filtros: una suscripción no tiene país ni plan propios."
+          desc="Distribución de suscripciones vivas según cuándo fue su último cobro: lo sano es 0–30 días. Las bandas viejas (61+) son suscripciones que el Proveedor sigue llamando vivas sin haber cobrado en meses — zombies o en mora — y anticipan churn."
+          foot={
+            lifecycle.lastCharge.live > 0
+              ? `${lifecycle.lastCharge.live.toLocaleString()} suscripciones vivas; ${lifecycle.lastCharge.unknown.toLocaleString()} sin Pago vinculado (cliente sin Subscriber conocido). No afectado por los filtros.`
+              : undefined
+          }
         >
-          <Pending kind="suscripciones" />
+          <div style={{ height: 300 }}>
+            {lifecycle.lastCharge.series.length === 0 ? (
+              <div className="no-data">Sin suscripciones vivas</div>
+            ) : (
+              <StackedBarChart height={300} labels={lifecycle.lastCharge.labels} series={lifecycle.lastCharge.series} />
+            )}
+          </div>
         </Card>
       </div>
 
       {/* ── Vida media ── */}
       <Card
         title="⏱️ Promedio de vida de un suscriptor"
-        desc="Meses promedio que un suscriptor se mantuvo activo, sumando reactivaciones. Sólo promedia clientes cerrados, para no inflar con ciclos aún abiertos."
+        hint="Meses de cobertura pagada por Subscriber, sumando la duración de todos sus Pagos exitosos (un mes por Pago mensual, doce por uno anual). Sólo entran los ciclos cerrados: Subscribers sin acceso vigente al último día con Pagos. Quien se fue y volvió es un solo ciclo con sus meses sumados. Responde a los filtros."
+        desc="Meses que un suscriptor se mantuvo pagando, sumando reactivaciones (quien canceló y volvió cuenta como un solo ciclo extendido). Sólo se promedian ciclos cerrados — sin acceso vigente hoy — para no inflar con clientes vivos cuyo ciclo aún no terminó."
       >
-        <Pending kind="suscripciones" />
+        {!lifecycle.lifetime || lifecycle.lifetime.closed === 0 ? (
+          <div className="no-data">Sin ciclos cerrados en el filtro</div>
+        ) : (
+          <div className="kpi-grid" style={{ marginTop: 8 }}>
+            <KpiCard
+              label="Promedio"
+              value={`${(lifecycle.lifetime.meanMonths ?? 0).toLocaleString('es-UY', { maximumFractionDigits: 1 })} meses`}
+              sub={`${lifecycle.lifetime.closed.toLocaleString()} ciclos cerrados`}
+              variant="blue"
+            />
+            <KpiCard
+              label="Mediana"
+              value={`${(lifecycle.lifetime.medianMonths ?? 0).toLocaleString('es-UY', { maximumFractionDigits: 1 })} meses`}
+              sub={`P25 ${(lifecycle.lifetime.p25Months ?? 0).toLocaleString('es-UY', { maximumFractionDigits: 1 })} · P75 ${(lifecycle.lifetime.p75Months ?? 0).toLocaleString('es-UY', { maximumFractionDigits: 1 })} · máx ${(lifecycle.lifetime.maxMonths ?? 0).toLocaleString('es-UY', { maximumFractionDigits: 1 })}`}
+            />
+            <KpiCard
+              label="Ciclos abiertos"
+              value={lifecycle.lifetime.open}
+              sub="con acceso vigente: no se promedian"
+              variant="green"
+            />
+          </div>
+        )}
       </Card>
 
       {/* ── Ingresos netos por mes · activos reales ── */}
@@ -857,9 +1014,26 @@ export function FinancieroView() {
         </Card>
         <Card
           title="Suscriptores activos reales"
-          desc="Emails únicos con una suscripción vigente al cierre de cada mes: cada persona cuenta una sola vez por mes aunque tenga varias transacciones."
+          hint="Subscribers únicos con un Pago exitoso que cubre el último día del mes (vencimiento más 7 días de gracia). Barras: bajo un plan mensual, uno anual, u otro acceso (Free, partido único); una persona con dos derechos cuenta en dos barras. Línea: personas únicas. El mes en curso (⏳) se mide al último día con Pagos."
+          desc="Personas únicas con acceso vigente al cierre de cada mes: cada una cuenta una sola vez aunque tenga varios Pagos. Las barras apilan por tipo de acceso y la línea punteada es el total sin duplicar."
         >
-          <Pending kind="suscripciones" />
+          <div style={{ height: 300 }}>
+            {lifecycle.activeByMonth.length === 0 ? (
+              <div className="no-data">Sin Pagos en rango</div>
+            ) : (
+              <LifecycleChart
+                height={300}
+                labels={lifecycle.activeLabels}
+                tooltipTitles={lifecycle.activeTitles}
+                bars={[
+                  { label: 'Mensuales', data: lifecycle.activeByMonth.map((r) => r.mensual), color: '#3b82f6' },
+                  { label: 'Anuales', data: lifecycle.activeByMonth.map((r) => r.anual), color: '#f59e0b' },
+                  { label: 'Otros accesos', data: lifecycle.activeByMonth.map((r) => r.otros), color: '#94a3b8' },
+                ]}
+                lines={[{ label: 'Total únicos', data: lifecycle.activeByMonth.map((r) => r.total), color: '#0f172a', dashed: true }]}
+              />
+            )}
+          </div>
         </Card>
       </div>
 

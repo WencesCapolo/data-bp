@@ -7,6 +7,11 @@ services:
       POSTGRES_PASSWORD: basket_dev
     ports:
       - "5432:5432"
+    # Matches docker-compose.prod.yml. Postgres's parallel workers hand data
+    # around through /dev/shm, and the container default of 64 MB is exhausted
+    # by a dashboard request that fans out into ten scans of the Pagos view
+    # ("could not resize shared memory segment ... No space left on device").
+    shm_size: 256mb
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:

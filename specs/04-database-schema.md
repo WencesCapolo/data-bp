@@ -71,6 +71,10 @@ All mat views read from this view. `status=1` filter applied once at the bottom.
 | `basket_mat_team_monthly` | team × month | TeamsTab (rank + drill-down) | same |
 | `basket_mat_revenue_daily` | day × currency × user_country × platform | FinanceTab | same |
 | `basket_mat_fixture_ranges` | league × country | (future EvolutionTab bands) | same |
+| `basket_mat_subscriber_days` | 1 row / day | /financiero (últimos 15 días, activos al cierre de mes) | same |
+| `basket_mat_subscriber_months` | 1 row / month | /financiero (transacciones mensuales) | same |
+| `basket_mat_subscription_last_charge` | Provider subscription | /financiero (antigüedad del último cargo) | same |
+| `basket_mat_subscriber_lifetime` | 1 row / Subscriber | /financiero (vida media) | same |
 
 ### `basket_mat_daily_active`
 
@@ -78,6 +82,22 @@ Computes per day:
 - `all_active`, `real_active`, `voucher_active`, `antel_active`
 - per-subtype: `free_active`, `mensual_basico_active`, `mensual_total_active`, `anual_total_active`
 - per-country: `uy_active`, `ar_active`, `cl_active`, `other_active`
+
+### Subscriber lifecycle views (migration 0019)
+
+`basket_mat_subscriber_days` merges each Subscriber's Pagos into stretches of
+coverage (gaps and islands: `created_at ≤ day ≤ expires_at + 7d`) and counts,
+per day, who entered (`new_subscribers` on their first Pago ever, `reactivated`
+otherwise), who left (`churned`, the day after a stretch ends) and who stayed
+(`active`, plus `active_mensual` / `active_anual` / `active_otros`). The
+invariant `active(d) − active(d−1) = new + reactivated − churned` is asserted by
+`pnpm smoke:lifecycle`. `basket_mat_subscriber_months` buckets each Pago (new /
+recurring within 37 days of the previous expiry / reactivated / one_off) and
+counts lapses by the month coverage ended. `basket_mat_subscription_last_charge`
+ties every Provider subscription to its last Pago through three bridges (hex32
+preapproval id, fee-mirror `subscription_id`, Stripe customer email).
+`basket_mat_subscriber_lifetime` sums paid months per Subscriber. Filtered
+requests run the same SQL live over `basket_v_active_payments`.
 
 Single pass: `LEFT JOIN basket_v_active_payments ON created_at::date <= d AND (expires_at + 7d)::date >= d`, then `COUNT(DISTINCT user_id) FILTER (...)` per split.
 

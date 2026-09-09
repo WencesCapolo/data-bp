@@ -128,13 +128,32 @@ inside Financiero (Economía · Suscripciones · Real vs Plan) split that scroll
 three and hid two thirds of the screen behind tabs that show no numbers.
 
 What replaced them is a `Pending` block *in the place the chart would occupy*,
-carrying which of the two sentences applies — `Suscripciones · pendiente` (the
-number does not exist: MercadoPago's *planes de suscripción* Export has no
-table) or `Real vs Plan · en desarrollo` (the number exists, the targets Sheet
-is not shared yet). A reader now sees **which** chart is missing and why, rather
-than that something is. The cards standing on placeholders today: the last-15-days
-pair, Real vs Plan, monthly transactions by bucket, active-by-last-charge age,
-average subscriber lifetime, real active subscribers, and the assistant.
+carrying which sentence applies — `Real vs Plan · en desarrollo` (the number
+exists, the targets Sheet is not shared yet) or `Asistente · en desarrollo`. A
+reader now sees **which** chart is missing and why, rather than that something is.
+
+**The subscriber lifecycle is drawn as of 2026-09-09**, and the seven cards that
+stood on `Suscripciones · pendiente` — the last-15-days pair, monthly
+transactions by bucket, active-by-last-charge age, average lifetime, real active
+subscribers, and the actives line in the consolidated chart — read
+`EconomiaDTO.lifecycle` (`core/dtos/SubscriberLifecycleDTO.ts`). Everything in
+it is derived from Pagos with the app's one rule for "active" (a Pago covers the
+day, expiry + 7 days of grace), merged per Subscriber into stretches of coverage
+(gaps and islands) so that entering the pool is an alta, leaving it a baja, and
+`Δactive = altas + reactivados − bajas` holds on every day. It is **anchored at
+the last Pago day**, not today: Pagos arrive by Upload, so the days after the
+last one hold every scheduled expiry and no renewal, and drawn to today the pool
+reads as collapsing at exactly the rate people were due to renew. Migration
+`0019_subscriber_lifecycle_views.sql` precomputes the unfiltered path in four
+mat views (263 ms on `30d` instead of 4–8 s live); a filtered request runs the
+same SQL live, and `pnpm smoke:lifecycle` asserts the two paths agree figure for
+figure on an empty filter — 30 checks. The one figure that reads Provider
+subscriptions rather than Pagos is the last-charge age: live subscriptions
+(Stripe `active`/`past_due`/`trialing`, MP `authorized`) tied to their last Pago
+through three bridges — the hex32 preapproval id, the fee mirror's
+`subscription_id`, the Stripe customer's email — reach 12,551 of 13,864 MP and
+7,925 of 8,404 Stripe; the rest keep a `sin Pago vinculado` bar rather than
+disappear. See the master table below for the block-by-block mapping.
 
 **Light theme, 2026-08-27.** The prototype is light and the app is dark, so the
 light palette is a re-declaration of the same tokens under
@@ -183,10 +202,12 @@ PayPal 90 (42); content 20,384 matches across 101 tournaments, back to 2021-09.
 | `monthly_revenue`, `daily_revenue` (gross by country×currency) | `basket_mat_revenue_daily` | **served** |
 | `monthly_revenue_net`, `monthly_fees`, `daily_fees` | `basket_payment_fees` | **Stripe + MP** — MP is one month of 27; PayPal has no source and stays gross-only |
 | `catalog` (plan×market×currency×season×price) | derived in `getEconomia` | **served** |
-| `monthly_stats`, `daily_stats` (altas/reactivados/bajas by country×plan) | `basket_payments` | **derivable** — `basket_mat_monthly_lifecycle` has the logic, not the country×plan×bucket grain |
-| `monthly_active_subscribers`, `active_now_snapshot` | `basket_mat_daily_active` | **derivable** — needs country×Tier×Period splits |
-| `daily_recent` (15d), `daily_recent_by_country`, `period_comparison` | `basket_payments` | **derivable** |
-| `subs_proc.*` (totals, active now, last-charge buckets, lifetime) | `basket_gateway_subscriptions` | **Stripe only** |
+| `monthly_stats` (new/recurring/reactivated/one_off/churned by month) | `basket_mat_subscriber_months` (+ live SQL under filters) | **served** — `lifecycle.monthly`; churned is derived from Pagos (coverage lapsed), not from Provider cancellations |
+| `monthly_active_subscribers`, `active_now_snapshot` | `basket_mat_subscriber_days` (month-end rows) | **served** — `lifecycle.activeByMonth`, split mensual/anual/otros with a dedup total |
+| `daily_recent` (15d), `daily_recent_by_country` | `basket_mat_subscriber_days` (+ live SQL under filters) | **served** — `lifecycle.daily`, anchored at the last Pago day |
+| `subs_proc.last_charge_buckets` | `basket_mat_subscription_last_charge` × `basket_gateway_subscriptions.status` | **served** — both Providers, `unknown` bucket for the unbridged |
+| `subs_proc.lifetime_stats` | `basket_mat_subscriber_lifetime` (+ live SQL under filters) | **served** — months of paid coverage over closed lifetimes |
+| `period_comparison` | `basket_payments` | **derivable**, not drawn: the prototype's 30-vs-30 table has no card in the port |
 | `*_usd`, `*_net_usd`, `monthly_fees_usd` | `basket_fx_rates` | **served for ARS and USD** — EUR has no source and renders absent |
 | `month_tracking_by_source` (Real vs **Plan**) | — | **missing**: no target feed |
 | `content.*` (views, users, by country/tournament/team, tops) | `basket_content` | **served** — `getContenido`, 22,357 kept rows |

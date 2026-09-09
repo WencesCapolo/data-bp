@@ -87,6 +87,10 @@ REFRESH MATERIALIZED VIEW CONCURRENTLY basket_mat_monthly_lifecycle;
 REFRESH MATERIALIZED VIEW CONCURRENTLY basket_mat_team_monthly;
 REFRESH MATERIALIZED VIEW CONCURRENTLY basket_mat_revenue_daily;
 REFRESH MATERIALIZED VIEW CONCURRENTLY basket_mat_fixture_ranges;
+REFRESH MATERIALIZED VIEW CONCURRENTLY basket_mat_subscriber_days;
+REFRESH MATERIALIZED VIEW CONCURRENTLY basket_mat_subscriber_months;
+REFRESH MATERIALIZED VIEW CONCURRENTLY basket_mat_subscription_last_charge;
+REFRESH MATERIALIZED VIEW CONCURRENTLY basket_mat_subscriber_lifetime;
 ```
 
 Each has a `CREATE UNIQUE INDEX` so `CONCURRENTLY` never blocks readers. `RefreshResult[]` per view (`view, durationMs, ok`) returned and surfaced in `RunSyncResult.refreshes`.

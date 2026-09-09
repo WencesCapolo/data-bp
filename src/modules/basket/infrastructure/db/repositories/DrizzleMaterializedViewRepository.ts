@@ -14,6 +14,12 @@ const ALL_VIEWS: MatViewName[] = [
   'basket_mat_revenue_daily',
   'basket_mat_gateway_net_daily',
   'basket_mat_fixture_ranges',
+  // The subscriber lifecycle /financiero draws, migration 0019. Off the Pagos
+  // view like the first two, so they refresh after them for no reason but order.
+  'basket_mat_subscriber_days',
+  'basket_mat_subscriber_months',
+  'basket_mat_subscription_last_charge',
+  'basket_mat_subscriber_lifetime',
 ];
 
 export class DrizzleMaterializedViewRepository implements IMaterializedViewRepository {

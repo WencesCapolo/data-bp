@@ -265,6 +265,39 @@ it would quote comes from steps 1–3.
 
 ## What this codebase will bite you with
 
+**Postgres needs 256 MB of /dev/shm, and the dev compose did not say so until
+2026-09-09.** `/api/financiero/economia` fans out into ten scans of the Pagos
+view at once, and Postgres's parallel workers hand rows around through dynamic
+shared memory. On the container default of 64 MB the request dies with `could
+not resize shared memory segment "/PostgreSQL.…" to 4194304 bytes: No space left
+on device` — from inside a query that is fine on its own. `docker-compose.prod.yml`
+already had `shm_size: 256mb`; `docker-compose.yml` has it now, and the dev
+container was recreated (`docker-compose up -d postgres`; the `pgdata` volume
+survives). A fresh clone that starts Postgres any other way hits this first.
+
+**Migration 0019 must be applied before `/financiero` answers.** The unfiltered
+lifecycle path reads four mat views that do not exist until `pnpm sql:apply
+migrations/sql/0019_subscriber_lifecycle_views.sql` runs — about 90 s, most of
+it `basket_mat_subscriber_days`, which joins every day against every Pago the way
+`basket_mat_daily_active` already does (139 s). They are in `ALL_VIEWS`, so every
+Sync refreshes them after the first apply; `pnpm db:verify` lists them.
+
+**Every lifecycle figure is anchored at the last Pago day, and the anchor is
+computed, not configured.** `LEAST(MAX(created_at)::date, CURRENT_DATE − 1)` over
+`basket_v_active_payments`, once per request, and again inside the months mat
+view for its lapses. Pagos arrive by Upload, so after the last one every day
+holds scheduled expiries and no renewals; drawn to today, actives fall at exactly
+the rate Subscribers were due to renew, and the month in progress reports the
+whole pool as churned. If the daily chart ever shows a cliff at its right edge,
+check the anchor before the data.
+
+**Two definitions of "baja" sit one card apart, on purpose.** "Transacciones
+mensuales" draws lapses derived from Pagos (coverage ended, nothing renewed it),
+so MercadoPago and Stripe count alike; "Altas y cancelaciones" next to it draws
+the Providers' own dated cancellations, which MercadoPago does not have. The
+prototype used the official events for both and rendered MP churn as zero. Each
+card's `desc` names its source; keep it that way rather than unifying them.
+
 Each of these cost real debugging. They are not in the master doc's trap list
 because they did not exist until phases 1, 2 and 4 landed.
 
@@ -407,9 +440,11 @@ template fails with `The "string" argument must be of type string`; pass
   and rides the cron's subscription step; `pnpm backfill:subscriptions` does the
   first pass. The Suscripciones figures on the tab read both Providers through
   `subscriptionLifecycle()` (Stripe `active` = MP `authorized`; MP `pending` is a
-  checkout that never billed and counts as nothing). What is still open on that
-  tab is the day-grain subscriber lifecycle the remaining `en desarrollo` charts
-  draw on — derived from Pagos, no human input needed. Reversals arrived and are ingested
+  checkout that never billed and counts as nothing). **The day-grain subscriber
+  lifecycle landed 2026-09-09**: every `Suscripciones · pendiente` card is drawn,
+  from Pagos, through migration `0019_subscriber_lifecycle_views.sql` and
+  `EconomiaDTO.lifecycle` — see the master doc's state of play and `pnpm
+  smoke:lifecycle`. Reversals arrived and are ingested
   (2026-08-26); the *clientes* bridge is still last and lowest value. Ask for one
   file before any adapter is written for it: every column name is an assumption
   until a real file exists, which is the discipline that saved the reversals feed.

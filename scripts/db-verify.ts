@@ -10,6 +10,10 @@ const MAT_VIEWS = [
   'basket_mat_team_monthly',
   'basket_mat_revenue_daily',
   'basket_mat_fixture_ranges',
+  'basket_mat_subscriber_days',
+  'basket_mat_subscriber_months',
+  'basket_mat_subscription_last_charge',
+  'basket_mat_subscriber_lifetime',
 ] as const;
 
 const CORE_TABLES = [

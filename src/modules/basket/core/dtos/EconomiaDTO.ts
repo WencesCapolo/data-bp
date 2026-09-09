@@ -9,6 +9,7 @@
 // reinterpretation of these.
 import type { DateRange } from './shared';
 import type { GatewayNetDTO } from './GatewayNetDTO';
+import type { SubscriberLifecycleDTO } from './SubscriberLifecycleDTO';
 
 /** Gross, presentment plane: what subscribers were charged, per our own Pagos. */
 export interface MonthlyGrossPoint {
@@ -65,6 +66,8 @@ export interface EconomiaDTO {
   byCountry: CountryRevenueRow[];
   catalog: PlanCatalogRow[];
   monthlyDetail: MonthlyDetailRow[];
-  /** Net, fees, refunds and subscription churn. Stripe only — see the seam. */
+  /** Net, fees, refunds and subscription churn — the Providers with a fee mirror. */
   gateway: GatewayNetDTO;
+  /** Altas, bajas and actives at day grain, derived from Pagos. */
+  lifecycle: SubscriberLifecycleDTO;
 }
