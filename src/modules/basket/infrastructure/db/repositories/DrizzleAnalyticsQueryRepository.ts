@@ -1333,7 +1333,7 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
     // rolling windows and the Provider net they compare are cut at the same day.
     const asOf = await this.lifecycleAnchor();
 
-    const [grossRows, liveRows, gateway, lifecycle, windowNet] = await Promise.all([
+    const [grossRows, liveRows, gateway, lifecycle] = await Promise.all([
       hasFilters(filters)
         ? this.conn.execute(sql.raw(`
             SELECT DATE_TRUNC('month', created_at)::date AS month,
@@ -1355,8 +1355,12 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
       groupedLive,
       this.getGatewayNet(range, filters),
       this.getSubscriberLifecycle(range, filters, asOf),
-      this.windowNetUsd(asOf, filters),
     ]);
+    // After the fan-out above, not inside it. Every query in flight at once
+    // claims parallel-worker shared memory, and prod's Postgres ran out of it
+    // ("could not resize shared memory segment") the first time this and the
+    // window queries below joined the eleven already running.
+    const windowNet = await this.windowNetUsd(asOf, filters);
 
     const platformsWithGross = new Set(
       ((grossRows as unknown) as RowAny[]).map((r) => s(r.platform_name)),
@@ -1493,7 +1497,7 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
     // Subscription Pagos per month by Period, for "Mensual vs Anual". Live on
     // both paths: the months view carries no Period, and this is one indexed
     // scan of the window with two counters, cheaper than widening the view.
-    const monthFreqRowsP = this.conn.execute(sql.raw(`
+    const monthFreqRowsQ = () => this.conn.execute(sql.raw(`
       SELECT DATE_TRUNC('month', created_at)::date::text AS month,
              COUNT(*) FILTER (WHERE sub_type LIKE 'Mensual%')::int  AS mensual,
              COUNT(*) FILTER (WHERE sub_type = 'Anual_Total')::int   AS anual
@@ -1509,7 +1513,7 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
     // history to tell a renewal from a reactivation — but on 60 days that is a
     // small slice of the table on either path, so this never reads a mat view.
     const W = PERIOD_WINDOW_DAYS;
-    const windowTxRowsP = this.conn.execute(sql.raw(`
+    const windowTxRowsQ = () => this.conn.execute(sql.raw(`
       WITH w(w, s, e) AS (
         VALUES ('current',  ${a} - ${W - 1},     ${a}),
                ('previous', ${a} - ${2 * W - 1}, ${a} - ${W})
@@ -1539,7 +1543,7 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
     `));
     // The pool at the close of each window, split by Period and by family. Two
     // days against the Pagos that cover them — the expires_at index does the work.
-    const windowActiveRowsP = this.conn.execute(sql.raw(`
+    const windowActiveRowsQ = () => this.conn.execute(sql.raw(`
       SELECT d.d::text AS day,
         COUNT(DISTINCT user_id)::int AS total,
         COUNT(DISTINCT user_id) FILTER (WHERE sub_type LIKE 'Mensual%')::int AS mensual,
@@ -1555,9 +1559,13 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
     const [dailyRows, monthlyRows, activeRows, lifetimeRows] = hasFilters(filters)
       ? await this.lifecycleLive(a, monthFrom, monthTo, fw)
       : await this.lifecycleFromMatViews(a, monthFrom, monthTo);
-    const [lastChargeRows, monthFreqRows, windowTxRows, windowActiveRows] = await Promise.all([
-      lastChargeRowsP, monthFreqRowsP, windowTxRowsP, windowActiveRowsP,
-    ]);
+    const lastChargeRows = await lastChargeRowsP;
+    // One at a time, once the four scans above have returned: these three
+    // are cheap alone and the point is not to widen the fan-out — see the
+    // shared-memory note in getEconomia.
+    const monthFreqRows = await monthFreqRowsQ();
+    const windowTxRows = await windowTxRowsQ();
+    const windowActiveRows = await windowActiveRowsQ();
     return this.toLifecycleDTO(asOf, {
       dailyRows, monthlyRows, activeRows, lastChargeRows, lifetimeRows,
       monthFreqRows, windowTxRows, windowActiveRows,
