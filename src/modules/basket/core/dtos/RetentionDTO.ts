@@ -1,5 +1,9 @@
-export interface LifecycleMonthRow {
-  month: string;
+import type { Granularity } from '@basket/core/dtos/shared';
+
+// One row per closed bucket. `bucket` is the ISO date the bucket starts on:
+// the 1st for months, the Monday for weeks, the day itself for days.
+export interface LifecycleBucketRow {
+  bucket: string;
   activeStart: number;
   activeEnd: number;
   newPayers: number;
@@ -11,7 +15,8 @@ export interface LifecycleMonthRow {
 }
 
 export interface RetentionDTO {
-  rows: LifecycleMonthRow[];
+  granularity: Granularity;
+  rows: LifecycleBucketRow[];
   latestChurnRatePct: number | null;
   latestRetentionRatePct: number | null;
 }

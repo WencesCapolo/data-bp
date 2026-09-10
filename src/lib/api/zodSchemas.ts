@@ -142,16 +142,20 @@ export const ContenidoQuerySchema = z
     }
   });
 
+// Lifecycle defaults to months: that is the bucket the mat view stores and the
+// one churn is usually quoted in. Days and weeks run the live query.
 export const RetentionQuerySchema = z
   .object({
     range: rangeKindSchema,
     from: z.string().regex(ISO_DATE).optional(),
     to: z.string().regex(ISO_DATE).optional(),
+    granularity: z.enum(['day', 'week', 'month']).default('month'),
     ...commonFiltersShape,
   })
   .superRefine(customRangeRefine)
   .transform((v) => ({
     range: toDateRange(v),
+    granularity: v.granularity as Granularity,
     filters: toFilters(v),
   }));
 

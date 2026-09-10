@@ -14,6 +14,7 @@ export async function GET(req: NextRequest) {
     const dto = await new GetRetentionUseCase(composeRepo()).execute(
       parsed.data.range,
       parsed.data.filters,
+      parsed.data.granularity,
     );
     return ok(dto);
   } catch (err) {

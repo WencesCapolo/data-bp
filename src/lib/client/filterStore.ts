@@ -23,6 +23,9 @@ interface FilterState {
   accessType?: AccessType;
   subType?: SubType;
   granularity: Granularity;
+  // Retention has its own unit: churn is quoted monthly, so it must not inherit
+  // Evolution's daily default.
+  lifecycleGranularity: Granularity;
   setTab: (t: TabKey) => void;
   setRange: (r: RangeKind) => void;
   setCustomFrom: (d: string) => void;
@@ -31,6 +34,7 @@ interface FilterState {
   setAccessType: (a?: AccessType) => void;
   setSubType: (s?: SubType) => void;
   setGranularity: (g: Granularity) => void;
+  setLifecycleGranularity: (g: Granularity) => void;
   resetFilters: () => void;
 }
 
@@ -43,6 +47,7 @@ export const useFilters = create<FilterState>((set) => ({
   accessType: undefined,
   subType: undefined,
   granularity: 'day',
+  lifecycleGranularity: 'month',
   setTab: (t) => set({ tab: t }),
   setRange: (r) => set({ range: r }),
   setCustomFrom: (d) => set({ customFrom: d }),
@@ -51,6 +56,7 @@ export const useFilters = create<FilterState>((set) => ({
   setAccessType: (a) => set({ accessType: a }),
   setSubType: (s) => set({ subType: s }),
   setGranularity: (g) => set({ granularity: g }),
+  setLifecycleGranularity: (g) => set({ lifecycleGranularity: g }),
   resetFilters: () => set({ countries: [], accessType: undefined, subType: undefined }),
 }));
 
@@ -80,7 +86,7 @@ export function buildFilterQS(s: FilterQSInput): string {
 }
 
 // Every tab reads the same slice of the store for its request URL.
-export function useFilterQS(extra?: { granularity?: boolean }): string {
+export function useFilterQS(extra?: { granularity?: boolean; lifecycleGranularity?: boolean }): string {
   const range = useFilters((s) => s.range);
   const customFrom = useFilters((s) => s.customFrom);
   const customTo = useFilters((s) => s.customTo);
@@ -88,6 +94,7 @@ export function useFilterQS(extra?: { granularity?: boolean }): string {
   const accessType = useFilters((s) => s.accessType);
   const subType = useFilters((s) => s.subType);
   const granularity = useFilters((s) => s.granularity);
+  const lifecycleGranularity = useFilters((s) => s.lifecycleGranularity);
   return buildFilterQS({
     range,
     customFrom,
@@ -95,6 +102,10 @@ export function useFilterQS(extra?: { granularity?: boolean }): string {
     countries,
     accessType,
     subType,
-    granularity: extra?.granularity ? granularity : undefined,
+    granularity: extra?.granularity
+      ? granularity
+      : extra?.lifecycleGranularity
+        ? lifecycleGranularity
+        : undefined,
   });
 }

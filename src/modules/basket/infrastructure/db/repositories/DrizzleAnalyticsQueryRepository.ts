@@ -132,28 +132,28 @@ function monthWindowWhere(r: DateRange | undefined): string {
                           AND DATE_TRUNC('month', '${t}'::date)::date`;
 }
 
-// The live lifecycle costs a pair of correlated counts per month, so the window
-// is generated rather than filtered afterwards: only the asked-for months run.
-// The upper bound is the last COMPLETE month, matching the mat view: the month
-// in progress would report a whole month of expirations against a handful of
-// days of renewals. A range that lies entirely inside the current month yields
-// no months at all, which the tab renders as "sin datos".
-function monthSeriesBounds(r: DateRange | undefined): string {
-  const firstPaymentMonth = `(SELECT DATE_TRUNC('month', MIN(created_at))::date FROM payments)`;
-  const lastCompleteMonth = `(DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '1 month')::date`;
+// The live lifecycle costs a pair of correlated counts per bucket, so the window
+// is generated rather than filtered afterwards: only the asked-for buckets run.
+// The upper bound is the last COMPLETE bucket, matching the mat view: the bucket
+// in progress would report a whole bucket of expirations against a handful of
+// days of renewals. A range that lies entirely inside the current bucket yields
+// no rows at all, which the tab renders as "sin datos".
+function bucketSeriesBounds(r: DateRange | undefined, trunc: string): string {
+  const firstPaymentBucket = `(SELECT DATE_TRUNC('${trunc}', MIN(created_at))::date FROM payments)`;
+  const lastCompleteBucket = `(DATE_TRUNC('${trunc}', CURRENT_DATE) - INTERVAL '1 ${trunc}')::date`;
   if (!r || r.kind === 'all') {
-    return `${firstPaymentMonth}, ${lastCompleteMonth}`;
+    return `${firstPaymentBucket}, ${lastCompleteBucket}`;
   }
   const { from, to } = rangeBounds(r);
   const f = from.toISOString().slice(0, 10);
   const t = to.toISOString().slice(0, 10);
-  return `GREATEST(${firstPaymentMonth}, DATE_TRUNC('month', '${f}'::date)::date),
-                 LEAST(DATE_TRUNC('month', '${t}'::date)::date, ${lastCompleteMonth})`;
+  return `GREATEST(${firstPaymentBucket}, DATE_TRUNC('${trunc}', '${f}'::date)::date),
+                 LEAST(DATE_TRUNC('${trunc}', '${t}'::date)::date, ${lastCompleteBucket})`;
 }
 
-function toRetentionDTO(rows: unknown): RetentionDTO {
+function toRetentionDTO(rows: unknown, granularity: Granularity): RetentionDTO {
   const arr = ((rows as unknown) as RowAny[]).map((r) => ({
-    month: d(r.month),
+    bucket: d(r.bucket),
     activeStart: n(r.active_start),
     activeEnd: n(r.active_end),
     newPayers: n(r.new_payers),
@@ -165,6 +165,7 @@ function toRetentionDTO(rows: unknown): RetentionDTO {
   }));
   const last = arr[arr.length - 1];
   return {
+    granularity,
     rows: arr,
     latestChurnRatePct: last?.churnRatePct ?? null,
     latestRetentionRatePct: last?.retentionRatePct ?? null,
@@ -2661,45 +2662,55 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
   // Filters can't be answered by the pre-aggregated view, so they fall through
   // to live SQL that recomputes the same lifecycle over the filtered payments.
   // --------------------------------------------------------------------------
-  async getRetention(range?: DateRange, filters?: CommonFilters): Promise<RetentionDTO> {
-    if (hasFilters(filters)) return this.getRetentionFiltered(range, filters!);
+  // The mat view only holds months; days and weeks always run the live query,
+  // as does any filter.
+  async getRetention(
+    range?: DateRange,
+    filters?: CommonFilters,
+    granularity: Granularity = 'month',
+  ): Promise<RetentionDTO> {
+    if (granularity !== 'month' || hasFilters(filters)) {
+      return this.getRetentionLive(range, filters, granularity);
+    }
 
     const rows = await this.conn.execute(sql.raw(`
-      SELECT month, active_start, active_end, new_payers, renewals,
+      SELECT month AS bucket, active_start, active_end, new_payers, renewals,
              reactivations, expirations, churn_rate_pct, retention_rate_pct
       FROM basket_mat_monthly_lifecycle
       ${monthWindowWhere(range)}
       ORDER BY month
     `));
-    return toRetentionDTO(rows);
+    return toRetentionDTO(rows, granularity);
   }
 
   // --------------------------------------------------------------------------
-  // RETENTION (filtered) — live SQL mirroring basket_mat_monthly_lifecycle.
-  // Every CTE reads the same filtered `payments`, so a user outside the filter
-  // never counts as active, as a renewal, or as an expiration.
+  // RETENTION (live) — SQL mirroring basket_mat_monthly_lifecycle, with the
+  // bucket unit as a parameter. Every CTE reads the same `payments`, so a user
+  // outside the filter never counts as active, as a renewal, or as an
+  // expiration. Renewal (37 days) and grace (7 days) windows stay in days: they
+  // describe the Pago, not the bucket, so a weekly view still classifies the
+  // same Pago the same way.
   // --------------------------------------------------------------------------
-  private async getRetentionFiltered(
+  private async getRetentionLive(
     range: DateRange | undefined,
-    filters: CommonFilters,
+    filters: CommonFilters | undefined,
+    granularity: Granularity,
   ): Promise<RetentionDTO> {
-    const fw = buildActiveFilterWhere(filters);
+    const trunc = TRUNC[granularity];
     const rows = await this.conn.execute(sql.raw(`
       -- MATERIALIZED: four CTEs read payments, and basket_v_active_payments
       -- is a 3-way join over ~400k rows — without it Postgres re-runs that join
       -- once per reference.
       WITH payments AS MATERIALIZED (
-        SELECT user_id, created_at, expires_at
-        FROM basket_v_active_payments
-        WHERE 1=1 ${fw}
+        ${this.lifecycleSource(filters)}
       ),
       per_user_payment AS (
         SELECT
           user_id,
           created_at,
           expires_at,
-          DATE_TRUNC('month', created_at)::date                      AS created_month,
-          DATE_TRUNC('month', expires_at + INTERVAL '7 days')::date  AS expire_month,
+          DATE_TRUNC('${trunc}', created_at)::date                      AS created_bucket,
+          DATE_TRUNC('${trunc}', expires_at + INTERVAL '7 days')::date  AS expire_bucket,
           LAG(expires_at) OVER (PARTITION BY user_id ORDER BY created_at) AS prev_expires,
           -- Earliest start among this user's payments that outlast the current
           -- one. A self-join here is O(n^2) over the filtered set; the window
@@ -2711,40 +2722,40 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
         FROM payments
       ),
       first_payment AS (
-        SELECT user_id, DATE_TRUNC('month', MIN(created_at))::date AS first_month
+        SELECT user_id, DATE_TRUNC('${trunc}', MIN(created_at))::date AS first_bucket
         FROM payments GROUP BY user_id
       ),
-      months AS (
-        SELECT generate_series(${monthSeriesBounds(range)}, INTERVAL '1 month')::date AS m
+      buckets AS (
+        SELECT generate_series(${bucketSeriesBounds(range, trunc)}, INTERVAL '1 ${trunc}')::date AS m
       ),
       new_payers AS (
-        SELECT first_month AS m, COUNT(*) AS c FROM first_payment GROUP BY first_month
+        SELECT first_bucket AS m, COUNT(*) AS c FROM first_payment GROUP BY first_bucket
       ),
       renewals AS (
-        SELECT created_month AS m, COUNT(*) AS c
+        SELECT created_bucket AS m, COUNT(*) AS c
         FROM per_user_payment
         WHERE prev_expires IS NOT NULL
           AND created_at <= prev_expires + INTERVAL '37 days'
-        GROUP BY created_month
+        GROUP BY created_bucket
       ),
       reactivations AS (
-        SELECT created_month AS m, COUNT(*) AS c
+        SELECT created_bucket AS m, COUNT(*) AS c
         FROM per_user_payment
         WHERE prev_expires IS NOT NULL
           AND created_at > prev_expires + INTERVAL '37 days'
-        GROUP BY created_month
+        GROUP BY created_bucket
       ),
-      -- A user expires in the month their access lapses with nothing taking over.
+      -- A user expires in the bucket their access lapses with nothing taking over.
       expirations AS (
-        SELECT expire_month AS m, COUNT(DISTINCT user_id) AS c
+        SELECT expire_bucket AS m, COUNT(DISTINCT user_id) AS c
         FROM per_user_payment
         WHERE next_cover_created IS NULL
            OR next_cover_created > expires_at + INTERVAL '7 days'
-        GROUP BY expire_month
+        GROUP BY expire_bucket
       ),
       -- Islands -> ±1 events -> running sum, as in getEvolutionFiltered: the
-      -- old months × payments cross join re-scanned every payment per month;
-      -- here coverage is merged once and each month reads the standing total.
+      -- old buckets × payments cross join re-scanned every payment per bucket;
+      -- here coverage is merged once and each bucket reads the standing total.
       spans AS (
         SELECT user_id,
                created_at::date                       AS s,
@@ -2782,24 +2793,24 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
       ),
       -- A user has at most one island covering any day, so the running sum is
       -- exactly the COUNT(DISTINCT user_id) the cross join used to compute.
-      active_at_month AS (
+      active_at_bucket AS (
         SELECT
           m.m,
           COALESCE(ts.active, 0) AS active_start,
           COALESCE(te.active, 0) AS active_end
-        FROM months m
-        -- The standing total at the month's first and last day.
+        FROM buckets m
+        -- The standing total at the bucket's first and last day.
         LEFT JOIN LATERAL (
           SELECT active FROM timeline WHERE d <= m.m ORDER BY d DESC LIMIT 1
         ) ts ON TRUE
         LEFT JOIN LATERAL (
           SELECT active FROM timeline
-          WHERE d <= (m.m + INTERVAL '1 month' - INTERVAL '1 day')::date
+          WHERE d <= (m.m + INTERVAL '1 ${trunc}' - INTERVAL '1 day')::date
           ORDER BY d DESC LIMIT 1
         ) te ON TRUE
       )
       SELECT
-        a.m AS month,
+        a.m AS bucket,
         a.active_start,
         a.active_end,
         COALESCE(n.c, 0) AS new_payers,
@@ -2812,14 +2823,14 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
         CASE WHEN a.active_start > 0
              THEN ROUND(100.0 * (a.active_start - COALESCE(e.c, 0)) / a.active_start, 2)
              ELSE 0 END AS retention_rate_pct
-      FROM active_at_month a
+      FROM active_at_bucket a
       LEFT JOIN new_payers    n ON n.m = a.m
       LEFT JOIN renewals      r ON r.m = a.m
       LEFT JOIN reactivations x ON x.m = a.m
       LEFT JOIN expirations   e ON e.m = a.m
       ORDER BY a.m
     `));
-    return toRetentionDTO(rows);
+    return toRetentionDTO(rows, granularity);
   }
 
   // --------------------------------------------------------------------------

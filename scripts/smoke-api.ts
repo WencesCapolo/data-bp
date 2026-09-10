@@ -47,7 +47,14 @@ const PROBES: Probe[] = [
   {
     label: 'GET /retention',
     path: '/api/basket/retention',
-    validate: (b) => need(b, 'rows') ?? need(b, 'latestChurnRatePct'),
+    validate: (b) => need(b, 'rows') ?? need(b, 'latestChurnRatePct') ?? need(b, 'granularity'),
+  },
+  {
+    label: 'GET /retention?range=90d&granularity=week',
+    path: '/api/basket/retention?range=90d&granularity=week',
+    validate: (b) =>
+      need(b, 'rows') ??
+      (isObj(b) && b.granularity === 'week' ? null : 'expected granularity=week'),
   },
   {
     label: 'GET /data-quality',

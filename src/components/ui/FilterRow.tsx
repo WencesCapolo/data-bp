@@ -12,6 +12,8 @@ import type { MetaDTO } from '@basket/core/dtos/MetaDTO';
 interface Props {
   showRange?: boolean;
   showGranularity?: boolean;
+  // Which store slice the toggle drives; Retention keeps its own monthly default.
+  granularityScope?: 'series' | 'lifecycle';
   showCountries?: boolean;
   showAccess?: boolean;
   showSubType?: boolean;
@@ -20,6 +22,7 @@ interface Props {
 export function FilterRow({
   showRange = true,
   showGranularity = false,
+  granularityScope = 'series',
   showCountries = false,
   showAccess = false,
   showSubType = false,
@@ -45,7 +48,12 @@ export function FilterRow({
         <>
           <span className="filter-divider" />
           <span className="filter-label">Granularidad</span>
-          <GranularityToggle value={f.granularity} onChange={f.setGranularity} />
+          <GranularityToggle
+            value={granularityScope === 'lifecycle' ? f.lifecycleGranularity : f.granularity}
+            onChange={
+              granularityScope === 'lifecycle' ? f.setLifecycleGranularity : f.setGranularity
+            }
+          />
         </>
       )}
       {showCountries && (

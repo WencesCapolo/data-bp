@@ -41,7 +41,11 @@ export interface IAnalyticsQueryRepository {
    */
   getContenido(opts: { from?: string; to?: string; country?: string }): Promise<ContenidoDTO>;
   getGatewayNet(range: DateRange, filters?: CommonFilters): Promise<GatewayNetDTO>;
-  getRetention(range?: DateRange, filters?: CommonFilters): Promise<RetentionDTO>;
+  getRetention(
+    range?: DateRange,
+    filters?: CommonFilters,
+    granularity?: Granularity,
+  ): Promise<RetentionDTO>;
   getLifecycle(range: DateRange, filters?: CommonFilters): Promise<LifecycleDTO>;
   getDataQuality(): Promise<DataQualityDTO>;
 }

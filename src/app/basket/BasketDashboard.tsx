@@ -47,7 +47,13 @@ export function BasketDashboard() {
         )}
         {tab === 'retention' && (
           <>
-            <FilterRow showCountries showAccess showSubType />
+            <FilterRow
+              showGranularity
+              granularityScope="lifecycle"
+              showCountries
+              showAccess
+              showSubType
+            />
             <TabBoundary><RetentionTab /></TabBoundary>
           </>
         )}

@@ -28,6 +28,7 @@ export function UrlFilterSync() {
     const accessType = pick(p.get('accessType'), ACCESS);
     const subType = pick(p.get('subType'), SUBTYPES);
     const granularity = pick(p.get('granularity'), GRAN);
+    const lifecycleGranularity = pick(p.get('lifecycleGranularity'), GRAN);
     const countries = p.getAll('countries').filter(Boolean);
     const next: Partial<ReturnType<typeof useFilters.getState>> = {};
     if (tab) next.tab = tab;
@@ -40,6 +41,7 @@ export function UrlFilterSync() {
     if (accessType) next.accessType = accessType;
     if (subType) next.subType = subType;
     if (granularity) next.granularity = granularity;
+    if (lifecycleGranularity) next.lifecycleGranularity = lifecycleGranularity;
     useFilters.setState(next);
   }, []);
 
@@ -57,6 +59,9 @@ export function UrlFilterSync() {
     if (state.accessType) p.set('accessType', state.accessType);
     if (state.subType) p.set('subType', state.subType);
     if (state.granularity !== 'day') p.set('granularity', state.granularity);
+    if (state.lifecycleGranularity !== 'month') {
+      p.set('lifecycleGranularity', state.lifecycleGranularity);
+    }
     const qs = p.toString();
     const url = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
     if (url !== window.location.pathname + window.location.search) {
@@ -71,6 +76,7 @@ export function UrlFilterSync() {
     state.accessType,
     state.subType,
     state.granularity,
+    state.lifecycleGranularity,
   ]);
 
   return null;
