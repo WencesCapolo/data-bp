@@ -82,6 +82,26 @@ button { font: inherit; }
   text-decoration: none;
   color: inherit;
 }
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+/* Mirrors the portal's "Volver" button: bordered surface box, icon only. */
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  /* The header is dark in both themes (white logo PNG), so no theme vars here. */
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  text-decoration: none;
+  transition: background 0.15s ease;
+}
+.back-link:hover { background: rgba(255, 255, 255, 0.22); }
 .logo-img {
   height: 28px;
   width: auto;

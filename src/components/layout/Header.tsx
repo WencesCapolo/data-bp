@@ -128,10 +128,13 @@ export function Header() {
 
   return (
     <header className={inFlight ? 'header in-flight' : 'header'}>
-      <a href="/" className="logo" aria-label="Basket.tv">
-        <img src="/Basket.tv%20horizontal%20blanco.png" alt="Basket.tv" className="logo-img" />
-        <span className="subtitle">Analytics</span>
-      </a>
+      <div className="header-left">
+        <a href="/" className="logo" aria-label="Basket.tv">
+          <img src="/Basket.tv%20horizontal%20blanco.png" alt="Basket.tv" className="logo-img" />
+          <span className="subtitle">Analytics</span>
+        </a>
+        <HomeLink href="/" title="Volver a Analytics" />
+      </div>
       <div className="header-meta">
         <span className={badgeClass} aria-live="polite">
           <span className={`sync-dot ${dotClass}`} />
@@ -197,7 +200,6 @@ export function Header() {
         >
           {inFlight ? '…' : '↻ Sync'}
         </button>
-        <HomeLink href="/" title="Volver a Analytics" />
         <ThemeToggle />
         <span className="header-date">{new Date().toISOString().slice(0, 10)}</span>
         {session?.user && (
