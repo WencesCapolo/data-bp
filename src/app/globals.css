@@ -1379,6 +1379,128 @@ select:focus { border-color: var(--accent2); }
   gap: 14px;
 }
 
+/* ── TABS DE PAÍS Y FILTROS (regla por regla desde `.tabs` y `.filters`) ── */
+.proto-page .proto-tabs {
+  background: var(--p-card);
+  border-radius: 14px;
+  padding: 10px;
+  box-shadow: var(--p-shadow-md);
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  margin-bottom: 16px;
+}
+.proto-page .proto-tabs button {
+  background: transparent;
+  color: var(--p-ink2);
+  border: 0;
+  padding: 10px 16px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.proto-page .proto-tabs button .flag { font-size: 17px; }
+.proto-page .proto-tabs button:hover:not(.active) { background: var(--p-slate-soft); }
+.proto-page .proto-tabs button.active {
+  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+  color: #fff;
+  box-shadow: var(--p-shadow-sm);
+}
+
+.proto-page .proto-filters {
+  background: var(--p-card);
+  border-radius: 14px;
+  padding: 16px 20px;
+  box-shadow: var(--p-shadow-md);
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  margin-bottom: 20px;
+}
+.proto-page .proto-filters > label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--p-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+}
+.proto-page .proto-filters select {
+  background: var(--p-card);
+  color: var(--p-ink);
+  border: 1.5px solid var(--p-line);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  min-width: 140px;
+  outline: none;
+  text-transform: none;
+  letter-spacing: 0;
+  transition: border-color 0.15s ease;
+}
+.proto-page .proto-filters select:focus { border-color: var(--p-blue); }
+.proto-page .proto-date-triple { display: flex; gap: 6px; }
+.proto-page .proto-date-triple select { min-width: 64px; padding: 8px 8px; }
+.proto-page .proto-date-triple select:nth-child(2) { min-width: 88px; }
+.proto-page .proto-date-triple select:nth-child(3) { min-width: 74px; }
+
+.proto-page .proto-filters-quick {
+  margin-top: -12px;
+  padding-top: 8px;
+  padding-bottom: 10px;
+  align-items: center;
+  gap: 10px;
+}
+.proto-page .proto-filters-quick-label {
+  font-size: 11px;
+  color: var(--p-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+}
+.proto-page .proto-filters-quick .proto-chipset + .proto-filters-quick-label { margin-left: 10px; }
+
+.proto-page .proto-chipset { display: flex; gap: 6px; flex-wrap: wrap; }
+.proto-page .proto-chip {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1.5px solid var(--p-line);
+  cursor: pointer;
+  background: var(--p-card);
+  color: var(--p-ink);
+  font-size: 12px;
+  font-weight: 600;
+  user-select: none;
+  text-transform: none;
+  letter-spacing: 0;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.proto-page .proto-chip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--p-slate); }
+.proto-page .proto-chip[data-access='real'] .dot { background: var(--p-green); }
+.proto-page .proto-chip[data-access='voucher'] .dot { background: var(--p-amber); }
+.proto-page .proto-chip[data-access='antel'] .dot { background: var(--p-blue); }
+.proto-page .proto-chip.active { border-color: transparent; color: #fff; background: #0f172a; }
+.proto-page .proto-chip.active[data-access='real'] { background: var(--p-green); }
+.proto-page .proto-chip.active[data-access='voucher'] { background: var(--p-amber); }
+.proto-page .proto-chip.active[data-access='antel'] { background: var(--p-blue); }
+.proto-page .proto-chip.active .dot { background: rgba(255, 255, 255, 0.9); }
+:root:not([data-theme='light']) .proto-page .proto-chip.active { background: var(--p-blue); }
+:root:not([data-theme='light']) .proto-page .proto-tabs,
+:root:not([data-theme='light']) .proto-page .proto-filters { border: 1px solid var(--p-line); }
+
 /* ── ETIQUETAS DE SECCIÓN Y KPIs ── */
 .proto-section-label {
   font-size: 12px;

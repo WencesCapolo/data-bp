@@ -1,18 +1,18 @@
 'use client';
 import { useState } from 'react';
 import { Header } from '@/components/layout/Header';
-import { FilterRow } from '@/components/ui/FilterRow';
 import { TabBoundary } from '@/components/ui/TabBoundary';
 import { FinancieroView } from '@/components/financiero/FinancieroView';
 import { ContenidoView } from '@/components/financiero/ContenidoView';
 import { FinancieroHero } from '@/components/financiero/financiero/Hero';
+import { FinancieroFilters } from '@/components/financiero/financiero/Filters';
 
 /**
  * La página del prototipo, pieza por pieza: el hero rojo, el `wrap` que se le
  * monta encima, las dos pills (Suscriptores · Contenido) y debajo la vista.
- * Lo único que no viene del prototipo es la barra de filtros compartida de la
- * app — reemplaza a las pestañas por país, los selects de fecha y los chips
- * del prototipo — y el "?" de cada tarjeta.
+ * Los filtros también son los del prototipo — pestañas por país, selects de
+ * fecha, chips — pero escriben en el store compartido de la app. Lo único
+ * ajeno al prototipo es el "?" de cada tarjeta.
  *
  * El `Header` de la app queda arriba porque trae lo que el prototipo no tenía:
  * el Sync, la sesión y el tema.
@@ -53,7 +53,7 @@ export function FinancieroDashboard() {
           )}
           {view === 'financiero' && (
             <>
-              <FilterRow showCountries showAccess showSubType />
+              <FinancieroFilters />
               <TabBoundary><FinancieroView /></TabBoundary>
             </>
           )}
