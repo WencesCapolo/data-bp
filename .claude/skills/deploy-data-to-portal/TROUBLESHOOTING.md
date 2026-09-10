@@ -37,8 +37,8 @@ ss -ltnp | grep 3001
 pm2 logs analytics --lines 40 --nostream
 ```
 
-Common cause: a restart on a failed build. Check `/tmp/build.log` for the last build's
-real outcome.
+Common cause: a restart on a failed build. Check `~/deploy-build.log` (the deploying
+user's home) for the last build's real outcome.
 
 ## Build succeeded but the change is not live
 
@@ -54,13 +54,39 @@ An `analytics` uptime older than the build's timestamp means the restart never l
 
 ## `pnpm install` aborts with ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY
 
-You used pnpm on the server. The box runs npm. Use `npm install`, and note that
-`npm ci` fails there too — the checkout has no `package-lock.json`.
+You ran a bare `pnpm` or forgot `--config.confirmModulesPurge=false`. The install that
+works on this box is the pinned, unprivileged one in SKILL.md's opening section; `npm
+install` and `npm ci` cannot read the tree at all.
 
 This one is quiet and dangerous: the aborted install returns non-zero but the *build*
 that follows still succeeds against the stale `node_modules`. A deploy that adds a
 dependency will therefore build green and fail at runtime. If the diff touches
 `package.json`, confirm the install ran before trusting the build.
+
+## `/financiero` answers 500; the log says `could not resize shared memory segment`
+
+Postgres, not the app. Error code `53100`, `No space left on device` on
+`/PostgreSQL.<n>`: the container's `/dev/shm` ran out while parallel workers were
+handing rows around. A dashboard request fans out into a dozen scans of the Pagos view,
+and the Docker default `/dev/shm` is 64 MB.
+
+```bash
+docker inspect data-bp-postgres-1 --format 'shm={{.HostConfig.ShmSize}}'
+docker exec data-bp-postgres-1 df -h /dev/shm
+```
+
+`shm=268435456` is right (set 2026-09-09; the container had run on 64 MB since July,
+created before `shm_size: 256mb` reached the compose file). If it reads `67108864`, the
+container predates the setting: recreate it from **`docker-compose.yml`** — the
+Postgres row in SKILL.md says why not the prod file — as `up -d --force-recreate
+--no-deps postgres`, restore `--restart unless-stopped`, then `pm2 restart analytics`.
+Postgres is down for the seconds it takes to swap; every app on that database errors
+in that window. Confirm with a `SELECT COUNT(*) FROM basket_payments` that the same data
+came back.
+
+If shm is already 256 MB and the error recurs, the fix is in the repository: run the
+offending queries after the existing `Promise.all`, not inside it. The number of scans
+in flight at once is the lever.
 
 ## Sync fails with "Expiró la Cookie"
 
