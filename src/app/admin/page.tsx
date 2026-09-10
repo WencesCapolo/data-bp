@@ -35,7 +35,7 @@ export default async function AdminPage() {
   const rows = await loadRows();
   return (
     <>
-      <LandingHeader email={user.email} role={user.role} />
+      <LandingHeader email={user.email} role={user.role} backHref="/" backTitle="Volver a Analytics" />
       <main className="landing-main">
         <section className="landing-hero">
           <h1>Admin · Usuarios</h1>

@@ -7,6 +7,7 @@ import { swapToPortal, buildPortalLoginUrl } from '@/lib/auth/portal';
 import { SyncModal, type LastUploadInfo } from '@/components/layout/SyncModal';
 import { FeeUploadModal } from '@/components/layout/FeeUploadModal';
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
+import { HomeLink } from '@/components/ui/HomeLink';
 import type { UploadResultDTO } from '@basket/core/dtos/PaymentUploadDTO';
 
 interface SyncState {
@@ -196,6 +197,7 @@ export function Header() {
         >
           {inFlight ? '…' : '↻ Sync'}
         </button>
+        <HomeLink href="/" title="Volver a Analytics" />
         <ThemeToggle />
         <span className="header-date">{new Date().toISOString().slice(0, 10)}</span>
         {session?.user && (
