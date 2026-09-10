@@ -108,7 +108,8 @@ export const EvolutionQuerySchema = z
     filters: toFilters(v),
   }));
 
-export const FinanceQuerySchema = z
+// Range + common filters, no granularity: the shape /api/financiero/economia takes.
+export const EconomiaQuerySchema = z
   .object({
     range: rangeKindSchema,
     from: z.string().regex(ISO_DATE).optional(),

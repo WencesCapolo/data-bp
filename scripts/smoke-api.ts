@@ -40,11 +40,6 @@ const PROBES: Probe[] = [
     validate: (b) => need(b, 'totals') ?? need(b, 'ranked'),
   },
   {
-    label: 'GET /finance?range=30d',
-    path: '/api/basket/finance?range=30d',
-    validate: (b) => need(b, 'revenueByDay') ?? need(b, 'byPlatform') ?? need(b, 'byCurrency'),
-  },
-  {
     label: 'GET /retention',
     path: '/api/basket/retention',
     validate: (b) => need(b, 'rows') ?? need(b, 'latestChurnRatePct') ?? need(b, 'granularity'),

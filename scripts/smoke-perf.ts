@@ -14,7 +14,6 @@ const TARGETS: Target[] = [
   { label: 'evolution range=all month', path: '/api/basket/evolution?range=all&granularity=month', budgetMs: 500 },
   { label: 'overview range=all',        path: '/api/basket/overview?range=all',                    budgetMs: 500 },
   { label: 'teams range=all',           path: '/api/basket/teams?range=all',                       budgetMs: 500 },
-  { label: 'finance range=all',         path: '/api/basket/finance?range=all',                     budgetMs: 500 },
   { label: 'meta',                      path: '/api/basket/meta',                                  budgetMs: 200 },
 ];
 

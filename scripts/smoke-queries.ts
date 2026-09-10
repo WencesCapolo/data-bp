@@ -3,7 +3,7 @@ import { DrizzleAnalyticsQueryRepository } from '@basket/infrastructure/db/repos
 import { GetOverviewUseCase } from '@basket/core/use-cases/queries/GetOverviewUseCase';
 import { GetEvolutionUseCase } from '@basket/core/use-cases/queries/GetEvolutionUseCase';
 import { GetTeamsUseCase } from '@basket/core/use-cases/queries/GetTeamsUseCase';
-import { GetFinanceUseCase } from '@basket/core/use-cases/queries/GetFinanceUseCase';
+import { GetEconomiaUseCase } from '@basket/core/use-cases/queries/GetEconomiaUseCase';
 import { GetRetentionUseCase } from '@basket/core/use-cases/queries/GetRetentionUseCase';
 import { GetDataQualityUseCase } from '@basket/core/use-cases/queries/GetDataQualityUseCase';
 
@@ -28,8 +28,8 @@ async function main() {
   const teamTrend = await time('team trend', () =>
     new GetTeamsUseCase(repo).trend(teams.ranked[0]?.teamId ?? 0),
   );
-  const finance = await time('finance 30d', () =>
-    new GetFinanceUseCase(repo).execute({ kind: '30d' }),
+  const economia = await time('economia 30d', () =>
+    new GetEconomiaUseCase(repo).execute({ kind: '30d' }),
   );
   const retention = await time('retention', () => new GetRetentionUseCase(repo).execute());
   const quality = await time('data quality', () => new GetDataQualityUseCase(repo).execute());
@@ -53,10 +53,11 @@ async function main() {
   console.log('\n--- TEAM TREND ---');
   console.log(`${teamTrend.teamName}: ${teamTrend.points.length} month(s)`);
 
-  console.log('\n--- FINANCE ---');
-  console.log(`revenueByDay rows: ${finance.revenueByDay.length}`);
-  console.log(`byPlatform: ${finance.byPlatform.map(p => `${p.platformName}=${p.totalAmount}`).join(', ')}`);
-  console.log(`byCurrency: ${finance.byCurrency.map(c => `${c.currency}=${c.totalAmount}`).join(', ')}`);
+  console.log('\n--- ECONOMÍA ---');
+  console.log(`monthlyGross rows: ${economia.monthlyGross.length}, Pagos: ${economia.totals.txCount}`);
+  const byPlat = new Map<string, number>();
+  for (const r of economia.monthlyGross) byPlat.set(r.platformName, (byPlat.get(r.platformName) ?? 0) + r.txCount);
+  console.log(`byPlatform (Pagos): ${Array.from(byPlat, ([p, n]) => `${p}=${n}`).join(', ')}`);
 
   console.log('\n--- RETENTION ---');
   console.log(`months: ${retention.rows.length}, latest churn=${retention.latestChurnRatePct}% retention=${retention.latestRetentionRatePct}%`);

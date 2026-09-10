@@ -1,6 +1,5 @@
 // Net revenue as the payment gateways report it: fees, net, refunds and
-// subscription state. Read by /financiero (the Economía tab); the /basket
-// finance tab deliberately does not carry it — see
+// subscription state. Read by /financiero (the Economía tab) — see
 // docs/handoff/financiero-dashboard-port.md.
 // ---------------------------------------------------------------------------
 // Gateway net revenue for every Provider whose fee mirror has rows — Stripe

@@ -9,9 +9,11 @@ Phase 0 shipped. This is the doc for whoever takes 1–6.
 phases 1 and 2 added, and the two answers still owed by the product owner. This
 doc stays the reference it points back to.
 
-`/basket` is **out of scope**: its *Análisis Financiero* tab and
-`/api/basket/finance` are byte-identical to what they were before this work and
-stay that way. `/financiero` owns the net-revenue half.
+`/basket` no longer has a finance tab: *Análisis Financiero* and
+`/api/basket/finance` were removed on 2026-09-10. Its one non-redundant piece —
+gross per Provider across all of them, PayPal/Antel/Voucher/Manual included —
+lives on `/financiero` as the "Bruto por Proveedor y moneda" card, read off
+`EconomiaDTO.monthlyGross`. `/financiero` owns both halves now.
 
 ## Read first
 

@@ -4,7 +4,7 @@ import type { AccessType, SubType, Granularity } from '@basket/core/dtos/shared'
 
 export type RangeKind = 'yesterday' | '7d' | '30d' | '90d' | 'ytd' | 'all' | 'custom';
 
-export type TabKey = 'overview' | 'evolution' | 'teams' | 'finance' | 'retention' | 'quality';
+export type TabKey = 'overview' | 'evolution' | 'teams' | 'retention' | 'quality';
 
 // Analytics never counts today, so the custom picker defaults to the last 30
 // closed days — same reference day the API uses.

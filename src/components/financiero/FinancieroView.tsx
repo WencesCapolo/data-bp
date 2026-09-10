@@ -51,7 +51,7 @@ import type { MonthlyLifecyclePoint, ActiveByMonthPoint } from '@basket/core/dto
  * diferentes de la misma venta.
  */
 
-const GW_COLOR: Record<string, string> = { MercadoPago: '#06b6d4', Stripe: '#635bff', PayPal: '#003087' };
+const GW_COLOR: Record<string, string> = { MercadoPago: '#06b6d4', Stripe: '#635bff', PayPal: '#003087', Antel: '#fb923c', Voucher: '#fbbf24', Manual: '#94a3b8' };
 const CUR_PALETTE: Record<string, string> = {
   USD: '#10b981', ARS: '#3b82f6', EUR: '#8b5cf6', MXN: '#f59e0b', CLP: '#ef4444', BRL: '#06b6d4', COP: '#ec4899', PEN: '#64748b', UYU: '#0891b2', BOB: '#ea580c',
 };
@@ -414,6 +414,23 @@ export function FinancieroView() {
   const mainCcys = ['ARS', 'USD'].filter((c) => m.netLocal.has(c));
   const otherCcys = revCurrencies.filter((c) => !mainCcys.includes(c));
   const ccyPlatforms = (c: string) => Array.from(m.netLocalPlatforms.get(c) ?? []).map((p) => (p === 'MercadoPago' ? 'MP' : p)).join('+');
+
+  // ── Bruto por Proveedor, plano de cobro: todos los Proveedores, PayPal, Antel,
+  //    Voucher y Manual incluidos, cada moneda en su columna y nunca sumadas ──
+  const grossCcys = Array.from(new Set(data.monthlyGross.map((r) => r.currency))).sort();
+  const grossByPlatform = (() => {
+    const idx = new Map<string, { txCount: number; byCcy: Map<string, number> }>();
+    for (const r of data.monthlyGross) {
+      const cur = idx.get(r.platformName) ?? { txCount: 0, byCcy: new Map<string, number>() };
+      cur.txCount += r.txCount;
+      cur.byCcy.set(r.currency, (cur.byCcy.get(r.currency) ?? 0) + r.gross);
+      idx.set(r.platformName, cur);
+    }
+    return Array.from(idx.entries())
+      .map(([platformName, v]) => ({ platformName, ...v }))
+      .sort((a, b) => b.txCount - a.txCount);
+  })();
+  const grossTx = sumBy(grossByPlatform, (r) => r.txCount);
 
   const lifetime = lc.lifetime;
   const fmtMonths = (v: number | null): string => (v === null ? '—' : `${v.toLocaleString('es-AR', { maximumFractionDigits: 1 })} meses`);
@@ -1006,6 +1023,61 @@ export function FinancieroView() {
             </tbody>
           </table>
         </div>
+      </Card>
+
+      {/* ── Bruto por Proveedor ── */}
+      <Card
+        title="🏪 Bruto por Proveedor y moneda"
+        hint="Pagos exitosos con cobro en el rango, por Proveedor, y la suma bruta de lo que se le cobró al suscriptor en cada moneda de cobro. Sin conversión, sin descontar comisiones, y sin sumar monedas distintas: cada columna es su propia moneda. Respeta los filtros de arriba."
+        desc={
+          <>
+            Todos los Proveedores, no sólo los que tienen feed de comisiones: acá aparecen <b>PayPal, Antel, Voucher y Manual</b>, que faltan en todo lo neto. Es el <b>plano de cobro</b> (lo que pagó el suscriptor), distinto del plano de liquidación de las tablas de arriba.
+          </>
+        }
+        foot={grossByPlatform.length > 0 ? <>La fila Total suma sólo Pagos; los montos no se totalizan porque están en monedas distintas.</> : undefined}
+      >
+        {grossByPlatform.length === 0 ? (
+          <div className="no-data">Sin Pagos en rango</div>
+        ) : (
+          <div className="proto-table-scroll" style={{ maxHeight: 420 }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>Proveedor</th>
+                  <th className="right">Pagos</th>
+                  <th className="right">% Pagos</th>
+                  {grossCcys.map((c) => <th key={c} className="right">Bruto {c}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {grossByPlatform.map((r) => (
+                  <tr key={r.platformName}>
+                    <td className="ink" style={{ fontWeight: 600 }}>
+                      <span className="swatch" style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, marginRight: 8, background: GW_COLOR[r.platformName] ?? '#94a3b8' }} />
+                      {r.platformName}
+                    </td>
+                    <td className="right mono">{fmt(r.txCount)}</td>
+                    <td className="right muted">{pctOf(r.txCount, grossTx)}</td>
+                    {grossCcys.map((c) => {
+                      const v = r.byCcy.get(c);
+                      return <td key={c} className="right mono" style={{ color: v ? CUR_PALETTE[c] ?? 'inherit' : undefined }}>{v ? fmt(Math.round(v)) : '—'}</td>;
+                    })}
+                  </tr>
+                ))}
+                <tr>
+                  <td className="ink" style={{ fontWeight: 700 }}>Total</td>
+                  <td className="right mono ink" style={{ fontWeight: 700 }}>{fmt(grossTx)}</td>
+                  <td className="right muted">100%</td>
+                  {grossCcys.map((c) => (
+                    <td key={c} className="right mono ink" style={{ fontWeight: 700 }}>
+                      {fmt(Math.round(sumBy(grossByPlatform, (r) => r.byCcy.get(c) ?? 0)))}
+                    </td>
+                  ))}
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
       </Card>
 
       {/* ── Detalle mensual ── */}

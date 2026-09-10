@@ -5,7 +5,6 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: 'overview', label: 'Visión General' },
   { key: 'evolution', label: 'Evolución Histórica' },
   { key: 'teams', label: 'Análisis por Equipo' },
-  { key: 'finance', label: 'Análisis Financiero' },
   { key: 'retention', label: 'Retención / Churn' },
   { key: 'quality', label: 'Calidad de Datos' },
 ];

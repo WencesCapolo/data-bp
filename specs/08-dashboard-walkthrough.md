@@ -92,35 +92,7 @@ Tab-by-tab tour. Each section: **what it shows**, **how to read it**, **data pat
 
 ---
 
-## Tab 4 · Análisis Financiero (FinanceTab)
-
-**Goal**: revenue shape — by day, currency, platform.
-
-**KPI grid**:
-- **Pagos en rango** — total payment count.
-- **Top moneda** — currency with highest revenue + formatted amount.
-- **Plataformas** — count of distinct platforms with payments.
-- **Monedas** — count of currencies billed.
-
-**Ingresos diarios por moneda · línea (multi-series)**: one line per currency. No FX — each currency on its own scale (visual overlap intentional).
-
-**Distribución por moneda · doughnut**: share by total amount (face value).
-
-**Plataforma · monto y conteo · table**: `byPlatform` rows — payment count, total amount, real-only count + amount.
-
-**Platform monthly · stacked**: revenue evolution per platform per month — surfaces shifts (e.g. PayPal → Stripe migration, Antel ramp-up).
-
-**Data path**: `basket_mat_revenue_daily`.
-
-**Filters**: `range`, `countries[]`, `accessType`, `subType`.
-
-**Endpoint**: `GET /api/basket/finance?range=&...`
-
-**Reading tip**: payment count >> real_count = lots of vouchers. Currency mix shift can reveal market expansion.
-
----
-
-## Tab 5 · Retención / Churn (RetentionTab)
+## Tab 4 · Retención / Churn (RetentionTab)
 
 **Goal**: subscription lifecycle health — who joined, renewed, lapsed.
 
@@ -151,7 +123,7 @@ Net = green-blue-purple positives + red negative below = visualized net flow.
 
 ---
 
-## Tab 6 · Calidad de Datos (DataQualityTab)
+## Tab 5 · Calidad de Datos (DataQualityTab)
 
 **Goal**: data integrity and sync freshness.
 

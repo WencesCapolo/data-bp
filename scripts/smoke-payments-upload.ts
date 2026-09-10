@@ -8,7 +8,7 @@
 // Every assertion is on externally observable behaviour only: HTTP status, the
 // UploadPreviewDTO / UploadRejectionDTO / UploadResultDTO contract in
 // src/modules/basket/core/dtos/PaymentUploadDTO.ts, the /api/sync payload and
-// the FinanceDTO. Nothing here knows about mapper internals, staging file names
+// EconomiaDTO.monthlyGross. Nothing here knows about mapper internals, staging file names
 // or batch sizes.
 //
 // Fixtures are the REAL Exports committed at the repo root, because they carry
@@ -37,7 +37,7 @@ const SYNC_TOKEN = process.env.SYNC_TOKEN;
 
 const UPLOAD_PATH = '/api/basket/payments/upload';
 const SYNC_PATH = '/api/sync';
-const FINANCE_PATH = '/api/basket/finance';
+const ECONOMIA_PATH = '/api/financiero/economia';
 
 /** Poll budget for one Sync. Generous: a full Sync rebuilds every mat view. */
 const SYNC_TIMEOUT_MS = 10 * 60 * 1000;
@@ -271,53 +271,44 @@ function syncErrorSuffix(final: Json): string {
 }
 
 // ---------------------------------------------------------------------------
-// Finance
+// Economía (gross plane)
 // ---------------------------------------------------------------------------
 
-interface FinanceShape {
-  revenueByDay: Array<{ totalAmount?: unknown }>;
-  byCurrency: Array<{ totalAmount?: unknown }>;
+interface EconomiaGrossShape {
+  monthlyGross: Array<{ gross?: unknown }>;
 }
 
-function financeShapeError(b: Json): string | null {
-  for (const k of ['range', 'revenueByDay', 'byPlatform', 'byCurrency', 'platformMonthly']) {
-    if (!isObj(b) || !(k in b)) return `missing FinanceDTO field ${k}`;
-  }
-  const o = b as Record<string, unknown>;
-  for (const k of ['revenueByDay', 'byPlatform', 'byCurrency', 'platformMonthly']) {
-    if (!isArr(o[k])) return `FinanceDTO.${k} is not an array`;
-  }
+function economiaShapeError(b: Json): string | null {
+  if (!isObj(b) || !('range' in b) || !('monthlyGross' in b)) return 'missing EconomiaDTO field range/monthlyGross';
+  if (!isArr((b as Record<string, unknown>).monthlyGross)) return 'EconomiaDTO.monthlyGross is not an array';
   return null;
 }
 
-function sumTotalAmount(rows: unknown): number {
+function sumGross(rows: unknown): number {
   if (!isArr(rows)) return 0;
   return rows.reduce<number>((acc, r) => {
-    const v = isObj(r) ? r.totalAmount : null;
+    const v = isObj(r) ? r.gross : null;
     return acc + (typeof v === 'number' && Number.isFinite(v) ? v : 0);
   }, 0);
 }
 
-/** Revenue per paid Tier, from FinanceDTO filtered by subType. A non-zero value
- *  for any of them means the Pago was mapped, its Tier resolved through the
- *  price-tier fallback, its derived expiry made it active, and the mat views
- *  were rebuilt — none of which this script can see directly. */
+/** Gross per paid Tier, from EconomiaDTO.monthlyGross filtered by subType. A
+ *  non-zero value for any of them means the Pago was mapped, its Tier resolved
+ *  through the price-tier fallback, its derived expiry made it active, and the
+ *  mat views were rebuilt — none of which this script can see directly. */
 async function tierTotals(): Promise<{ error: string | null; totals: Record<string, number> }> {
   const totals: Record<string, number> = {};
   for (const tier of PAID_TIERS) {
-    const r = await getJson(`${FINANCE_PATH}?range=all&subType=${tier}`);
+    const r = await getJson(`${ECONOMIA_PATH}?range=all&subType=${tier}`);
     if (r.status !== 200) {
       return {
-        error: authHint(r) ?? `GET ${FINANCE_PATH}?subType=${tier} status=${r.status}`,
+        error: authHint(r) ?? `GET ${ECONOMIA_PATH}?subType=${tier} status=${r.status}`,
         totals,
       };
     }
-    const shape = financeShapeError(r.body);
+    const shape = economiaShapeError(r.body);
     if (shape) return { error: `${tier}: ${shape}`, totals };
-    const f = r.body as unknown as FinanceShape;
-    // revenueByDay and byCurrency are two independent aggregations of the same
-    // Pagos; take the larger so a range-clipped daily series cannot mask money.
-    totals[tier] = Math.max(sumTotalAmount(f.revenueByDay), sumTotalAmount(f.byCurrency));
+    totals[tier] = sumGross((r.body as unknown as EconomiaGrossShape).monthlyGross);
   }
   return { error: null, totals };
 }
@@ -482,7 +473,7 @@ const PROBES: Probe[] = [
     },
   },
   {
-    label: 'GET /finance — a paid Tier has revenue',
+    label: 'GET /financiero/economia — a paid Tier has gross',
     run: async (ctx) => {
       const { error, totals } = await tierTotals();
       if (error) return error;

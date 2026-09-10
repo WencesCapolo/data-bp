@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'react';
 import { useFilters, type RangeKind, type TabKey } from './filterStore';
 import type { AccessType, SubType, Granularity } from '@basket/core/dtos/shared';
 
-const TABS: TabKey[] = ['overview', 'evolution', 'teams', 'finance', 'retention', 'quality'];
+const TABS: TabKey[] = ['overview', 'evolution', 'teams', 'retention', 'quality'];
 const RANGES: RangeKind[] = ['yesterday', '7d', '30d', '90d', 'ytd', 'all', 'custom'];
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const ACCESS: AccessType[] = ['real', 'voucher', 'antel'];

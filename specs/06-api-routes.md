@@ -40,7 +40,6 @@ export async function GET(req: NextRequest) {
 | `/api/basket/evolution` | GET | `range`, `from?`, `to?`, `granularity`, common filters | `GetEvolutionUseCase` | `EvolutionDTO` |
 | `/api/basket/teams` | GET | `range`, `limit (1–500)`, `country?`, common filters | `GetTeamsUseCase.execute` | `TeamsDTO` |
 | `/api/basket/teams/[teamId]/trend` | GET | path `teamId` | `GetTeamsUseCase.trend` | `TeamTrendDTO` |
-| `/api/basket/finance` | GET | `range`, `from?`, `to?`, common filters | `GetFinanceUseCase` | `FinanceDTO` |
 | `/api/basket/retention` | GET | — | `GetRetentionUseCase` | `RetentionDTO` |
 | `/api/basket/data-quality` | GET | — | `GetDataQualityUseCase` | `DataQualityDTO` |
 | `/api/basket/sync` | GET | — | `DrizzleSyncStateRepository.findAll()` | `{ sources, inFlight }` |

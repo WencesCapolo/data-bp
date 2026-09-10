@@ -2,7 +2,6 @@ import type { CommonFilters, DateRange, Granularity } from '@basket/core/dtos/sh
 import type { OverviewDTO } from '@basket/core/dtos/OverviewDTO';
 import type { EvolutionDTO } from '@basket/core/dtos/EvolutionDTO';
 import type { TeamsDTO, TeamDailyDTO } from '@basket/core/dtos/TeamsDTO';
-import type { FinanceDTO } from '@basket/core/dtos/FinanceDTO';
 import type { EconomiaDTO } from '@basket/core/dtos/EconomiaDTO';
 import type { ContenidoDTO } from '@basket/core/dtos/ContenidoDTO';
 import type { GatewayNetDTO } from '@basket/core/dtos/GatewayNetDTO';
@@ -28,7 +27,6 @@ export interface IAnalyticsQueryRepository {
     range: DateRange,
     filters?: CommonFilters,
   ): Promise<TeamDailyDTO>;
-  getFinance(range: DateRange, filters?: CommonFilters): Promise<FinanceDTO>;
   /** /financiero · Economía: gross from our Pagos + net from the gateway mirrors. */
   getEconomia(range: DateRange, filters?: CommonFilters): Promise<EconomiaDTO>;
   /**
