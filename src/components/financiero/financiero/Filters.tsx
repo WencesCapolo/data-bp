@@ -5,30 +5,19 @@ import { useFilters, type RangeKind } from '@/lib/client/filterStore';
 import { fetcher } from '@/lib/client/fetcher';
 import type { MetaDTO } from '@basket/core/dtos/MetaDTO';
 import type { AccessType, SubType } from '@basket/core/dtos/shared';
+import { flagOf, labelOf } from './countries';
 
 /**
  * The prototype's filter block, driving the app's shared filter store.
  *
  * Same three pieces as `public/dashboard.html`: the country tabs with a flag
- * each, the white card with stacked uppercase labels — plan select, Desde and
+ * each — the first dozen by Subscribers, the long tail behind a select —, the white card with stacked uppercase labels — plan select, Desde and
  * Hasta as day/month/year triples, a chipset — and the slim quick-filter row
  * underneath. What differs is what they drive: the tabs toggle the store's
  * country list, the plan select is the subscription type, the chipset is the
  * access type, and the triples write a custom range. The quick row keeps the
  * app's relative presets next to the prototype's seasons.
  */
-
-const COUNTRY_FLAGS: Record<string, string> = {
-  AR: '🇦🇷', UY: '🇺🇾', CL: '🇨🇱', EC: '🇪🇨', BR: '🇧🇷', US: '🇺🇸', ES: '🇪🇸', MX: '🇲🇽',
-  PE: '🇵🇪', BO: '🇧🇴', CO: '🇨🇴', PY: '🇵🇾', VE: '🇻🇪', IT: '🇮🇹', FR: '🇫🇷', DE: '🇩🇪',
-  GB: '🇬🇧', CA: '🇨🇦', AU: '🇦🇺', CH: '🇨🇭', PR: '🇵🇷', PA: '🇵🇦', INT: '🌐', OTROS: '🌐',
-};
-const COUNTRY_NAMES: Record<string, string> = {
-  AR: 'Argentina', UY: 'Uruguay', CL: 'Chile', EC: 'Ecuador', BR: 'Brasil', US: 'Estados Unidos',
-  ES: 'España', MX: 'México', PE: 'Perú', BO: 'Bolivia', CO: 'Colombia', PY: 'Paraguay',
-  VE: 'Venezuela', IT: 'Italia', FR: 'Francia', DE: 'Alemania', GB: 'Reino Unido', CA: 'Canadá',
-  AU: 'Australia', CH: 'Suiza', PR: 'Puerto Rico', PA: 'Panamá', INT: 'Internacional', OTROS: 'Otros países',
-};
 
 const PLANS: { val: SubType | ''; label: string }[] = [
   { val: '', label: 'Todos los planes' },
@@ -54,6 +43,7 @@ const PRESETS: { val: RangeKind; label: string }[] = [
   { val: 'ytd', label: 'Este año' },
 ];
 
+const TAB_COUNTRIES = 12;
 const MONTHS_ES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 const DATA_FLOOR = '2020-01-01';
 
@@ -169,6 +159,12 @@ export function FinancieroFilters() {
     f.setRange('custom');
   };
 
+  // Meta lists countries by Subscribers, most first.
+  const allCountries = meta?.countries ?? [];
+  const tabCountries = allCountries.slice(0, TAB_COUNTRIES);
+  const restCountries = allCountries.slice(TAB_COUNTRIES);
+  const restSelected = f.countries.filter((c) => restCountries.includes(c));
+
   const toggleCountry = (c: string) => {
     f.setCountries(f.countries.includes(c) ? f.countries.filter((x) => x !== c) : [...f.countries, c]);
   };
@@ -183,7 +179,7 @@ export function FinancieroFilters() {
         >
           <span className="flag">🌎</span><span>Todos</span>
         </button>
-        {(meta?.countries ?? []).map((c) => (
+        {tabCountries.map((c) => (
           <button
             key={c}
             type="button"
@@ -191,9 +187,24 @@ export function FinancieroFilters() {
             aria-pressed={f.countries.includes(c)}
             onClick={() => toggleCountry(c)}
           >
-            <span className="flag">{COUNTRY_FLAGS[c] ?? '🏳️'}</span><span>{COUNTRY_NAMES[c] ?? c}</span>
+            <span className="flag">{flagOf(c)}</span><span>{labelOf(c)}</span>
           </button>
         ))}
+        {restCountries.length > 0 && (
+          <select
+            className="proto-tabs-more"
+            aria-label="Más países"
+            value=""
+            onChange={(e) => { if (e.target.value) toggleCountry(e.target.value); }}
+          >
+            <option value="">{restSelected.length > 0 ? `+${restSelected.length} más…` : 'Más países…'}</option>
+            {restCountries.map((c) => (
+              <option key={c} value={c}>
+                {f.countries.includes(c) ? '✓ ' : ''}{flagOf(c)} {labelOf(c)}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
 
       <div className="proto-filters">

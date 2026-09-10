@@ -1407,6 +1407,21 @@ select:focus { border-color: var(--accent2); }
 }
 .proto-page .proto-tabs button .flag { font-size: 17px; }
 .proto-page .proto-tabs button:hover:not(.active) { background: var(--p-slate-soft); }
+.proto-page .proto-tabs-more {
+  margin-left: auto;
+  align-self: center;
+  background: var(--p-card);
+  color: var(--p-ink2);
+  border: 1.5px solid var(--p-line);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  outline: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.proto-page .proto-tabs-more:focus { border-color: var(--p-blue); }
 .proto-page .proto-tabs button.active {
   background: linear-gradient(135deg, #3b82f6, #8b5cf6);
   color: #fff;
