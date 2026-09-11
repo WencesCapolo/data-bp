@@ -1,4 +1,5 @@
 export type MatViewName =
+  | 'basket_mat_payment_facts'
   | 'basket_mat_daily_active'
   | 'basket_mat_monthly_lifecycle'
   | 'basket_mat_team_monthly'
@@ -10,7 +11,9 @@ export type MatViewName =
   | 'basket_mat_subscriber_days'
   | 'basket_mat_subscriber_months'
   | 'basket_mat_subscription_last_charge'
-  | 'basket_mat_subscriber_lifetime';
+  | 'basket_mat_subscriber_lifetime'
+  | 'basket_mat_fee_coverage'
+  | 'basket_mat_period_windows';
 
 export interface RefreshResult {
   view: MatViewName;

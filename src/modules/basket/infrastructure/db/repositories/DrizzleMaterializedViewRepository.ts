@@ -5,25 +5,7 @@ import type {
   MatViewName,
   RefreshResult,
 } from '@basket/core/ports/IMaterializedViewRepository';
-
-const ALL_VIEWS: MatViewName[] = [
-  'basket_mat_daily_active',
-  'basket_mat_monthly_lifecycle',
-  'basket_mat_team_monthly',
-  'basket_mat_team_daily',
-  'basket_mat_revenue_daily',
-  // Both read the fee mirror AND basket_v_active_payments (migration 0020), so
-  // they belong after the Pagos-only views: a Pagos upload moves them too.
-  'basket_mat_gateway_net_daily',
-  'basket_mat_gateway_net_outside_pagos',
-  'basket_mat_fixture_ranges',
-  // The subscriber lifecycle /financiero draws, migration 0019. Off the Pagos
-  // view like the first two, so they refresh after them for no reason but order.
-  'basket_mat_subscriber_days',
-  'basket_mat_subscriber_months',
-  'basket_mat_subscription_last_charge',
-  'basket_mat_subscriber_lifetime',
-];
+import { ALL_VIEWS, ANALYZED_TABLES } from './matViewOrder';
 
 export class DrizzleMaterializedViewRepository implements IMaterializedViewRepository {
   constructor(private readonly conn: Db = db) {}
@@ -41,6 +23,9 @@ export class DrizzleMaterializedViewRepository implements IMaterializedViewRepos
     const out: RefreshResult[] = [];
     for (const v of ALL_VIEWS) {
       out.push(await this.refresh(v, concurrent));
+    }
+    for (const t of [...ANALYZED_TABLES, ...ALL_VIEWS]) {
+      await this.conn.execute(sql.raw(`ANALYZE ${t}`));
     }
     return out;
   }

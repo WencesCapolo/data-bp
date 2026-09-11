@@ -20,6 +20,10 @@ function buildConnection(): ReturnType<typeof postgres> {
     idle_timeout: idleTimeout,
     connect_timeout: connectTimeout,
     prepare: false,
+    // Every query here is analytic and runs once per request: JIT-compiling it
+    // costs more than it saves (≈1 s of a 4.7 s GROUPING SETS query on a dev
+    // copy, 0 gained). Off for the whole connection rather than per statement.
+    connection: { jit: 'off' },
   });
 }
 

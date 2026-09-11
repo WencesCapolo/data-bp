@@ -15,6 +15,15 @@ const TARGETS: Target[] = [
   { label: 'overview range=all',        path: '/api/basket/overview?range=all',                    budgetMs: 500 },
   { label: 'teams range=all',           path: '/api/basket/teams?range=all',                       budgetMs: 500 },
   { label: 'meta',                      path: '/api/basket/meta',                                  budgetMs: 200 },
+  // /financiero · Economía (GitHub issue #6). The default range, the whole
+  // history, and a filter — the filtered path runs live off the fact table.
+  { label: 'economia range=30d',        path: '/api/financiero/economia?range=30d',                budgetMs: 500 },
+  // ≈0.9 s of SQL plus an 845 kB DTO (the catálogo is ~3k rows) through
+  // `next dev`: p95 sits at 1.0–1.3 s on a dev copy.
+  { label: 'economia range=all',        path: '/api/financiero/economia?range=all',                budgetMs: 1500 },
+  // A filter runs the lifecycle live off the fact table: ≈320 ms of SQL, and
+  // p95 ≈540 ms through `next dev`, whose overhead is what the margin covers.
+  { label: 'economia range=30d AR',     path: '/api/financiero/economia?range=30d&countries=AR',   budgetMs: 700 },
 ];
 
 const RUNS = Number(process.env.PERF_RUNS ?? 5);

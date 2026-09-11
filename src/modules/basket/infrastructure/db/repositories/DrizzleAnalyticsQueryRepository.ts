@@ -78,6 +78,8 @@ function trendFromDay(day: string, range?: DateRange): string {
   if (range.kind === 'ytd') return `${day.slice(0, 4)}-01-01`;
   return '2024-01-01';
 }
+const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+
 function shiftDay(day: string, deltaDays: number): string {
   const d = new Date(`${day}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + deltaDays);
@@ -222,6 +224,15 @@ const PERIOD_WINDOW_DAYS = 30;
 const DAILY_SPAN = 2 * PERIOD_WINDOW_DAYS - 1;
 /** Days the prototype's "últimos 15 días" charts show: the anchor and the 15 before it. */
 const DAILY_CHART_DAYS = 15;
+
+/**
+ * The Pagos fact table (migration 0021): basket_v_active_payments materialized
+ * and widened with the columns Economía derives on every read. Every query of
+ * /financiero · Economía — filtered or not — reads it instead of the view, so
+ * none of them rebuilds the Pagos ⨝ Subscribers ⨝ Tier join (GitHub issue #6).
+ * Same population, same labels; `pnpm smoke:economia-golden` holds both.
+ */
+const PAGOS = 'basket_mat_payment_facts';
 
 // GROUPING(day, month) bitmasks: bit set = column IS grouped away.
 const GRP_DAY = 1; // day kept, month grouped   -> 01
@@ -1175,107 +1186,107 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
     // Half-open on created_at keeps the predicate sargable.
     const live = `WHERE created_at >= '${f}'::date AND created_at < '${t}'::date + 1 ${fw}`;
 
-    // Sporting season, Sep→Aug: a Pago in Jan 2026 belongs to season 2025/26.
-    // The prototype labels seasons by their opening year; this keeps both halves
-    // of the label so nobody has to know that convention to read the chart.
-    const season = `
-      CASE WHEN EXTRACT(MONTH FROM created_at) >= 9
-        THEN EXTRACT(YEAR FROM created_at)::int || '/' || RIGHT((EXTRACT(YEAR FROM created_at)::int + 1)::text, 2)
-        ELSE (EXTRACT(YEAR FROM created_at)::int - 1) || '/' || RIGHT(EXTRACT(YEAR FROM created_at)::text, 2)
-      END`;
-
-    // Country, month-detail and catálogo all need a distinct payer count or a
-    // price point, which the pre-aggregated view has aggregated away — so they
-    // read the live view. One scan, three grains: as three separate queries this
-    // walked 400k rows three times and cost 5s on range=all.
+    // Country, month-detail, totals and catálogo all need a distinct payer
+    // count or a price point, which the pre-aggregated view has aggregated
+    // away — so they read the fact table. Four queries, not one GROUPING SETS
+    // statement: COUNT(DISTINCT) forces a sort-based aggregate over every set
+    // of its query, which as one statement dragged 500k rows through a 31 MB
+    // on-disk sort (4.7 s on range=all). Apart, each grain streams off its own
+    // presorted covering index (migration 0021) and the four run side by side.
     //
-    // grp is GROUPING(month, country, price, currency, plan_frequency): a bit
-    // set means that column is grouped away, which tags each set unambiguously.
+    // grp tags each row's grain with the constants GROUPING(month, country,
+    // price, currency, plan_frequency) produced when this was one statement —
+    // a bit set means that column is grouped away — so the mapping below
+    // reads any of the four.
     //   (country, currency)                        -> 10101 = 21
     //   (month, currency)                          -> 01101 = 13
     //   (family, frequency, country, ccy, season, price) -> 10000 = 16
-    //   (month, plan_frequency)                    -> 01110 = 14
     //   ()                                         -> 11111 = 31
-    const groupedLive = this.conn.execute(sql.raw(`
-      WITH base AS MATERIALIZED (
-        SELECT
-          DATE_TRUNC('month', created_at)::date AS month,
-          -- 'N/A' rather than NULL for a Pago whose Subscriber has no country,
-          -- matching basket_mat_revenue_daily so the two paths label it the same.
-          COALESCE(user_country, 'N/A')         AS country,
-          -- Matches basket_mat_revenue_daily, which coalesces the same way: a
-          -- Pago with no currency is a voucher, and 'NONE' says so.
-          COALESCE(currency, 'NONE')            AS currency,
-          user_id,
-          amount,
-          CASE
-            WHEN sub_type = 'Mensual_Basico' THEN 'Básico'
-            WHEN sub_type IN ('Mensual_Total', 'Anual_Total') THEN 'Total'
-            ELSE sub_type
-          END                                   AS plan_family,
-          CASE
-            WHEN sub_type LIKE 'Mensual%' THEN 'Mensual'
-            WHEN sub_type LIKE 'Anual%'   THEN 'Anual'
-            WHEN recurrent = 0            THEN 'Free'
-            ELSE 'Otros'
-          END                                   AS plan_frequency,
-          ${season}                             AS season
-        FROM basket_v_active_payments ${live}
-      )
-      SELECT GROUPING(month, country, amount, currency, plan_frequency)::int AS grp,
-             month, country, currency, plan_family, plan_frequency, season,
-             amount::numeric              AS price,
+    const countryLiveQ = () => this.conn.execute(sql.raw(`
+      SELECT 21 AS grp, country, ccy AS currency,
              SUM(amount)::numeric         AS gross,
              COUNT(*)::int                AS tx_count,
-             COUNT(DISTINCT user_id)::int AS payers,
-             COUNT(DISTINCT country) FILTER (WHERE country <> 'N/A')::int AS countries
-      FROM base
-      GROUP BY GROUPING SETS (
-        (country, currency),
-        (month, currency),
-        (plan_family, plan_frequency, country, currency, season, amount),
-        (month, plan_frequency),
-        ()
-      )
+             COUNT(DISTINCT user_id)::int AS payers
+      FROM ${PAGOS} ${live}
+      GROUP BY country, ccy
     `));
+    const monthLiveQ = () => this.conn.execute(sql.raw(`
+      SELECT 13 AS grp, month, ccy AS currency,
+             SUM(amount)::numeric         AS gross,
+             COUNT(*)::int                AS tx_count,
+             COUNT(DISTINCT user_id)::int AS payers
+      FROM ${PAGOS} ${live}
+      GROUP BY month, ccy
+    `));
+    // Unfiltered, the two distinct counts are each an index-only walk of the
+    // (user_id, …) and (country, …) indexes, cheaper than one sort of every
+    // row. Under a filter the rows are few and the extra scans cost more than
+    // they save, so one pass does it all.
+    const totalsLiveQ = () => this.conn.execute(sql.raw(hasFilters(filters)
+      ? `
+        SELECT 31 AS grp,
+               SUM(amount)::numeric         AS gross,
+               COUNT(*)::int                AS tx_count,
+               COUNT(DISTINCT user_id)::int AS payers,
+               COUNT(DISTINCT country) FILTER (WHERE country <> 'N/A')::int AS countries
+        FROM ${PAGOS} ${live}`
+      : `
+        WITH g AS (SELECT SUM(amount)::numeric AS gross, COUNT(*)::int AS tx_count FROM ${PAGOS} ${live})
+        SELECT 31 AS grp, g.gross, g.tx_count,
+               (SELECT COUNT(*)::int FROM (SELECT DISTINCT user_id FROM ${PAGOS} ${live}) u)                       AS payers,
+               (SELECT COUNT(*)::int FROM (SELECT DISTINCT country FROM ${PAGOS} ${live} AND country <> 'N/A') c) AS countries
+        FROM g`));
+    const catalogLiveQ = () => this.conn.execute(sql.raw(`
+      SELECT 16 AS grp,
+             country, ccy AS currency, plan_family, plan_frequency, season,
+             amount::numeric      AS price,
+             SUM(amount)::numeric AS gross,
+             COUNT(*)::int        AS tx_count
+      FROM ${PAGOS} ${live}
+      GROUP BY plan_family, plan_frequency, country, ccy, season, amount
+    `));
+    const grossQ = () => hasFilters(filters)
+      ? this.conn.execute(sql.raw(`
+          SELECT month, currency, platform_name,
+                 SUM(amount)::numeric AS gross,
+                 COUNT(*)::int        AS tx_count
+          FROM ${PAGOS} ${live}
+          GROUP BY 1, 2, 3 ORDER BY 1, 2, 3
+        `))
+      : this.conn.execute(sql.raw(`
+          SELECT DATE_TRUNC('month', day)::date AS month,
+                 currency, platform_name,
+                 SUM(total_amount)::numeric  AS gross,
+                 SUM(payment_count)::int     AS tx_count
+          FROM basket_mat_revenue_daily
+          WHERE day BETWEEN '${f}'::date AND '${t}'::date
+          GROUP BY 1, 2, 3 ORDER BY 1, 2, 3
+        `));
 
     // The anchor every lifecycle figure hangs from, read once here so the
     // rolling windows and the Provider net they compare are cut at the same day.
     const asOf = await this.lifecycleAnchor();
 
-    const [grossRows, liveRows, gateway, lifecycle] = await Promise.all([
-      hasFilters(filters)
-        ? this.conn.execute(sql.raw(`
-            SELECT DATE_TRUNC('month', created_at)::date AS month,
-                   currency, platform_name,
-                   SUM(amount)::numeric AS gross,
-                   COUNT(*)::int        AS tx_count
-            FROM basket_v_active_payments ${live}
-            GROUP BY 1, 2, 3 ORDER BY 1, 2, 3
-          `))
-        : this.conn.execute(sql.raw(`
-            SELECT DATE_TRUNC('month', day)::date AS month,
-                   currency, platform_name,
-                   SUM(total_amount)::numeric  AS gross,
-                   SUM(payment_count)::int     AS tx_count
-            FROM basket_mat_revenue_daily
-            WHERE day BETWEEN '${f}'::date AND '${t}'::date
-            GROUP BY 1, 2, 3 ORDER BY 1, 2, 3
-          `)),
-      groupedLive,
-      this.getGatewayNet(range, filters),
-      this.getSubscriberLifecycle(range, filters, asOf),
-    ]);
-    // After the fan-out above, not inside it. Every query in flight at once
+    // Two waves, at most eight queries in flight in either: the pool holds
+    // ten, and a wider fan-out queues behind itself — a 24 kB mat-view read
+    // was clocked at 4 s waiting for a connection. Every query in flight also
     // claims parallel-worker shared memory, and prod's Postgres ran out of it
-    // ("could not resize shared memory segment") the first time this and the
-    // window queries below joined the eleven already running.
-    const windowNet = await this.windowNetUsd(asOf, filters);
+    // ("could not resize shared memory segment") the first time this fan-out
+    // was wider than that.
+    const [grossRows, countryRows, monthRows, totalsRows, catalogRows, gateway] = await Promise.all([
+      grossQ(), countryLiveQ(), monthLiveQ(), totalsLiveQ(), catalogLiveQ(),
+      this.getGatewayNet(range, filters),
+    ]);
+    const [lifecycle, windowNet] = await Promise.all([
+      this.getSubscriberLifecycle(range, filters, asOf),
+      this.windowNetUsd(asOf, filters),
+    ]);
 
     const platformsWithGross = new Set(
       ((grossRows as unknown) as RowAny[]).map((r) => s(r.platform_name)),
     );
-    const all = (liveRows as unknown) as RowAny[];
+    const all = [countryRows, monthRows, totalsRows, catalogRows]
+      .flatMap((rows) => (rows as unknown) as RowAny[]);
     const GRP_COUNTRY = 21;
     const GRP_MONTH = 13;
     const GRP_CATALOG = 16;
@@ -1309,9 +1320,11 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
         gross: n(r.gross),
         txCount: n(r.tx_count),
       })),
+      // Ties broken by the keys, so the order is a function of the data and
+      // not of which parallel worker returned first.
       byCountry: all
         .filter((r) => n(r.grp) === GRP_COUNTRY)
-        .sort((a, b) => n(b.gross) - n(a.gross))
+        .sort((a, b) => n(b.gross) - n(a.gross) || cmp(s(a.country), s(b.country)) || cmp(s(a.currency), s(b.currency)))
         .map((r) => ({
         country: s(r.country),
         currency: s(r.currency),
@@ -1321,7 +1334,14 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
       })),
       catalog: all
         .filter((r) => n(r.grp) === GRP_CATALOG)
-        .sort((a, b) => n(b.tx_count) - n(a.tx_count))
+        .sort((a, b) =>
+          n(b.tx_count) - n(a.tx_count)
+          || cmp(s(a.plan_family), s(b.plan_family))
+          || cmp(s(a.plan_frequency), s(b.plan_frequency))
+          || cmp(s(a.country), s(b.country))
+          || cmp(s(a.currency), s(b.currency))
+          || cmp(s(a.season), s(b.season))
+          || n(a.price) - n(b.price))
         .map((r) => ({
         planFamily: s(r.plan_family),
         planFrequency: s(r.plan_frequency),
@@ -1363,7 +1383,7 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
   private async lifecycleAnchor(): Promise<string> {
     const [anchorRow] = ((await this.conn.execute(sql.raw(`
       SELECT LEAST(MAX(created_at)::date, CURRENT_DATE - 1)::text AS as_of
-      FROM basket_v_active_payments
+      FROM ${PAGOS}
     `))) as unknown) as RowAny[];
     return s(anchorRow?.as_of) || yesterdayEndUtc().toISOString().slice(0, 10);
   }
@@ -1408,20 +1428,22 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
     // both paths: the months view carries no Period, and this is one indexed
     // scan of the window with two counters, cheaper than widening the view.
     const monthFreqRowsQ = () => this.conn.execute(sql.raw(`
-      SELECT DATE_TRUNC('month', created_at)::date::text AS month,
+      SELECT month::text AS month,
              COUNT(*) FILTER (WHERE sub_type LIKE 'Mensual%')::int  AS mensual,
              COUNT(*) FILTER (WHERE sub_type = 'Anual_Total')::int   AS anual
-      FROM basket_v_active_payments
+      FROM ${PAGOS}
       WHERE created_at >= ${monthFrom} AND created_at < ${monthTo} + INTERVAL '1 month'
-        AND NOT (recurrent = 0 AND amount > 0) ${fw}
+        AND NOT one_off ${fw}
       GROUP BY 1
     `));
 
     // The rolling pair: Pagos of the last 30 days and of the 30 before, each
     // bucketed by what it meant for its Subscriber. The window CTE keeps every
     // Pago of the Subscribers who paid in those 60 days — the LAG needs a whole
-    // history to tell a renewal from a reactivation — but on 60 days that is a
-    // small slice of the table on either path, so this never reads a mat view.
+    // history to tell a renewal from a reactivation — and under a filter that
+    // history is the filtered one, so the filtered path computes it live.
+    // Unfiltered, both windows are one row each of basket_mat_period_windows
+    // (migration 0021, the same SQL as below with the filter removed).
     const W = PERIOD_WINDOW_DAYS;
     const windowTxRowsQ = () => this.conn.execute(sql.raw(`
       WITH w(w, s, e) AS (
@@ -1429,13 +1451,12 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
                ('previous', ${a} - ${2 * W - 1}, ${a} - ${W})
       ),
       p AS (
-        SELECT user_id, created_at, sub_type,
-               (recurrent = 0 AND amount > 0) AS one_off,
+        SELECT user_id, created_at, sub_type, one_off,
                LAG(expires_at) OVER (PARTITION BY user_id ORDER BY created_at, id) AS prev_e,
                MIN(created_at) OVER (PARTITION BY user_id) AS first_at
-        FROM basket_v_active_payments
+        FROM ${PAGOS}
         WHERE user_id IN (
-          SELECT user_id FROM basket_v_active_payments
+          SELECT user_id FROM ${PAGOS}
           WHERE created_at >= ${a} - ${2 * W - 1} AND created_at < ${a} + 1 ${fw}
         ) ${fw}
       )
@@ -1452,30 +1473,63 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
       GROUP BY w.w
     `));
     // The pool at the close of each window, split by Period and by family. Two
-    // days against the Pagos that cover them — the expires_at index does the work.
-    const windowActiveRowsQ = () => this.conn.execute(sql.raw(`
-      SELECT d.d::text AS day,
+    // days against the Pagos that cover them, as two range scans on expires_at:
+    // joined against a two-row VALUES list the planner seq-scanned the Pagos
+    // and threw 945k rows away in the join filter.
+    const poolOn = (day: string) => `
+      SELECT (${day})::text AS day,
         COUNT(DISTINCT user_id)::int AS total,
         COUNT(DISTINCT user_id) FILTER (WHERE sub_type LIKE 'Mensual%')::int AS mensual,
         COUNT(DISTINCT user_id) FILTER (WHERE sub_type = 'Anual_Total')::int  AS anual,
         COUNT(DISTINCT user_id) FILTER (WHERE sub_type IN ('Mensual_Total', 'Anual_Total'))::int AS fam_total,
         COUNT(DISTINCT user_id) FILTER (WHERE sub_type = 'Mensual_Basico')::int AS fam_basico
-      FROM (VALUES (${a}), (${a} - ${W})) d(d)
-      JOIN basket_v_active_payments p
-        ON p.created_at < d.d + 1 AND p.expires_at >= d.d - INTERVAL '7 days' ${fw}
-      GROUP BY d.d
+      FROM ${PAGOS} p
+      WHERE p.created_at < (${day}) + 1 AND p.expires_at >= (${day}) - INTERVAL '7 days' ${fw}`;
+    const windowActiveRowsQ = () => this.conn.execute(sql.raw(`
+      ${poolOn(a)}
+      UNION ALL
+      ${poolOn(`${a} - ${W}`)}
     `));
+    // Both of the above, precomputed at the anchor, in the shapes the two
+    // queries return: one tx row and one active row per window.
+    const windowsFromMatView = async (): Promise<{ tx: unknown; active: unknown }> => {
+      const rows = ((await this.conn.execute(sql.raw(`
+        SELECT w, end_day::text AS day, one_off, new_subscribers, recurring, reactivated,
+               mensual, anual,
+               active_total, active_mensual, active_anual, active_fam_total, active_fam_basico
+        FROM basket_mat_period_windows
+      `))) as unknown) as RowAny[];
+      return {
+        tx: rows.map((r) => ({
+          w: r.w, one_off: r.one_off, new_subscribers: r.new_subscribers,
+          recurring: r.recurring, reactivated: r.reactivated, mensual: r.mensual, anual: r.anual,
+        })),
+        active: rows.map((r) => ({
+          day: r.day, total: r.active_total, mensual: r.active_mensual, anual: r.active_anual,
+          fam_total: r.active_fam_total, fam_basico: r.active_fam_basico,
+        })),
+      };
+    };
 
     const [dailyRows, monthlyRows, activeRows, lifetimeRows] = hasFilters(filters)
       ? await this.lifecycleLive(a, monthFrom, monthTo, fw)
       : await this.lifecycleFromMatViews(a, monthFrom, monthTo);
     const lastChargeRows = await lastChargeRowsP;
-    // One at a time, once the four scans above have returned: these three
-    // are cheap alone and the point is not to widen the fan-out — see the
-    // shared-memory note in getEconomia.
-    const monthFreqRows = await monthFreqRowsQ();
-    const windowTxRows = await windowTxRowsQ();
-    const windowActiveRows = await windowActiveRowsQ();
+    // After the scans above, not beside them: the point is not to widen the
+    // fan-out — see the pool note in getEconomia.
+    let monthFreqRows: unknown;
+    let windowTxRows: unknown;
+    let windowActiveRows: unknown;
+    if (hasFilters(filters)) {
+      monthFreqRows = await monthFreqRowsQ();
+      windowTxRows = await windowTxRowsQ();
+      windowActiveRows = await windowActiveRowsQ();
+    } else {
+      const [freq, win] = await Promise.all([monthFreqRowsQ(), windowsFromMatView()]);
+      monthFreqRows = freq;
+      windowTxRows = win.tx;
+      windowActiveRows = win.active;
+    }
     return this.toLifecycleDTO(asOf, {
       dailyRows, monthlyRows, activeRows, lastChargeRows, lifetimeRows,
       monthFreqRows, windowTxRows, windowActiveRows,
@@ -1625,7 +1679,7 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
       ),
       cov AS (
         SELECT user_id, created_at::date AS s, (expires_at + INTERVAL '7 days')::date AS e
-        FROM basket_v_active_payments
+        FROM ${PAGOS}
         -- Bounds on the raw columns, so the expires_at index is used. A Pago
         -- whose coverage ended before the window (grace and the day before the
         -- first day included) cannot change who is in the pool on any day of it.
@@ -1683,16 +1737,16 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
     const monthlyRowsP = run(`
         WITH p AS (
           SELECT user_id, created_at, expires_at, recurrent, amount,
-                 (recurrent = 0 AND amount > 0) AS one_off,
+                 one_off,
                  LAG(expires_at) OVER (PARTITION BY user_id ORDER BY created_at, id) AS prev_e,
                  MIN(created_at) OVER (PARTITION BY user_id) AS first_at
-          FROM basket_v_active_payments
+          FROM ${PAGOS}
           -- The window needs each Subscriber's whole history to know which Pago
           -- is their first and how far the previous one reached, but only for
           -- Subscribers who paid inside the window: on a 30-day range that is a
           -- tenth of the table.
           WHERE user_id IN (
-            SELECT user_id FROM basket_v_active_payments
+            SELECT user_id FROM ${PAGOS}
             WHERE created_at >= ${monthFrom} AND created_at < ${monthTo} + INTERVAL '1 month' ${fw}
           ) ${fw}
         ),
@@ -1711,11 +1765,11 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
         lapsed AS (
           SELECT DATE_TRUNC('month', p1.expires_at + INTERVAL '7 days')::date AS m,
                  COUNT(DISTINCT p1.user_id)::int AS churned
-          FROM basket_v_active_payments p1
+          FROM ${PAGOS} p1
           WHERE p1.expires_at < ${a} - INTERVAL '6 days'
             AND p1.expires_at >= ${monthFrom} - INTERVAL '7 days' ${fw}
             AND NOT EXISTS (
-              SELECT 1 FROM basket_v_active_payments p2
+              SELECT 1 FROM ${PAGOS} p2
               WHERE p2.user_id = p1.user_id
                 AND p2.created_at <= p1.expires_at + INTERVAL '7 days'
                 AND p2.expires_at > p1.expires_at
@@ -1739,7 +1793,7 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
     const activeRowsP = run(`
         WITH cov AS (
           SELECT user_id, sub_type, created_at::date AS s, (expires_at + INTERVAL '7 days')::date AS e
-          FROM basket_v_active_payments
+          FROM ${PAGOS}
           WHERE expires_at >= ${monthFrom} - INTERVAL '7 days'
             AND created_at < LEAST(${monthTo} + INTERVAL '1 month', ${a} + 1) ${fw}
         ),
@@ -1768,7 +1822,7 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
           SELECT user_id,
                  SUM(GREATEST(EXTRACT(EPOCH FROM (expires_at - created_at)), 0)) / 86400.0 / 30.0 AS months,
                  MAX((expires_at + INTERVAL '7 days')::date) AS last_e
-          FROM basket_v_active_payments WHERE TRUE ${fw}
+          FROM ${PAGOS} WHERE TRUE ${fw}
           GROUP BY user_id
         ),
         closed AS (SELECT months FROM per_user WHERE last_e < ${a})
@@ -2211,13 +2265,32 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
     const t = to.toISOString().slice(0, 10);
     const filtered = hasFilters(filters);
 
-    const [moneyRows, outsideRows, statusRows, subMonthRows, coverageRows, fxRows] = await Promise.all([
+    // Two waves of three, so this and getEconomia's other queries fit the
+    // pool together — see the note there.
+    const [moneyRows, outsideRows, fxRows] = await Promise.all([
       filtered
         ? this.gatewayMoneyFiltered(f, t, filters!)
         : this.gatewayMoneyUnfiltered(f, t, 'basket_mat_gateway_net_daily'),
       // The complement is never filtered: a filter is a predicate on the Pago,
       // and these rows have none. Same range, same shapes.
       this.gatewayMoneyUnfiltered(f, t, 'basket_mat_gateway_net_outside_pagos'),
+      // The FX plane, day by day over the range. Only the fetched sources are
+      // read here: the derived 'stripe' rows are provenance for a conversion
+      // Stripe already did, and using them to convert a settlement figure that
+      // is already USD would apply a rate twice. See docs/adr/0007.
+      this.conn.execute(sql.raw(`
+        SELECT day::text AS day, quote_currency, source, rate::float8 AS rate
+        FROM basket_fx_rates
+        WHERE base_currency = 'USD'
+          -- Both fetched sources, and they cannot collide: 'blue' quotes ARS,
+          -- 'oficial_cross' quotes EUR, and the index below is keyed by the
+          -- quote currency. A second source for one pair would need a choice;
+          -- two sources for two pairs need none.
+          AND source IN ('blue', 'oficial_cross')
+          AND day BETWEEN '${f}'::date AND '${t}'::date
+      `)),
+    ]);
+    const [statusRows, subMonthRows, coverageRows] = await Promise.all([
       // Status is a current-state snapshot, so it is deliberately not windowed
       // by the range: "how many subscriptions are canceled today" has no
       // meaningful restriction to a past month. Churn reads status, never
@@ -2263,7 +2336,9 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
       `)),
       // All-time on purpose: coverage moves when Pagos are ingested, not only
       // when fees are, so a range-windowed figure reads as a coverage
-      // regression when it is really just new Pagos.
+      // regression when it is really just new Pagos. Precomputed at Sync
+      // (migration 0021): it was the request's single most expensive query,
+      // and neither the range nor a filter ever applied to it.
       // Bucketed by id SHAPE as well as currency, because MercadoPago has two.
       // Its numeric ids are payments and can carry a fee; its 143,577 hex32 ids
       // are preapprovals — subscription objects that never had a fee to report.
@@ -2271,35 +2346,9 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
       // permanent data loss instead of as two populations, one of which is not
       // supposed to be here.
       this.conn.execute(sql.raw(`
-        SELECT p.platform                        AS platform,
-               p.currency                        AS currency,
-               CASE WHEN p.platform_payment_id ~ '^[0-9a-f]{32}$'
-                    THEN 'preapproval' ELSE 'payment' END AS id_shape,
-               COUNT(*)::int                     AS successful,
-               COUNT(f.platform_payment_id)::int AS with_fee
-        FROM basket_payments p
-        LEFT JOIN basket_payment_fees f
-          ON f.platform = p.platform AND f.platform_payment_id = p.platform_payment_id
-        WHERE p.platform IN (${GATEWAY_PLATFORM_LIST})
-          AND p.status = 1
-          AND p.platform_payment_id IS NOT NULL
-        GROUP BY p.platform, p.currency, id_shape
+        SELECT platform, currency, id_shape, successful, with_fee
+        FROM basket_mat_fee_coverage
         ORDER BY successful DESC
-      `)),
-      // The FX plane, day by day over the range. Only the fetched sources are
-      // read here: the derived 'stripe' rows are provenance for a conversion
-      // Stripe already did, and using them to convert a settlement figure that
-      // is already USD would apply a rate twice. See docs/adr/0007.
-      this.conn.execute(sql.raw(`
-        SELECT day::text AS day, quote_currency, source, rate::float8 AS rate
-        FROM basket_fx_rates
-        WHERE base_currency = 'USD'
-          -- Both fetched sources, and they cannot collide: 'blue' quotes ARS,
-          -- 'oficial_cross' quotes EUR, and the index below is keyed by the
-          -- quote currency. A second source for one pair would need a choice;
-          -- two sources for two pairs need none.
-          AND source IN ('blue', 'oficial_cross')
-          AND day BETWEEN '${f}'::date AND '${t}'::date
       `)),
     ]);
 
@@ -2433,7 +2482,7 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
     return this.conn.execute(sql.raw(`
       WITH pay AS MATERIALIZED (
         SELECT platform, platform_payment_id
-        FROM basket_v_active_payments
+        FROM ${PAGOS}
         WHERE platform IN (${GATEWAY_PLATFORM_LIST})
           AND platform_payment_id IS NOT NULL
           ${fw}

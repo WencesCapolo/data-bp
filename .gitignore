@@ -61,3 +61,6 @@ dump.pgc
 
 # sync-alert firing state (scripts/alert-sync-stale.ts)
 .alert-sync-state.json
+
+# golden DTO snapshots (smoke:economia-golden)
+/.golden

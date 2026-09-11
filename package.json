@@ -37,6 +37,7 @@
     "smoke:allreport": "tsx --env-file=.env scripts/smoke-allreport.ts",
     "smoke:fx": "tsx --env-file=.env scripts/smoke-fx.ts",
     "smoke:lifecycle": "tsx --env-file=.env scripts/smoke-lifecycle.ts",
+    "smoke:economia-golden": "tsx --env-file=.env scripts/smoke-economia-golden.ts",
     "ingest:gateway-exports": "tsx --env-file=.env scripts/ingest-gateway-exports.ts",
     "fix:amounts": "tsx --env-file=.env scripts/fix-payment-amount-scale.ts",
     "test": "vitest run"

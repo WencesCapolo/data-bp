@@ -282,6 +282,30 @@ it `basket_mat_subscriber_days`, which joins every day against every Pago the wa
 `basket_mat_daily_active` already does (139 s). They are in `ALL_VIEWS`, so every
 Sync refreshes them after the first apply; `pnpm db:verify` lists them.
 
+**Migration 0021 too, and it is where Economía reads Pagos from (GitHub #6,
+2026-09-11).** `pnpm sql:apply migrations/sql/0021_economia_facts.sql`, about
+10 s. It creates `basket_mat_payment_facts` — `basket_v_active_payments`
+materialized, plus the month, plan family, Period, season and the `N/A`/`NONE`
+labels Economía used to derive on every read — and every Economía query,
+filtered or not, reads it instead of the view (`PAGOS` in the repository).
+Two more views hold the figures that depend on neither range nor filter and
+only move at Sync: `basket_mat_fee_coverage` and `basket_mat_period_windows`
+(the rolling 30-day pair, cut at the anchor). Before, a request ran 20 queries
+in 1.7 s on the default range and 6 s on `all` on a dev copy; after, 0.15 s
+and 0.9 s, every figure identical. Three things hold that: `pnpm
+smoke:economia-golden snapshot` on trusted code then `… diff` on new code
+compares the DTO figure for figure over ten range × filter cases; `pnpm
+smoke:perf` now budgets the endpoint; and `pnpm smoke:lifecycle` still pins the
+live path to the mat-view path. The distinct-payer grains and the catálogo each
+stream off a presorted covering index of the fact table (7–10× on `all`), the
+request fans out in two waves of at most eight queries so it fits the
+ten-connection pool, the analytics connection runs with `jit=off`, and the
+refresh Step ends with `ANALYZE` on the big tables (none had ever been analysed).
+The three views are in `ALL_VIEWS` (`matViewOrder.ts`, unit-tested for
+dependency order). Broad filters — `accessType=real`, a Tier — still take 2.5–3.5 s
+on `all`: the filtered lifecycle recomputes gaps-and-islands live over most of
+the table, and that is the next thing to precompute if it matters.
+
 **Every lifecycle figure is anchored at the last Pago day, and the anchor is
 computed, not configured.** `LEAST(MAX(created_at)::date, CURRENT_DATE − 1)` over
 `basket_v_active_payments`, once per request, and again inside the months mat
