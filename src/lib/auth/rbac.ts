@@ -1,19 +1,16 @@
 import { redirect } from 'next/navigation';
-import { getSessionUser, type SessionUser } from './getSessionUser';
-import { resolvePortalLoginUrl } from './portal';
-import { findDashboard, type Role } from '@/lib/dashboards';
+import { resolveRequestUser } from './getSessionUser';
+import type { SessionUser } from './acceso-policy';
+import { findDashboard } from '@/lib/dashboards';
 
+export type { SessionUser };
+
+// Page gate. No session → portal login (with the requested URL so the person
+// comes back here); session without analytics Acceso → portal /no-access.
 export async function requireSession(): Promise<SessionUser> {
-  const user = await getSessionUser();
-  // No session, or session not on this app's allowlist -> portal login (SSO).
-  if (!user) redirect(resolvePortalLoginUrl());
-  return user;
-}
-
-export async function requireRole(role: Role): Promise<SessionUser> {
-  const user = await requireSession();
-  if (user.role !== role) redirect('/?denied=1');
-  return user;
+  const r = await resolveRequestUser();
+  if (r.kind !== 'allow') redirect(r.to);
+  return r.user;
 }
 
 export async function requireDashboard(slug: string): Promise<SessionUser> {

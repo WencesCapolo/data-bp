@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean } from 'drizzle-orm/pg-core';
+import { pgTable, pgEnum, primaryKey, text, timestamp, boolean } from 'drizzle-orm/pg-core';
 
 // ── Shared identity tables (basket_auth) ────────────────────────────────────
 // These MUST mirror the portal-owned physical schema exactly (drizzle/auth in the
@@ -56,12 +56,25 @@ export const authVerification = pgTable('auth_verification', {
   updatedAt: timestamp('updated_at').notNull(),
 });
 
-// ── Analytics' own authorization (basket_analytics) ─────────────────────────
-// Identity is shared, but each app authorizes independently. This allowlist lives
-// in the analytics domain DB and is queried through `@shared/db/client`.
-export const authAllowedEmails = pgTable('auth_allowed_emails', {
-  email: text('email').primaryKey(),
-  role: text('role').notNull().default('viewer'),
-  note: text('note'),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-});
+// ── Acceso (basket_auth, portal-owned) ───────────────────────────────────────
+// One identity's Nivel in one sibling app. Analytics reads its own row
+// (app = 'analytics') on every request; the portal writes it.
+export const appAccessApp = pgEnum('auth_app_access_app', ['analytics', 'incidencias', 'generator', 'ops']);
+
+export const appAccessLevel = pgEnum('auth_app_access_level', ['read', 'write', 'admin']);
+
+export const authAppAccess = pgTable(
+  'auth_app_access',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => authUser.id, { onDelete: 'cascade' }),
+    app: appAccessApp('app').notNull(),
+    level: appAccessLevel('level').notNull(),
+    grantedBy: text('granted_by').references(() => authUser.id, { onDelete: 'set null' }),
+    grantedAt: timestamp('granted_at').notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.app] })],
+);
+
+export type AccesoLevel = (typeof appAccessLevel.enumValues)[number];
