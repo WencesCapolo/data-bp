@@ -1,11 +1,11 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
-import { authUser, authSession, authAccount, authVerification } from '@/lib/auth/schema';
+import { authUser, authSession, authAccount, authVerification, authAppAccess } from '@/lib/auth/schema';
 
 // Shared identity DB (basket_auth) — owned/migrated by the portal app. This is a
 // SEPARATE connection from `@shared/db/client` (basket_analytics, domain data) so
 // portal's sessions are found here and SSO works across *.basket-app.com.
-const authSchema = { authUser, authSession, authAccount, authVerification };
+const authSchema = { authUser, authSession, authAccount, authVerification, authAppAccess };
 
 const globalForAuthDb = globalThis as unknown as {
   authConnection: ReturnType<typeof postgres> | undefined;

@@ -69,7 +69,7 @@ export async function GET(): Promise<NextResponse> {
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  // Either an allowlisted Analyst (admin or viewer, per docs/adr/0004) or the
+  // Either an Analyst with an analytics Acceso (any Nivel, per docs/adr/0004) or the
   // automation token. The token path stays so schedulers keep working.
   const byToken = tokenMatches(req) || internalBypass(req);
   const user = byToken ? null : await getSessionUser();

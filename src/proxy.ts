@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSessionCookie } from 'better-auth/cookies';
-import { swapToPortal, buildPortalLoginUrl } from '@/lib/auth/portal';
+import { resolveProxyRedirect } from '@/lib/auth/proxy-redirect';
+import { authEnv } from '@/lib/env';
 
 const PUBLIC_API = new Set(['/api/basket/sync']);
 
+// Optimistic cookie-presence check, like the portal's middleware. Session
+// validity and the analytics Acceso are read per request in requireSession /
+// getSessionUser, so every API route still gates itself.
 export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
@@ -30,31 +34,30 @@ export function proxy(req: NextRequest) {
     return NextResponse.next();
   }
 
-  const session = getSessionCookie(req);
-
-  if (!session) {
-    if (pathname.startsWith('/api/')) {
-      return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-    }
-    // SSO: bounce to the portal login, preserving the analytics deep link so the
-    // user lands back here after authenticating. Use BETTER_AUTH_URL for an https
-    // origin (the proxied request scheme may be http behind nginx).
-    const analyticsBase = process.env.BETTER_AUTH_URL ?? req.nextUrl.origin;
-    const portalBase = process.env.PORTAL_BASE_URL ?? swapToPortal(analyticsBase);
-    const redirectTo = `${analyticsBase.replace(/\/$/, '')}${pathname}${req.nextUrl.search}`;
-    return NextResponse.redirect(buildPortalLoginUrl(portalBase, redirectTo));
+  const decision = resolveProxyRedirect({
+    hasSessionCookie: Boolean(getSessionCookie(req)),
+    requestUrl: req.url,
+    portalUrl: authEnv.portalUrl,
+  });
+  if (decision?.kind === 'unauthorized') {
+    return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
+  if (decision?.kind === 'redirect') return NextResponse.redirect(decision.to);
 
-  return NextResponse.next();
+  // Pages need the URL they were asked for to build their own login redirect.
+  const requestHeaders = new Headers(req.headers);
+  requestHeaders.set('x-url', req.url);
+  return NextResponse.next({ request: { headers: requestHeaders } });
 }
 
 export const config = {
   matcher: [
     '/',
     '/basket/:path*',
-    '/admin/:path*',
+    '/partidos/:path*',
+    '/financiero/:path*',
     '/api/basket/:path*',
-    '/api/admin/:path*',
+    '/api/partidos/:path*',
     // /financiero guards itself with requireDashboard, but its API did not and
     // is not under /api/basket — so it answered 200 with the whole Economía DTO
     // to anyone who asked. The page being protected says nothing about the

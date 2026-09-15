@@ -2,8 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 import { fetcher } from '@/lib/client/fetcher';
-import { useSession, signOut } from '@/lib/auth/client';
-import { swapToPortal, buildPortalLoginUrl } from '@/lib/auth/portal';
+import { portalLogoutHref } from '@/lib/portal-links';
 import { SyncModal, type LastUploadInfo } from '@/components/layout/SyncModal';
 import { FeeUploadModal } from '@/components/layout/FeeUploadModal';
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
@@ -49,7 +48,12 @@ function relative(iso: string): string {
   return `${Math.floor(s / 86400)}d ago`;
 }
 
-export function Header() {
+interface HeaderProps {
+  /** Who is signed in, read by the page's server component from the session. */
+  email: string;
+}
+
+export function Header({ email }: HeaderProps) {
   const [syncErr, setSyncErr] = useState<string | null>(null);
   // Which Upload is open. The two are one screen from the user's side and two
   // flows underneath: a Pagos Export runs a Sync, a fee Export writes the fee
@@ -63,7 +67,6 @@ export function Header() {
   const { data } = useSWR<SyncState>('/api/sync', fetcher, {
     refreshInterval: (d) => (d?.inFlight ? 3_000 : 60_000),
   });
-  const { data: session } = useSession();
   const { mutate } = useSWRConfig();
   const wasInFlight = useRef(false);
 
@@ -202,18 +205,15 @@ export function Header() {
         </button>
         <ThemeToggle />
         <span className="header-date">{new Date().toISOString().slice(0, 10)}</span>
-        {session?.user && (
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-            <span className="header-email" style={{ color: 'var(--text2)' }}>{session.user.email}</span>
-            <button
-              type="button"
-              onClick={() => signOut({ fetchOptions: { onSuccess: () => { window.location.href = buildPortalLoginUrl(swapToPortal(window.location.origin)); } } })}
-              style={{ background: 'transparent', color: 'var(--text3)', border: '1px solid var(--border)', borderRadius: 4, padding: '2px 8px', cursor: 'pointer', fontSize: 11 }}
-            >
-              salir
-            </button>
-          </span>
-        )}
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+          <span className="header-email" style={{ color: 'var(--text2)' }}>{email}</span>
+          <a
+            href={portalLogoutHref()}
+            style={{ background: 'transparent', color: 'var(--text3)', border: '1px solid var(--border)', borderRadius: 4, padding: '2px 8px', textDecoration: 'none', fontSize: 11 }}
+          >
+            salir
+          </a>
+        </span>
       </div>
       {modal === 'pagos' && (
         <SyncModal

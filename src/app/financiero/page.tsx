@@ -4,6 +4,6 @@ import { FinancieroDashboard } from './FinancieroDashboard';
 export const dynamic = 'force-dynamic';
 
 export default async function FinancieroPage() {
-  await requireDashboard('financiero');
-  return <FinancieroDashboard />;
+  const user = await requireDashboard('financiero');
+  return <FinancieroDashboard email={user.email} />;
 }

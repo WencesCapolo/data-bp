@@ -24,12 +24,12 @@ const VIEWS: { key: FinView; label: string; icon: string }[] = [
   { key: 'contenido', label: 'Contenido', icon: '🏀' },
 ];
 
-export function FinancieroDashboard() {
+export function FinancieroDashboard({ email }: { email: string }) {
   const [view, setView] = useState<FinView>('financiero');
 
   return (
     <>
-      <Header />
+      <Header email={email} />
       <div className="proto-page">
         <FinancieroHero />
         <div className="proto-wrap">
