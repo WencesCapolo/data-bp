@@ -78,7 +78,10 @@ _Avoid_: user, customer, client, account
 
 **Analyst**:
 Someone signed in to this app to read dashboards. May also perform an Upload.
-_Avoid_: viewer, admin, operator
+Admitted by their **Acceso** to `analytics`, a row the portal keeps in the shared
+Auth DB; this app never logs anyone in (ADR 0008). The Acceso's **Nivel** gives
+the role: `admin` → admin, `read`/`write` → viewer.
+_Avoid_: viewer, admin, operator, allowlisted user
 
 ### Time
 

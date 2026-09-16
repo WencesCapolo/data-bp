@@ -1,6 +1,6 @@
 import type { NextRequest } from 'next/server';
-import { requireDashboard } from '@/lib/auth/rbac';
-import { badRequest, ok, serverError } from '@/lib/api/responses';
+import { getSessionUser } from '@/lib/auth/getSessionUser';
+import { badRequest, ok, serverError, unauthorized } from '@/lib/api/responses';
 import { parseSearchParams } from '@/lib/api/zodSchemas';
 import { NacionalFiltersSchema } from '@/lib/api/partidosSchemas';
 import { composePartidosNacionalRepo } from '@/lib/api/composePartidosRepo';
@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 export async function GET(req: NextRequest) {
-  await requireDashboard('partidos');
+  if (!(await getSessionUser())) return unauthorized();
   const parsed = NacionalFiltersSchema.safeParse(parseSearchParams(req));
   if (!parsed.success) return badRequest(parsed.error);
   try {

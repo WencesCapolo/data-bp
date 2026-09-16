@@ -1,6 +1,7 @@
+import { getSessionUser } from '@/lib/auth/getSessionUser';
 import type { NextRequest } from 'next/server';
 import { composeRepo } from '@/lib/api/composeRepo';
-import { badRequest, ok, serverError } from '@/lib/api/responses';
+import { badRequest, ok, serverError, unauthorized } from '@/lib/api/responses';
 import { TeamDailyQuerySchema, TeamIdSchema, parseSearchParams } from '@/lib/api/zodSchemas';
 import { GetTeamsUseCase } from '@basket/core/use-cases/queries/GetTeamsUseCase';
 
@@ -8,6 +9,7 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ teamId: string }> }) {
+  if (!(await getSessionUser())) return unauthorized();
   const { teamId } = await params;
   const id = TeamIdSchema.safeParse(teamId);
   if (!id.success) return badRequest(id.error);

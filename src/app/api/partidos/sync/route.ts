@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { requireDashboard } from '@/lib/auth/rbac';
+import { getSessionUser } from '@/lib/auth/getSessionUser';
+import { unauthorized } from '@/lib/api/responses';
 import { composeSyncPartidos } from '@partidos/infrastructure/sync/composeSyncPartidos';
 import { DrizzlePartidosSyncStateRepository } from '@partidos/infrastructure/db/repositories/DrizzlePartidosSyncStateRepository';
 import type { PartidosSyncStateDTO } from '@partidos/core/dtos/PartidosSyncDTO';
@@ -11,7 +12,7 @@ let inFlight: Promise<unknown> | null = null;
 let startedAt: number | null = null;
 
 export async function GET(): Promise<NextResponse> {
-  await requireDashboard('partidos');
+  if (!(await getSessionUser())) return unauthorized();
   const state = await new DrizzlePartidosSyncStateRepository().get();
   const dto: PartidosSyncStateDTO = {
     lastSyncAt: state.lastSyncAt ? state.lastSyncAt.toISOString() : null,

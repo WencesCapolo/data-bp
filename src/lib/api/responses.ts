@@ -35,6 +35,13 @@ export function badRequest(err: ZodError): NextResponse {
   );
 }
 
+// API routes answer 401 JSON, never a redirect: a fetch cannot follow the
+// portal login page. The proxy only checks cookie presence, so this is the
+// gate that actually reads the session and the analytics Acceso.
+export function unauthorized(): NextResponse {
+  return NextResponse.json({ error: 'unauthorized' }, { status: 401, headers: NO_STORE });
+}
+
 export function notFound(message = 'not_found'): NextResponse {
   return NextResponse.json({ error: message }, { status: 404, headers: NO_STORE });
 }

@@ -11,13 +11,13 @@ import { TabBoundary } from '@/components/ui/TabBoundary';
 import { UrlFilterSync } from '@/lib/client/UrlFilterSync';
 import { useFilters } from '@/lib/client/filterStore';
 
-export function BasketDashboard() {
+export function BasketDashboard({ email }: { email: string }) {
   const tab = useFilters((s) => s.tab);
 
   return (
     <>
       <UrlFilterSync />
-      <Header />
+      <Header email={email} />
       <TabBar />
       <main className="main">
         {tab === 'overview' && (

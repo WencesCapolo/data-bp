@@ -1,6 +1,7 @@
+import { getSessionUser } from '@/lib/auth/getSessionUser';
 import type { NextRequest } from 'next/server';
 import { composeRepo } from '@/lib/api/composeRepo';
-import { badRequest, ok, serverError } from '@/lib/api/responses';
+import { badRequest, ok, serverError, unauthorized } from '@/lib/api/responses';
 import { LifecycleQuerySchema, parseSearchParams } from '@/lib/api/zodSchemas';
 import { GetLifecycleUseCase } from '@basket/core/use-cases/queries/GetLifecycleUseCase';
 
@@ -11,6 +12,7 @@ export const runtime = 'nodejs';
 // runs a live window pass over every payment (~2s). Sharing a route would gate
 // the whole tab on the slowest block.
 export async function GET(req: NextRequest) {
+  if (!(await getSessionUser())) return unauthorized();
   const parsed = LifecycleQuerySchema.safeParse(parseSearchParams(req));
   if (!parsed.success) return badRequest(parsed.error);
   try {

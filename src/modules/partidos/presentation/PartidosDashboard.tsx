@@ -18,11 +18,11 @@ import {
   PartidosIntlChannelBreakdown,
 } from './components/PartidosIntlCharts';
 
-export function PartidosDashboard() {
+export function PartidosDashboard({ email }: { email: string }) {
   const dim = usePartidosFilters((s) => s.dim);
   return (
     <>
-      <Header />
+      <Header email={email} />
       <PartidosDimTabBar />
       <main className="main">
         {dim === 'nacional' && (

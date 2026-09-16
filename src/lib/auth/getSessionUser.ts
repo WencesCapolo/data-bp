@@ -1,39 +1,27 @@
 import { headers } from 'next/headers';
-import { eq } from 'drizzle-orm';
-import { db } from '@shared/db/client';
-import { auth } from './server';
-import { authAllowedEmails } from './schema';
-import type { Role } from '@/lib/dashboards';
+import { authEnv } from '@/lib/env';
+import { resolveSessionUser, type Resolution, type SessionUser } from './acceso-policy';
+import { readAnalyticsAcceso, readSession } from './reads';
 
-export interface SessionUser {
-  id: string;
-  email: string;
-  name: string;
-  image: string | null;
-  role: Role;
+export type { SessionUser } from './acceso-policy';
+
+// Set by the proxy for every matched route; empty means "no return URL", and
+// the portal then lands the person on their default page.
+async function requestedUrl(): Promise<string> {
+  return (await headers()).get('x-url') ?? '';
 }
 
+// Session + analytics Acceso, resolved on every request. The role comes from
+// the Nivel of the `analytics` row, never from the portal-owned authUser.role.
+export async function resolveRequestUser(): Promise<Resolution> {
+  const session = await readSession();
+  const acceso = session ? await readAnalyticsAcceso(session.id) : null;
+  return resolveSessionUser({ session, acceso, returnTo: await requestedUrl(), portalUrl: authEnv.portalUrl });
+}
+
+// For API routes: null when there is no session or no Acceso (they answer 401).
+// Pages use requireSession, which redirects instead.
 export async function getSessionUser(): Promise<SessionUser | null> {
-  const session = await auth.api.getSession({ headers: await headers() });
-  if (!session?.user) return null;
-
-  // Identity is shared across *.basket-app.com, so a valid session may have been
-  // created by a sibling app (e.g. portal) and never passed through this app's
-  // databaseHooks. Authorize against the analytics allowlist on every read, and
-  // derive the role from it — never trust the shared, portal-owned authUser.role.
-  const rows = await db
-    .select({ role: authAllowedEmails.role })
-    .from(authAllowedEmails)
-    .where(eq(authAllowedEmails.email, session.user.email.toLowerCase()))
-    .limit(1);
-  if (rows.length === 0) return null;
-
-  const role: Role = rows[0]?.role === 'admin' ? 'admin' : 'viewer';
-  return {
-    id: session.user.id,
-    email: session.user.email,
-    name: session.user.name,
-    image: session.user.image ?? null,
-    role,
-  };
+  const r = await resolveRequestUser();
+  return r.kind === 'allow' ? r.user : null;
 }

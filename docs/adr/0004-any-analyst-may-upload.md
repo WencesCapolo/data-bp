@@ -19,3 +19,5 @@ updates but never deletes.
   signed-in Analyst, not the public.
 - A bad Upload is traceable to a person and a filename, but not automatically undone.
   Recovery is re-uploading a correct Export over the same Window.
+
+_Update (ADR 0008): the allowlist mentioned here is gone; an Analyst is anyone holding an `analytics` Acceso in the portal's Auth DB, and every Nivel may Upload._
