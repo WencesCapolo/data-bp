@@ -104,21 +104,28 @@ function DateTriple({
     const nn = daysInMonth(ny, nm);
     onChange(clamp(`${ny}-${pad2(nm)}-${pad2(Math.min(nd, nn))}`, min, max));
   };
+  // Options outside [min, max] are greyed out rather than snapped back after
+  // the fact: a day that has not happened yet, or before the data starts, is
+  // not a choice. A month or year is offered while any of its days is.
+  const dayOff = (dd: number) => { const iso = `${y}-${pad2(m)}-${pad2(dd)}`; return iso < min || iso > max; };
+  const monthOff = (mm: number) =>
+    `${y}-${pad2(mm)}-01` > max || `${y}-${pad2(mm)}-${pad2(daysInMonth(y, mm))}` < min;
+  const yearOff = (yy: number) => `${yy}-01-01` > max || `${yy}-12-31` < min;
   return (
     <div className="proto-date-triple">
       <select aria-label="día" value={pad2(d)} onChange={(e) => set(y, m, Number(e.target.value))}>
         {Array.from({ length: n }, (_, i) => (
-          <option key={i} value={pad2(i + 1)}>{pad2(i + 1)}</option>
+          <option key={i} value={pad2(i + 1)} disabled={dayOff(i + 1)}>{pad2(i + 1)}</option>
         ))}
       </select>
       <select aria-label="mes" value={pad2(m)} onChange={(e) => set(y, Number(e.target.value), d)}>
         {MONTHS_ES.map((name, i) => (
-          <option key={name} value={pad2(i + 1)}>{name}</option>
+          <option key={name} value={pad2(i + 1)} disabled={monthOff(i + 1)}>{name}</option>
         ))}
       </select>
       <select aria-label="año" value={String(y)} onChange={(e) => set(Number(e.target.value), m, d)}>
         {years.map((yy) => (
-          <option key={yy} value={String(yy)}>{yy}</option>
+          <option key={yy} value={String(yy)} disabled={yearOff(yy)}>{yy}</option>
         ))}
       </select>
     </div>

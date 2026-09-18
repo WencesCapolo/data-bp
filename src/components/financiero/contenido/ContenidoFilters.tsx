@@ -36,6 +36,14 @@ const legend: React.CSSProperties = {
   fontWeight: 600,
 };
 
+/** A typed date is clamped into [min, max]: the picker's own bounds only
+ *  govern the calendar popup, not the keyboard. An empty value (mid-edit)
+ *  stays as is. */
+function clampDay(iso: string, min: string, max: string): string {
+  if (!iso) return iso;
+  return iso < min ? min : iso > max ? max : iso;
+}
+
 export function ContenidoFilters({
   value,
   onChange,
@@ -63,8 +71,9 @@ export function ContenidoFilters({
           type="date"
           style={dateInput}
           value={value.from}
+          min={floor}
           max={value.to}
-          onChange={(e) => onChange({ ...value, from: e.target.value })}
+          onChange={(e) => onChange({ ...value, from: clampDay(e.target.value, floor, value.to) })}
         />
         <span style={{ fontSize: 11, color: 'var(--text3)' }}>→</span>
         <span style={legend}>Hasta</span>
@@ -73,7 +82,8 @@ export function ContenidoFilters({
           style={dateInput}
           value={value.to}
           min={value.from}
-          onChange={(e) => onChange({ ...value, to: e.target.value })}
+          max={ceiling}
+          onChange={(e) => onChange({ ...value, to: clampDay(e.target.value, value.from, ceiling) })}
         />
       </span>
 
