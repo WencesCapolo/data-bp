@@ -62,7 +62,7 @@ export function FinancieroHero() {
               Datos hasta
               <InfoHint text="El último día con Pagos ingestados. Todo lo que mira «hoy» en esta pantalla mira ese día: después de la última carga no hay altas y sí vencimientos." />
             </span>
-            <span className="v">{data ? fmtDayLong(data.lifecycle.asOf) : '—'}</span>
+            <span className="v">{data ? fmtDayLong(data.lifecycle.lastPagoDay) : '—'}</span>
           </div>
         </div>
       </div>

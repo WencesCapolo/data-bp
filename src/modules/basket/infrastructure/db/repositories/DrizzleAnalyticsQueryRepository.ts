@@ -216,14 +216,28 @@ const gatewayName = (platform: number): string =>
  *  preapprovals, both in basket_gateway_subscriptions. */
 const SUBSCRIPTION_PLATFORMS = '(0, 4)';
 
-// The rolling comparison on /financiero: the last 30 days against the 30
-// before. The daily series is fetched over both windows so the bajas of each
-// can be summed off the same rows the 15-day chart reads.
+// The rolling comparison on /financiero: the last W days of the range against
+// the W before, W being the range's length capped at 30. The daily series is
+// fetched over both windows so the bajas of each can be summed off the same
+// rows the 15-day chart reads.
 const PERIOD_WINDOW_DAYS = 30;
-/** Days of the daily lifecycle series to fetch: both windows, anchor included. */
-const DAILY_SPAN = 2 * PERIOD_WINDOW_DAYS - 1;
 /** Days the prototype's "últimos 15 días" charts show: the anchor and the 15 before it. */
 const DAILY_CHART_DAYS = 15;
+/** Days of the daily lifecycle series to fetch: both windows, anchor included,
+ *  and never fewer than the chart shows. */
+function dailySpan(windowDays: number): number {
+  return Math.max(2 * windowDays - 1, DAILY_CHART_DAYS);
+}
+/** The comparison window for a range: its own length in days, capped at
+ *  PERIOD_WINDOW_DAYS. On "todo" and the long presets that is the rolling 30. */
+function periodWindowDays(range: DateRange): number {
+  if (range.kind === 'all') return PERIOD_WINDOW_DAYS;
+  // On whole days: `to` is an end-of-day instant, `from` a midnight.
+  const { from, to } = rangeBounds(range);
+  const dayMs = (x: Date) => Date.parse(`${x.toISOString().slice(0, 10)}T00:00:00Z`);
+  const days = Math.round((dayMs(to) - dayMs(from)) / 86_400_000) + 1;
+  return Math.max(1, Math.min(PERIOD_WINDOW_DAYS, days));
+}
 
 /**
  * The Pagos fact table (migration 0021): basket_v_active_payments materialized
@@ -1264,8 +1278,18 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
         `));
 
     // The anchor every lifecycle figure hangs from, read once here so the
-    // rolling windows and the Provider net they compare are cut at the same day.
-    const asOf = await this.lifecycleAnchor();
+    // rolling windows and the Provider net they compare are cut at the same
+    // day: the range's last day, capped at the last day with a Pago. A range
+    // ending yesterday or later lands on the last Pago day, exactly as before;
+    // a range closed in the past moves every snapshot and window back to its
+    // end, so the rolling section and the KPIs answer the range as the rest of
+    // the page does.
+    const lastPagoDay = await this.lifecycleAnchor();
+    const asOf = t < lastPagoDay ? t : lastPagoDay;
+    const windowDays = periodWindowDays(range);
+    // basket_mat_period_windows holds the one pair the mat views know: 30 days
+    // at the last Pago day, unfiltered. Anything else is computed live.
+    const windowsPrecomputed = !hasFilters(filters) && asOf === lastPagoDay && windowDays === PERIOD_WINDOW_DAYS;
 
     // Two waves, at most eight queries in flight in either: the pool holds
     // ten, and a wider fan-out queues behind itself — a 24 kB mat-view read
@@ -1278,8 +1302,8 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
       this.getGatewayNet(range, filters),
     ]);
     const [lifecycle, windowNet] = await Promise.all([
-      this.getSubscriberLifecycle(range, filters, asOf),
-      this.windowNetUsd(asOf, filters),
+      this.getSubscriberLifecycle(range, filters, asOf, windowDays, windowsPrecomputed),
+      this.windowNetUsd(asOf, windowDays, filters),
     ]);
 
     const platformsWithGross = new Set(
@@ -1296,6 +1320,7 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
     // joined here because it comes from the fee mirror, not from Pagos.
     Object.assign(lifecycle.periodComparison.current, windowNet.current);
     Object.assign(lifecycle.periodComparison.previous, windowNet.previous);
+    lifecycle.lastPagoDay = lastPagoDay;
     return {
       range,
       totals: {
@@ -1392,6 +1417,8 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
     range: DateRange,
     filters: CommonFilters | undefined,
     asOf: string,
+    windowDays: number,
+    windowsPrecomputed: boolean,
   ): Promise<SubscriberLifecycleDTO> {
     const a = `'${asOf}'::date`;
     const fw = buildActiveFilterWhere(filters);
@@ -1444,7 +1471,7 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
     // history is the filtered one, so the filtered path computes it live.
     // Unfiltered, both windows are one row each of basket_mat_period_windows
     // (migration 0021, the same SQL as below with the filter removed).
-    const W = PERIOD_WINDOW_DAYS;
+    const W = windowDays;
     const windowTxRowsQ = () => this.conn.execute(sql.raw(`
       WITH w(w, s, e) AS (
         VALUES ('current',  ${a} - ${W - 1},     ${a}),
@@ -1511,16 +1538,19 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
       };
     };
 
+    // The daily/monthly mat views are full-history (one row per day since the
+    // first Pago), so they serve any anchor; only the filter forces them live.
+    const span = dailySpan(W);
     const [dailyRows, monthlyRows, activeRows, lifetimeRows] = hasFilters(filters)
-      ? await this.lifecycleLive(a, monthFrom, monthTo, fw)
-      : await this.lifecycleFromMatViews(a, monthFrom, monthTo);
+      ? await this.lifecycleLive(a, span, monthFrom, monthTo, fw)
+      : await this.lifecycleFromMatViews(a, span, monthFrom, monthTo);
     const lastChargeRows = await lastChargeRowsP;
     // After the scans above, not beside them: the point is not to widen the
     // fan-out — see the pool note in getEconomia.
     let monthFreqRows: unknown;
     let windowTxRows: unknown;
     let windowActiveRows: unknown;
-    if (hasFilters(filters)) {
+    if (!windowsPrecomputed) {
       monthFreqRows = await monthFreqRowsQ();
       windowTxRows = await windowTxRowsQ();
       windowActiveRows = await windowActiveRowsQ();
@@ -1530,7 +1560,7 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
       windowTxRows = win.tx;
       windowActiveRows = win.active;
     }
-    return this.toLifecycleDTO(asOf, {
+    return this.toLifecycleDTO(asOf, W, {
       dailyRows, monthlyRows, activeRows, lastChargeRows, lifetimeRows,
       monthFreqRows, windowTxRows, windowActiveRows,
     });
@@ -1544,9 +1574,10 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
    */
   private async windowNetUsd(
     asOf: string,
+    windowDays: number,
     filters?: CommonFilters,
   ): Promise<Record<'current' | 'previous', Pick<PeriodWindow, 'netUsdByPlatform' | 'outsidePagosNetUsdByPlatform'>>> {
-    const W = PERIOD_WINDOW_DAYS;
+    const W = windowDays;
     const from = shiftDay(asOf, -(2 * W - 1));
     const split = shiftDay(asOf, -W);
     const [moneyRows, outsideRows, fxRows] = await Promise.all([
@@ -1608,13 +1639,13 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
    * every Sync, so a request reads a few hundred rows instead of merging every
    * Subscriber's Pagos into coverage stretches on the spot (4–8 s live).
    */
-  private lifecycleFromMatViews(a: string, monthFrom: string, monthTo: string) {
+  private lifecycleFromMatViews(a: string, span: number, monthFrom: string, monthTo: string) {
     const run = (q: string) => this.conn.execute(sql.raw(q));
     return Promise.all([
       run(`
         SELECT day::text AS day, new_subscribers, reactivated, churned, active
         FROM basket_mat_subscriber_days
-        WHERE day BETWEEN ${a} - ${DAILY_SPAN} AND ${a}
+        WHERE day BETWEEN ${a} - ${span} AND ${a}
         ORDER BY day
       `),
       run(`
@@ -1667,7 +1698,7 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
    * shared memory segment ... No space left on device"). Both compose files set
    * shm_size to 256 MB; a Postgres without it fails here first.
    */
-  private lifecycleLive(a: string, monthFrom: string, monthTo: string, fw: string) {
+  private lifecycleLive(a: string, span: number, monthFrom: string, monthTo: string, fw: string) {
     const run = (q: string) => this.conn.execute(sql.raw(q));
       // The 60 days ending at the anchor — both rolling windows; the chart
       // takes the last 16. Membership is one row per (day, Subscriber) with two
@@ -1675,7 +1706,7 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
       // correlated scans of the pool.
     const dailyRowsP = run(`
       WITH days AS (
-        SELECT generate_series(${a} - ${DAILY_SPAN}, ${a}, INTERVAL '1 day')::date AS d
+        SELECT generate_series(${a} - ${span}, ${a}, INTERVAL '1 day')::date AS d
       ),
       cov AS (
         SELECT user_id, created_at::date AS s, (expires_at + INTERVAL '7 days')::date AS e
@@ -1683,7 +1714,7 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
         -- Bounds on the raw columns, so the expires_at index is used. A Pago
         -- whose coverage ended before the window (grace and the day before the
         -- first day included) cannot change who is in the pool on any day of it.
-        WHERE expires_at >= ${a} - INTERVAL '${DAILY_SPAN + 9} days'
+        WHERE expires_at >= ${a} - INTERVAL '${span + 9} days'
           AND created_at < ${a} + 1 ${fw}
       ),
       -- Gaps and islands: a Subscriber's overlapping or abutting Pagos merge
@@ -1841,6 +1872,7 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
 
   private toLifecycleDTO(
     asOf: string,
+    windowDays: number,
     rows: {
       dailyRows: unknown;
       monthlyRows: unknown;
@@ -1868,7 +1900,7 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
       freqByMonth.set(d(r.month), { mensual: n(r.mensual), anual: n(r.anual) });
     }
 
-    const W = PERIOD_WINDOW_DAYS;
+    const W = windowDays;
     const txRows = (rows.windowTxRows as unknown) as RowAny[];
     const actRows = (rows.windowActiveRows as unknown) as RowAny[];
     const window = (which: 'current' | 'previous'): PeriodWindow => {
@@ -1910,6 +1942,9 @@ export class DrizzleAnalyticsQueryRepository implements IAnalyticsQueryRepositor
 
     return {
       asOf,
+      // Overwritten by getEconomia, which read the anchor; equal to asOf unless
+      // the range closes before the last Pago.
+      lastPagoDay: asOf,
       daily: dailyAll.slice(-(DAILY_CHART_DAYS + 1)),
       monthly: ((rows.monthlyRows as unknown) as RowAny[]).map((r) => ({
         month: d(r.month),

@@ -39,7 +39,7 @@ import type { MonthlyLifecyclePoint, ActiveByMonthPoint } from '@basket/core/dto
  * La vista Suscriptores de /financiero: `public/dashboard.html`, tarjeta por
  * tarjeta y en su orden, con los números vivos.
  *
- * Snapshot de 30 días, dos filas de KPIs con desglose, la vista consolidada,
+ * Snapshot rolling (hasta 30 días), dos filas de KPIs con desglose, la vista consolidada,
  * los dos gráficos de 15 días, Real vs Plan, flujo mensual y mix de planes,
  * cancelaciones y antigüedad del último cargo, vida media, ingresos netos y
  * activos reales, temporadas, la tabla mes × temporada, comisiones, las dos
@@ -362,7 +362,7 @@ export function FinancieroView() {
   const feePct = totalUsdGross > 0 ? `${((totalFeeUsd / totalUsdGross) * 100).toFixed(1)}%` : '—';
   const usdMissing = usd.filter((t) => t.netUsd === null);
 
-  // ── Snapshot: rolling 30 días ──
+  // ── Snapshot: rolling, la ventana mide lo que dura el rango (hasta 30 días) ──
   const gwWindow = (side: typeof A, name: string): number =>
     Math.round(side.netUsdByPlatform.find((p) => p.platformName === name)?.netUsd ?? 0);
   const netA = sumBy(A.netUsdByPlatform, (p) => p.netUsd ?? 0);
@@ -445,7 +445,7 @@ export function FinancieroView() {
         <MsCol
           tone="tx"
           title="Transacciones"
-          hint="Pagos exitosos de los últimos 30 días hasta el último día con Pagos, contra los 30 anteriores. Cada Pago se clasifica por lo que significó para su Subscriber: alta si es el primero de su vida, recurrente si llega antes de 37 días tras el vencimiento anterior, reactivado si llega después. Bajas: Subscribers que salieron del pool en la ventana. Responde a los filtros."
+          hint={`Pagos exitosos de los últimos ${pc.windowDays} días del rango (nunca después del último día con Pagos), contra los ${pc.windowDays} anteriores. La ventana mide lo que dura el rango, hasta 30 días. Cada Pago se clasifica por lo que significó para su Subscriber: alta si es el primero de su vida, recurrente si llega antes de 37 días tras el vencimiento anterior, reactivado si llega después. Bajas: Subscribers que salieron del pool en la ventana. Responde al rango y a los filtros.`}
           big={fmt(A.tx.total)}
           bigDelta={{ d: delta(A.tx.total, B.tx.total), prev: fmt(B.tx.total) }}
           rows={[
@@ -496,9 +496,9 @@ export function FinancieroView() {
           icon="👥"
           title="Suscriptores activos"
           value={fmt(A.active.total)}
-          hint="Foto al último día con Pagos: Subscribers únicos con un Pago exitoso que cubre ese día (vencimiento más 7 días de gracia). Es la misma regla de «activo» de todo el dashboard. Responde a los filtros."
+          hint="Foto al último día del rango, nunca después del último día con Pagos: Subscribers únicos con un Pago exitoso que cubre ese día (vencimiento más 7 días de gracia). Es la misma regla de «activo» de todo el dashboard. Responde al rango y a los filtros."
         >
-          snapshot al {fmtDayShort(lc.asOf)} · total actualmente activos en la plataforma
+          snapshot al {fmtDayShort(A.end)} · {lc.asOf === lc.lastPagoDay ? 'total actualmente activos en la plataforma' : 'activos al cierre del rango'}
           <Breakdown
             rows={[
               { swatch: '#3b82f6', label: 'Mensuales', value: fmt(A.active.mensual), pct: pctOf(A.active.mensual, A.active.mensual + A.active.anual), color: '#1d4ed8' },
@@ -642,7 +642,7 @@ export function FinancieroView() {
       <Card
         title="📅 Últimos 15 días — altas, reactivados, bajas y suscripciones netas (por día)"
         note={`${countryNote} · hasta el ${asOfShort}`}
-        hint="Un Subscriber está activo un día si algún Pago exitoso lo cubre (desde su fecha hasta su vencimiento más 7 días de gracia). Alta nueva: entra al pool con su primer Pago de la vida. Reactivado: vuelve al pool tras haber salido. Baja: estaba ayer y hoy no. Las netas coinciden exactamente con la variación diaria de activos. La serie termina en el último día con Pagos, no en hoy."
+        hint="Un Subscriber está activo un día si algún Pago exitoso lo cubre (desde su fecha hasta su vencimiento más 7 días de gracia). Alta nueva: entra al pool con su primer Pago de la vida. Reactivado: vuelve al pool tras haber salido. Baja: estaba ayer y hoy no. Las netas coinciden exactamente con la variación diaria de activos. La serie termina en el último día del rango, nunca después del último día con Pagos."
         desc={
           <>
             Barras verdes (<b>altas nuevas</b>): suscriptores que pagan por primera vez en su vida. Barras naranjas (<b>reactivados</b>): ya pagaron antes, salieron del pool y vuelven hoy. Barras rojas (<b>bajas</b>): estaban activos ayer y hoy ya no. Línea azul (<b>netas</b>) = altas + reactivados − bajas, que coincide con el delta diario de la curva de activos. Responde a los filtros de arriba.
@@ -785,7 +785,7 @@ export function FinancieroView() {
         <Card
           title="📅 Suscriptores activos por antigüedad del último cargo"
           note={`· al ${asOfShort}`}
-          hint="Suscripciones que el Proveedor da por vivas (Stripe active/past_due/trialing, MercadoPago authorized), agrupadas por los días desde su último Pago exitoso, medidos al último día con Pagos. El Pago se une a la suscripción por el id de preaprobación en MercadoPago y por el email del cliente en Stripe. No afectado por los filtros."
+          hint="Suscripciones que el Proveedor da por vivas (Stripe active/past_due/trialing, MercadoPago authorized), agrupadas por los días desde su último Pago exitoso, medidos al último día del rango (nunca después del último día con Pagos). El Pago se une a la suscripción por el id de preaprobación en MercadoPago y por el email del cliente en Stripe. No afectado por los filtros."
           desc="Distribución de suscriptores actualmente authorized/active según cuándo fue su último cobro: ideal 0-30 días (al día). Las bandas más viejas (61+) son zombies o subs en mora — buena señal preventiva de churn próximo. Filtrable por pasarela."
           foot={lcUnknown > 0 ? `${fmt(lcUnknown)} suscripciones vivas sin Pago vinculado (cliente sin Subscriber conocido) quedan fuera de las barras.` : undefined}
         >
@@ -810,7 +810,7 @@ export function FinancieroView() {
       {/* ── Vida media ── */}
       <Card
         title="⏱️ Promedio de vida de un suscriptor"
-        hint="Meses de cobertura pagada por Subscriber, sumando la duración de todos sus Pagos exitosos (un mes por Pago mensual, doce por uno anual). Sólo entran los ciclos cerrados: Subscribers sin acceso vigente al último día con Pagos. Quien se fue y volvió es un solo ciclo con sus meses sumados. Responde a los filtros."
+        hint="Meses de cobertura pagada por Subscriber, sumando la duración de todos sus Pagos exitosos (un mes por Pago mensual, doce por uno anual). Sólo entran los ciclos cerrados: Subscribers sin acceso vigente al último día del rango (nunca después del último día con Pagos). Quien se fue y volvió es un solo ciclo con sus meses sumados. Responde a los filtros."
         desc="Meses promedio que un suscriptor se mantuvo activo, sumando reactivaciones (un cliente que canceló y volvió cuenta como un solo lifetime extendido). Sólo se promedian clientes «cerrados» (sin suscripción activa hoy) para no inflar con clientes vivos cuyo ciclo aún no terminó. Responde a los filtros."
         foot="Para Argentina (mayoría MP) la mediana es la mejor métrica — distribución muy sesgada por una larga cola de clientes legacy con muchos meses de antigüedad."
       >
@@ -852,7 +852,7 @@ export function FinancieroView() {
         </Card>
         <Card
           title="Suscriptores activos reales"
-          hint="Subscribers únicos con un Pago exitoso que cubre el último día del mes (vencimiento más 7 días de gracia). Barras: bajo un plan mensual y bajo uno anual; una persona con dos derechos cuenta en dos barras. Línea: personas únicas. El mes en curso se mide al último día con Pagos."
+          hint="Subscribers únicos con un Pago exitoso que cubre el último día del mes (vencimiento más 7 días de gracia). Barras: bajo un plan mensual y bajo uno anual; una persona con dos derechos cuenta en dos barras. Línea: personas únicas. El mes que cierra el rango se mide al último día del rango, nunca después del último día con Pagos."
           desc={
             <>
               Personas únicas con una <b>suscripción vigente</b> al cierre de cada mes: mensuales y anuales dentro de su cobertura pagada más 7 días de gracia. A diferencia del resto del dashboard, aquí cada persona cuenta una sola vez por mes aunque tenga varias transacciones.

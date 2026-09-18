@@ -108,7 +108,9 @@ export interface PeriodWindow {
 
 /**
  * The prototype's "Últimos N días vs N días anteriores": two windows of the
- * same length ending at `asOf` and the day before the current one starts. Not
+ * same length ending at `asOf` and the day before the current one starts. N is
+ * the range's length in days, capped at 30, so a 7-day range compares its
+ * week against the week before and "todo" keeps the rolling 30. Not
  * calendar months — a month in progress compared against a whole month reads
  * as a collapse every day until the 30th.
  */
@@ -167,11 +169,15 @@ export interface LifetimeStats {
 }
 
 export interface SubscriberLifecycleDTO {
-  /** The last day with a Pago (capped at yesterday). The daily series ends here
-   *  and the snapshots are taken here: after the last Upload every day would
-   *  show zero altas against real bajas, a collapse that never happened. */
+  /** The anchor: the range's last day, capped at `lastPagoDay`. The daily
+   *  series ends here and the snapshots are taken here. Never past the last
+   *  Pago: after the last Upload every day would show zero altas against real
+   *  bajas, a collapse that never happened. */
   asOf: string;
-  /** The 15 days ending at `asOf`, whatever the range: it is a pulse, not a cut. */
+  /** The last day with a Pago (capped at yesterday) — how far the data goes,
+   *  whatever the range. */
+  lastPagoDay: string;
+  /** The 15 days ending at `asOf`: a pulse at the range's end, not a cut. */
   daily: DailyLifecyclePoint[];
   /** Months the range touches, up to the month of `asOf`. */
   monthly: MonthlyLifecyclePoint[];
@@ -181,6 +187,7 @@ export interface SubscriberLifecycleDTO {
   lastCharge: LastChargeRow[];
   /** All-time at `asOf`, honouring the filters. */
   lifetime: LifetimeStats;
-  /** The rolling 30-day pair, honouring the filters. */
+  /** The rolling pair ending at `asOf`, honouring the filters: `windowDays`
+   *  is the range's length capped at 30. */
   periodComparison: PeriodComparison;
 }

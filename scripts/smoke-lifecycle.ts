@@ -139,17 +139,18 @@ async function main(): Promise<void> {
 
   console.log('\n=== 7. live path = mat-view path on an empty filter ===\n');
   const priv = repo as unknown as {
-    lifecycleLive(a: string, f: string, t: string, fw: string): Promise<unknown[]>;
-    lifecycleFromMatViews(a: string, f: string, t: string): Promise<unknown[]>;
+    lifecycleLive(a: string, span: number, f: string, t: string, fw: string): Promise<unknown[]>;
+    lifecycleFromMatViews(a: string, span: number, f: string, t: string): Promise<unknown[]>;
   };
+  const span = 2 * lc.periodComparison.windowDays - 1;
   const a = `'${lc.asOf}'::date`;
   const mf = `DATE_TRUNC('month', ${a} - INTERVAL '3 months')::date`;
   const mt = `DATE_TRUNC('month', ${a})::date`;
   const t2 = Date.now();
-  const viaLive = await priv.lifecycleLive(a, mf, mt, '');
+  const viaLive = await priv.lifecycleLive(a, span, mf, mt, '');
   const liveMs = Date.now() - t2;
   const t3 = Date.now();
-  const viaMat = await priv.lifecycleFromMatViews(a, mf, mt);
+  const viaMat = await priv.lifecycleFromMatViews(a, span, mf, mt);
   console.log(`  live ${(liveMs / 1000).toFixed(1)}s · mat views ${((Date.now() - t3) / 1000).toFixed(1)}s`);
   const norm = (v: unknown) => JSON.parse(JSON.stringify(v));
   const names = ['daily', 'monthly', 'activeByMonth', 'lifetime'];
