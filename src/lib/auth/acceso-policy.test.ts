@@ -18,15 +18,15 @@ describe('resolveSessionUser', () => {
     });
   });
 
-  it('maps Nivel admin to role admin', () => {
-    expect(resolveSessionUser({ session, acceso: { level: 'admin' }, returnTo: '', portalUrl: PORTAL })).toEqual({
+  it('maps catalog role admin (also what a super admin resolves to) to role admin', () => {
+    expect(resolveSessionUser({ session, acceso: { role: 'admin' }, returnTo: '', portalUrl: PORTAL })).toEqual({
       kind: 'allow',
       user: { ...session, role: 'admin' },
     });
   });
 
-  it.each(['read', 'write'] as const)('maps Nivel %s to role viewer', (level) => {
-    expect(resolveSessionUser({ session, acceso: { level }, returnTo: '', portalUrl: PORTAL })).toEqual({
+  it.each(['read', 'write'] as const)('maps catalog role %s to role viewer', (role) => {
+    expect(resolveSessionUser({ session, acceso: { role }, returnTo: '', portalUrl: PORTAL })).toEqual({
       kind: 'allow',
       user: { ...session, role: 'viewer' },
     });
