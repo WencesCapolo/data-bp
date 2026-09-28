@@ -39,9 +39,9 @@ describe('requireSession (pages)', () => {
     await expect(requireSession()).rejects.toThrow('REDIRECT https://portal.basket-app.com/no-access');
   });
 
-  it('returns the user with the role derived from the Nivel', async () => {
+  it('returns the user with the role derived from the catalog role', async () => {
     session.mockResolvedValue(ana);
-    acceso.mockResolvedValue({ level: 'read' });
+    acceso.mockResolvedValue({ role: 'read' });
     await expect(requireSession()).resolves.toEqual({ ...ana, role: 'viewer' });
     expect(acceso).toHaveBeenCalledWith('u1');
   });
@@ -50,7 +50,7 @@ describe('requireSession (pages)', () => {
 describe('requireDashboard', () => {
   it('admits a viewer to every dashboard', async () => {
     session.mockResolvedValue(ana);
-    acceso.mockResolvedValue({ level: 'write' });
+    acceso.mockResolvedValue({ role: 'write' });
     await expect(requireDashboard('partidos')).resolves.toMatchObject({ role: 'viewer' });
   });
 });
@@ -62,9 +62,16 @@ describe('getSessionUser (API routes)', () => {
     await expect(getSessionUser()).resolves.toBeNull();
   });
 
-  it('answers the admin user for Nivel admin', async () => {
+  it('answers the admin user for catalog role admin', async () => {
     session.mockResolvedValue(ana);
-    acceso.mockResolvedValue({ level: 'admin' });
+    acceso.mockResolvedValue({ role: 'admin' });
     await expect(getSessionUser()).resolves.toEqual({ ...ana, role: 'admin' });
+  });
+
+  it('answers the admin user for a super admin, whose view row is the admin role', async () => {
+    session.mockResolvedValue(ana);
+    acceso.mockResolvedValue({ role: 'admin' });
+    await expect(getSessionUser()).resolves.toEqual({ ...ana, role: 'admin' });
+    expect(acceso).toHaveBeenCalledWith('u1');
   });
 });

@@ -41,7 +41,7 @@ describe('GET /api/financiero/economia', () => {
 
   it('serves a lectura Analyst', async () => {
     session.mockResolvedValue({ id: 'u1', email: 'x@basquetpass.tv', name: 'X', image: null });
-    acceso.mockResolvedValue({ level: 'read' });
+    acceso.mockResolvedValue({ role: 'read' });
     expect((await GET(req())).status).toBe(200);
   });
 });

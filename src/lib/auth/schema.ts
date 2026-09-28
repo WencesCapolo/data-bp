@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, primaryKey, text, timestamp, boolean } from 'drizzle-orm/pg-core';
+import { pgTable, pgView, integer, text, timestamp, boolean } from 'drizzle-orm/pg-core';
 
 // ── Shared identity tables (basket_auth) ────────────────────────────────────
 // These MUST mirror the portal-owned physical schema exactly (drizzle/auth in the
@@ -56,25 +56,15 @@ export const authVerification = pgTable('auth_verification', {
   updatedAt: timestamp('updated_at').notNull(),
 });
 
-// ── Acceso (basket_auth, portal-owned) ───────────────────────────────────────
-// One identity's Nivel in one sibling app. Analytics reads its own row
-// (app = 'analytics') on every request; the portal writes it.
-export const appAccessApp = pgEnum('auth_app_access_app', ['analytics', 'incidencias', 'generator', 'ops']);
-
-export const appAccessLevel = pgEnum('auth_app_access_level', ['read', 'write', 'admin']);
-
-export const authAppAccess = pgTable(
-  'auth_app_access',
-  {
-    userId: text('user_id')
-      .notNull()
-      .references(() => authUser.id, { onDelete: 'cascade' }),
-    app: appAccessApp('app').notNull(),
-    level: appAccessLevel('level').notNull(),
-    grantedBy: text('granted_by').references(() => authUser.id, { onDelete: 'set null' }),
-    grantedAt: timestamp('granted_at').notNull().defaultNow(),
-  },
-  (table) => [primaryKey({ columns: [table.userId, table.app] })],
-);
-
-export type AccesoLevel = (typeof appAccessLevel.enumValues)[number];
+// ── Effective access (basket_auth, portal-owned view) ──────────────────────
+// One row per identity and app (ADR 0010 in the portal repo): the granted role,
+// or the app's admin role for a super admin who isn't banned. Analytics reads
+// its own row (app = 'analytics') on every request; the portal writes grants.
+export const authEffectiveAccess = pgView('auth_effective_access', {
+  userId: text('user_id').notNull(),
+  app: text('app').notNull(),
+  role: text('role').notNull(),
+  rank: integer('rank').notNull(),
+  isAdmin: boolean('is_admin').notNull(),
+  viaSuperadmin: boolean('via_superadmin').notNull(),
+}).existing();

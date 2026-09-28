@@ -1,4 +1,3 @@
-import type { AccesoLevel } from '@/lib/auth/schema';
 import type { Role } from '@/lib/dashboards';
 
 export interface Session {
@@ -8,8 +7,9 @@ export interface Session {
   image: string | null;
 }
 
+// An analytics role key from the portal catalog: 'read', 'write' or 'admin'.
 export interface Acceso {
-  level: AccesoLevel;
+  role: string;
 }
 
 export interface SessionUser extends Session {
@@ -26,10 +26,10 @@ export function portalLoginUrl(portalUrl: string, returnTo: string): string {
   return `${portalUrl}/login?redirectTo=${encodeURIComponent(returnTo)}`;
 }
 
-// Nivel → analytics role (spec #172): admin → admin, read and write → viewer.
-// All dashboards admit both roles; the role only decides what the header shows.
-export function roleFromNivel(level: AccesoLevel): Role {
-  return level === 'admin' ? 'admin' : 'viewer';
+// Catalog role → analytics role (spec #172): admin → admin, read and write →
+// viewer. All dashboards admit both; the role only decides what the header shows.
+export function roleFromAcceso(role: string): Role {
+  return role === 'admin' ? 'admin' : 'viewer';
 }
 
 // Pure gate. No session → portal login; a portal-valid session without an
@@ -42,5 +42,5 @@ export function resolveSessionUser(input: {
 }): Resolution {
   if (!input.session) return { kind: 'login', to: portalLoginUrl(input.portalUrl, input.returnTo) };
   if (!input.acceso) return { kind: 'no-access', to: `${input.portalUrl}/no-access` };
-  return { kind: 'allow', user: { ...input.session, role: roleFromNivel(input.acceso.level) } };
+  return { kind: 'allow', user: { ...input.session, role: roleFromAcceso(input.acceso.role) } };
 }
