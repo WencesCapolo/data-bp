@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveProxyRedirect } from '@/lib/auth/proxy-redirect';
+import { publicRequestUrl, resolveProxyRedirect } from '@/lib/auth/proxy-redirect';
 
 const PORTAL = 'https://portal.basket-app.com';
 
@@ -18,5 +18,21 @@ describe('resolveProxyRedirect', () => {
 
   it('lets a request with a session cookie through', () => {
     expect(resolveProxyRedirect({ hasSessionCookie: true, requestUrl: 'https://analytics.basket-app.com/basket', portalUrl: PORTAL })).toBeNull();
+  });
+});
+
+describe('publicRequestUrl', () => {
+  it('rebuilds the URL from the forwarded Host, not the listen address', () => {
+    expect(publicRequestUrl({ requestUrl: 'http://localhost:3001/basket?tab=teams', host: 'analytics.basket-app.com' })).toBe(
+      'https://analytics.basket-app.com/basket?tab=teams',
+    );
+  });
+
+  it('keeps http for a localhost Host', () => {
+    expect(publicRequestUrl({ requestUrl: 'http://localhost:3001/basket', host: 'localhost:3001' })).toBe('http://localhost:3001/basket');
+  });
+
+  it('falls back to the request URL without a Host', () => {
+    expect(publicRequestUrl({ requestUrl: 'http://localhost:3001/basket', host: null })).toBe('http://localhost:3001/basket');
   });
 });

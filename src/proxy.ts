@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSessionCookie } from 'better-auth/cookies';
-import { resolveProxyRedirect } from '@/lib/auth/proxy-redirect';
+import { publicRequestUrl, resolveProxyRedirect } from '@/lib/auth/proxy-redirect';
 import { authEnv } from '@/lib/env';
 
 const PUBLIC_API = new Set(['/api/basket/sync']);
@@ -34,9 +34,10 @@ export function proxy(req: NextRequest) {
     return NextResponse.next();
   }
 
+  const requestUrl = publicRequestUrl({ requestUrl: req.url, host: req.headers.get('host') });
   const decision = resolveProxyRedirect({
     hasSessionCookie: Boolean(getSessionCookie(req)),
-    requestUrl: req.url,
+    requestUrl,
     portalUrl: authEnv.portalUrl,
   });
   if (decision?.kind === 'unauthorized') {
@@ -46,7 +47,7 @@ export function proxy(req: NextRequest) {
 
   // Pages need the URL they were asked for to build their own login redirect.
   const requestHeaders = new Headers(req.headers);
-  requestHeaders.set('x-url', req.url);
+  requestHeaders.set('x-url', requestUrl);
   return NextResponse.next({ request: { headers: requestHeaders } });
 }
 
