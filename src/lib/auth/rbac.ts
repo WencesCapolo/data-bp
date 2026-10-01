@@ -6,7 +6,8 @@ import { findDashboard } from '@/lib/dashboards';
 export type { SessionUser };
 
 // Page gate. No session → portal login (with the requested URL so the person
-// comes back here); session without analytics Acceso → portal /no-access.
+// comes back here); session without analytics Acceso → the portal's Solicitud
+// form, /no-access?app=analytics.
 export async function requireSession(): Promise<SessionUser> {
   const r = await resolveRequestUser();
   if (r.kind !== 'allow') redirect(r.to);

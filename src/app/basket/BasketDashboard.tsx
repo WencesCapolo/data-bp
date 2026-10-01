@@ -1,4 +1,5 @@
 'use client';
+import type { ReactNode } from 'react';
 import { Header } from '@/components/layout/Header';
 import { TabBar } from '@/components/layout/TabBar';
 import { OverviewTab } from '@/components/tabs/OverviewTab';
@@ -11,13 +12,13 @@ import { TabBoundary } from '@/components/ui/TabBoundary';
 import { UrlFilterSync } from '@/lib/client/UrlFilterSync';
 import { useFilters } from '@/lib/client/filterStore';
 
-export function BasketDashboard({ email }: { email: string }) {
+export function BasketDashboard({ email, campana }: { email: string; campana?: ReactNode }) {
   const tab = useFilters((s) => s.tab);
 
   return (
     <>
       <UrlFilterSync />
-      <Header email={email} />
+      <Header email={email} campana={campana} />
       <TabBar />
       <main className="main">
         {tab === 'overview' && (

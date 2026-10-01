@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 import { fetcher } from '@/lib/client/fetcher';
 import { portalLogoutHref } from '@/lib/portal-links';
@@ -51,9 +51,12 @@ function relative(iso: string): string {
 interface HeaderProps {
   /** Who is signed in, read by the page's server component from the session. */
   email: string;
+  /** The Solicitudes bell, rendered by the page's server component; absent
+   *  for anyone who may not decide analytics Solicitudes. */
+  campana?: ReactNode;
 }
 
-export function Header({ email }: HeaderProps) {
+export function Header({ email, campana }: HeaderProps) {
   const [syncErr, setSyncErr] = useState<string | null>(null);
   // Which Upload is open. The two are one screen from the user's side and two
   // flows underneath: a Pagos Export runs a Sync, a fee Export writes the fee
@@ -203,6 +206,7 @@ export function Header({ email }: HeaderProps) {
         >
           {inFlight ? '…' : '↻ Sync'}
         </button>
+        {campana}
         <ThemeToggle />
         <span className="header-date">{new Date().toISOString().slice(0, 10)}</span>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>

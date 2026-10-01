@@ -1,17 +1,20 @@
 'use client';
+import type { ReactNode } from 'react';
 import { portalLogoutHref } from '@/lib/portal-links';
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
-import { HomeLink, BASE_DOMAIN_URL } from '@/components/ui/HomeLink';
+import { HomeLink } from '@/components/ui/HomeLink';
 
 interface Props {
   email: string;
   role: 'admin' | 'viewer';
-  /** Where the arrow goes. Landing leaves to the base domain. */
-  backHref?: string;
-  backTitle?: string;
+  /** The apex directory, or null for someone with fewer than two apps: then
+   *  there is nothing to go back to and the arrow is hidden. */
+  lanzadorUrl: string | null;
+  /** The Solicitudes bell, for analytics admins and super admins. */
+  campana?: ReactNode;
 }
 
-export function LandingHeader({ email, role, backHref = BASE_DOMAIN_URL, backTitle = 'Volver a basket-app.com' }: Props) {
+export function LandingHeader({ email, role, lanzadorUrl, campana }: Props) {
   return (
     <header className="header">
       <div className="header-left">
@@ -19,9 +22,10 @@ export function LandingHeader({ email, role, backHref = BASE_DOMAIN_URL, backTit
           <img src="/Basket.tv%20horizontal%20blanco.png" alt="Basket.tv" className="logo-img" />
           <span className="subtitle">Analytics</span>
         </a>
-        <HomeLink href={backHref} title={backTitle} />
+        {lanzadorUrl && <HomeLink href={lanzadorUrl} title="Volver a basket-app.com" />}
       </div>
       <div className="header-meta">
+        {campana}
         <ThemeToggle />
         <span style={{ color: 'var(--text2)' }}>{email}</span>
         <span className="subtitle">{role}</span>

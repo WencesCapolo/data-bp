@@ -1,4 +1,8 @@
 import { requireSession } from '@/lib/auth/rbac';
+import { lanzadorUrlFor } from '@/lib/auth/acceso-policy';
+import { readEffectiveAppCount } from '@/lib/auth/reads';
+import { authEnv } from '@/lib/env';
+import { SolicitudesDeAcceso } from '@/components/access-requests/SolicitudesDeAcceso';
 import { dashboardsForRole, findDashboard } from '@/lib/dashboards';
 import { LandingHeader } from '@/components/landing/LandingHeader';
 import { DashboardCard } from '@/components/landing/DashboardCard';
@@ -14,10 +18,16 @@ export default async function Home({ searchParams }: Props) {
   const dashboards = dashboardsForRole(user.role);
   const { denied } = await searchParams;
   const deniedDash = denied ? findDashboard(denied) : null;
+  const lanzadorUrl = lanzadorUrlFor({ appCount: await readEffectiveAppCount(user.id), portalUrl: authEnv.portalUrl });
 
   return (
     <>
-      <LandingHeader email={user.email} role={user.role} />
+      <LandingHeader
+        email={user.email}
+        role={user.role}
+        lanzadorUrl={lanzadorUrl}
+        campana={<SolicitudesDeAcceso userId={user.id} />}
+      />
       <main className="landing-main">
         <section className="landing-hero">
           <h1>Dashboards</h1>
