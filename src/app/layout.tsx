@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 import "./globals.css";
+import "./solicitudes.css";
 import { startSyncScheduler } from "@basket/infrastructure/cron/SyncScheduler";
 
 startSyncScheduler();

@@ -1,4 +1,5 @@
 'use client';
+import type { ReactNode } from 'react';
 import { Header } from '@/components/layout/Header';
 import { TabBoundary } from '@/components/ui/TabBoundary';
 import { usePartidosFilters } from './state/partidosFilterStore';
@@ -18,11 +19,11 @@ import {
   PartidosIntlChannelBreakdown,
 } from './components/PartidosIntlCharts';
 
-export function PartidosDashboard({ email }: { email: string }) {
+export function PartidosDashboard({ email, campana }: { email: string; campana?: ReactNode }) {
   const dim = usePartidosFilters((s) => s.dim);
   return (
     <>
-      <Header email={email} />
+      <Header email={email} campana={campana} />
       <PartidosDimTabBar />
       <main className="main">
         {dim === 'nacional' && (

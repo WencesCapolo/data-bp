@@ -1,4 +1,8 @@
+import { urlDeSolicitud, urlDelLanzador } from 'basket-tv-ui';
 import type { Role } from '@/lib/dashboards';
+
+// This app's key in the portal catalog (auth_app.key).
+export const ANALYTICS_APP = 'analytics';
 
 export interface Session {
   id: string;
@@ -33,7 +37,8 @@ export function roleFromAcceso(role: string): Role {
 }
 
 // Pure gate. No session → portal login; a portal-valid session without an
-// analytics Acceso → portal /no-access; never a refusal of its own.
+// analytics Acceso → the portal's Solicitud form for analytics
+// (/no-access?app=analytics); never a refusal of its own.
 export function resolveSessionUser(input: {
   session: Session | null;
   acceso: Acceso | null;
@@ -41,6 +46,13 @@ export function resolveSessionUser(input: {
   portalUrl: string;
 }): Resolution {
   if (!input.session) return { kind: 'login', to: portalLoginUrl(input.portalUrl, input.returnTo) };
-  if (!input.acceso) return { kind: 'no-access', to: `${input.portalUrl}/no-access` };
+  if (!input.acceso) return { kind: 'no-access', to: urlDeSolicitud(input.portalUrl, ANALYTICS_APP) };
   return { kind: 'allow', user: { ...input.session, role: roleFromAcceso(input.acceso.role) } };
+}
+
+// Volver rule (portal #197): the way back to the apex directory shows only
+// when there is something to choose, i.e. the person holds two or more apps
+// in auth_effective_access (the portal included when held).
+export function lanzadorUrlFor(input: { appCount: number; portalUrl: string }): string | null {
+  return input.appCount >= 2 ? urlDelLanzador(input.portalUrl) : null;
 }

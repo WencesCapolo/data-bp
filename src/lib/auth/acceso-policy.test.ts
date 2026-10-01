@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { portalLoginUrl, resolveSessionUser } from '@/lib/auth/acceso-policy';
+import { lanzadorUrlFor, portalLoginUrl, resolveSessionUser } from '@/lib/auth/acceso-policy';
 
 const PORTAL = 'https://portal.basket-app.com';
 const session = { id: 'u1', email: 'ana@basquetpass.tv', name: 'Ana', image: null };
@@ -11,10 +11,10 @@ describe('resolveSessionUser', () => {
     ).toEqual({ kind: 'login', to: `${PORTAL}/login?redirectTo=${encodeURIComponent('https://analytics.basket-app.com/basket?tab=teams')}` });
   });
 
-  it('sends a session without analytics Acceso to the portal no-access page', () => {
+  it('sends a session without analytics Acceso to the portal Solicitud form for analytics', () => {
     expect(resolveSessionUser({ session, acceso: null, returnTo: '', portalUrl: PORTAL })).toEqual({
       kind: 'no-access',
-      to: `${PORTAL}/no-access`,
+      to: `${PORTAL}/no-access?app=analytics`,
     });
   });
 
@@ -36,5 +36,15 @@ describe('resolveSessionUser', () => {
 describe('portalLoginUrl', () => {
   it('omits redirectTo when there is no return URL', () => {
     expect(portalLoginUrl(PORTAL, '')).toBe(`${PORTAL}/login`);
+  });
+});
+
+describe('lanzadorUrlFor', () => {
+  it('hides the way back for someone with only this app', () => {
+    expect(lanzadorUrlFor({ appCount: 1, portalUrl: PORTAL })).toBeNull();
+  });
+
+  it('points at the apex directory for someone with two or more apps', () => {
+    expect(lanzadorUrlFor({ appCount: 2, portalUrl: PORTAL })).toBe('https://basket-app.com');
   });
 });

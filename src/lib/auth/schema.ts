@@ -1,4 +1,4 @@
-import { pgTable, pgView, integer, text, timestamp, boolean } from 'drizzle-orm/pg-core';
+import { pgTable, pgView, integer, text, timestamp, boolean, bigserial, jsonb, uuid } from 'drizzle-orm/pg-core';
 
 // ── Shared identity tables (basket_auth) ────────────────────────────────────
 // These MUST mirror the portal-owned physical schema exactly (drizzle/auth in the
@@ -68,3 +68,55 @@ export const authEffectiveAccess = pgView('auth_effective_access', {
   isAdmin: boolean('is_admin').notNull(),
   viaSuperadmin: boolean('via_superadmin').notNull(),
 }).existing();
+
+// ── Acceso catalog and grants (basket_auth, portal-owned) ──────────────────
+// Mirrors of existing tables for the Solicitudes bell: no migrations here, the
+// portal owns drizzle/auth/ (drizzle.config.ts never lists this file). Higher
+// rank outranks lower within one app.
+export const authAppRole = pgTable('auth_app_role', {
+  app: text('app').notNull(),
+  key: text('key').notNull(),
+  label: text('label').notNull(),
+  description: text('description'),
+  rank: integer('rank').notNull(),
+  isAdmin: boolean('is_admin').notNull(),
+});
+
+// One identity's role in one app; (user_id, app) is the primary key.
+export const authAppAccess = pgTable('auth_app_access', {
+  userId: text('user_id').notNull(),
+  app: text('app').notNull(),
+  role: text('role').notNull(),
+  grantedBy: text('granted_by'),
+  grantedAt: timestamp('granted_at').notNull(),
+});
+
+export const authAuditLog = pgTable('auth_audit_log', {
+  id: bigserial('id', { mode: 'number' }).primaryKey(),
+  actorId: text('actor_id'),
+  targetUserId: text('target_user_id'),
+  action: text('action').notNull(),
+  detail: jsonb('detail'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+// Solicitud de acceso (portal ADR 0011): one identity asking for one app.
+// status is 'pendiente' | 'aprobada' | 'rechazada'; the rules this app applies
+// to it live in src/lib/access-requests/requests.ts.
+export const authAccessRequest = pgTable('auth_access_request', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: text('user_id').notNull(),
+  app: text('app').notNull(),
+  email: text('email').notNull(),
+  fullName: text('full_name').notNull(),
+  phone: text('phone').notNull(),
+  funcion: text('funcion'),
+  ciudad: text('ciudad'),
+  mensaje: text('mensaje'),
+  status: text('status').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  decidedAt: timestamp('decided_at', { withTimezone: true }),
+  decidedBy: text('decided_by'),
+  grantedRole: text('granted_role'),
+  personId: uuid('person_id'),
+});

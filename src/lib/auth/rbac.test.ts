@@ -33,10 +33,10 @@ describe('requireSession (pages)', () => {
     expect(acceso).not.toHaveBeenCalled();
   });
 
-  it('redirects to the portal no-access page when the session has no analytics row', async () => {
+  it('redirects to the portal Solicitud form for analytics when the session has no analytics row', async () => {
     session.mockResolvedValue(ana);
     acceso.mockResolvedValue(null);
-    await expect(requireSession()).rejects.toThrow('REDIRECT https://portal.basket-app.com/no-access');
+    await expect(requireSession()).rejects.toThrow('REDIRECT https://portal.basket-app.com/no-access?app=analytics');
   });
 
   it('returns the user with the role derived from the catalog role', async () => {

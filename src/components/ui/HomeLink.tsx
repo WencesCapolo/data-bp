@@ -1,7 +1,7 @@
 /** Arrow-only "back" link, styled after the portal's `Volver` button: a
  *  bordered surface box with a 20px arrow. Dashboards return to the analytics
- *  landing (`/`); the landing itself leaves the subdomain for the base domain. */
-export const BASE_DOMAIN_URL = 'https://basket-app.com';
+ *  landing (`/`); the landing itself goes to the apex directory, only for
+ *  someone with two or more apps (lanzadorUrlFor). */
 
 interface Props {
   href: string;
