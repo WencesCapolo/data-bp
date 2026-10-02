@@ -9,6 +9,10 @@ startSyncScheduler();
 export const metadata: Metadata = {
   title: "Basket.tv — Analytics",
   description: "Dashboard de suscriptores",
+  icons: {
+    icon: { url: "/favicon.webp", type: "image/webp" },
+    apple: { url: "/icons/apple-touch-icon.png", sizes: "180x180" },
+  },
 };
 
 export const viewport: Viewport = {
