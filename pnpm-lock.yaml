@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       basket-tv-ui:
-        specifier: github:WencesCapolo/basket-tv-ui#v0.2.1
-        version: https://codeload.github.com/WencesCapolo/basket-tv-ui/tar.gz/19852f8029b0f84eda4e664283c99d1577f1e1de(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+        specifier: github:WencesCapolo/basket-tv-ui#v0.2.2
+        version: https://codeload.github.com/WencesCapolo/basket-tv-ui/tar.gz/56d9593adf00e3523baf83b47e7ec2a5df7f8335(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       better-auth:
         specifier: 1.6.33
         version: 1.6.33(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(kysely@0.28.17)(postgres@3.4.9))(next@16.2.6(@babel/core@7.29.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(vitest@5.0.0(@types/node@20.19.41)(vite@8.2.2(@types/node@20.19.41)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.0)))
@@ -1530,9 +1530,9 @@ packages:
     engines: {node: '>=6.0.0'}
     hasBin: true
 
-  basket-tv-ui@https://codeload.github.com/WencesCapolo/basket-tv-ui/tar.gz/19852f8029b0f84eda4e664283c99d1577f1e1de:
-    resolution: {tarball: https://codeload.github.com/WencesCapolo/basket-tv-ui/tar.gz/19852f8029b0f84eda4e664283c99d1577f1e1de}
-    version: 0.2.1
+  basket-tv-ui@https://codeload.github.com/WencesCapolo/basket-tv-ui/tar.gz/56d9593adf00e3523baf83b47e7ec2a5df7f8335:
+    resolution: {tarball: https://codeload.github.com/WencesCapolo/basket-tv-ui/tar.gz/56d9593adf00e3523baf83b47e7ec2a5df7f8335}
+    version: 0.2.2
     peerDependencies:
       react: '>=19'
       react-dom: '>=19'
@@ -4641,7 +4641,7 @@ snapshots:
 
   baseline-browser-mapping@2.10.29: {}
 
-  basket-tv-ui@https://codeload.github.com/WencesCapolo/basket-tv-ui/tar.gz/19852f8029b0f84eda4e664283c99d1577f1e1de(react-dom@19.2.4(react@19.2.4))(react@19.2.4):
+  basket-tv-ui@https://codeload.github.com/WencesCapolo/basket-tv-ui/tar.gz/56d9593adf00e3523baf83b47e7ec2a5df7f8335(react-dom@19.2.4(react@19.2.4))(react@19.2.4):
     dependencies:
       react: 19.2.4
       react-dom: 19.2.4(react@19.2.4)
