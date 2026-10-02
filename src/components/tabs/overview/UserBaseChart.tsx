@@ -4,6 +4,7 @@ import type { ChartConfiguration } from 'chart.js';
 import { ChartCanvas } from '@/components/charts/ChartCanvas';
 import { bucketTitles } from '@/lib/client/bucketTitle';
 import { tooltipOpts } from '@/components/charts/tooltip';
+import { CHART_THEME, SERIES, TREND } from '@/lib/client/palette';
 import type { Bucket, Bucketed } from '@/lib/client/buckets';
 
 const CHART_HEIGHT = 300;
@@ -25,8 +26,8 @@ export function UserBaseChart({ series, bucket }: { series: MovementSeries; buck
             type: 'line',
             label: 'Suscriptores activos',
             data: series.stocks.activeSubs,
-            borderColor: '#06b6d4',
-            backgroundColor: 'rgba(6,182,212,.12)',
+            borderColor: SERIES[1],
+            backgroundColor: 'rgba(8,145,178,.12)',
             borderWidth: 2,
             pointRadius: 0,
             fill: true,
@@ -38,7 +39,7 @@ export function UserBaseChart({ series, bucket }: { series: MovementSeries; buck
             type: 'bar',
             label: 'Nuevos',
             data: series.flows.nuevos,
-            backgroundColor: '#10b981',
+            backgroundColor: TREND.up,
             borderRadius: 2,
             stack: 'mov',
             yAxisID: 'y',
@@ -48,7 +49,7 @@ export function UserBaseChart({ series, bucket }: { series: MovementSeries; buck
             type: 'bar',
             label: 'Reactivaciones',
             data: series.flows.reactivaciones,
-            backgroundColor: '#a78bfa',
+            backgroundColor: SERIES[3],
             borderRadius: 2,
             stack: 'mov',
             yAxisID: 'y',
@@ -58,7 +59,7 @@ export function UserBaseChart({ series, bucket }: { series: MovementSeries; buck
             type: 'bar',
             label: 'Renovaciones',
             data: series.flows.renovaciones,
-            backgroundColor: '#4f8ef7',
+            backgroundColor: SERIES[0],
             borderRadius: 2,
             stack: 'mov',
             yAxisID: 'y',
@@ -86,7 +87,7 @@ export function UserBaseChart({ series, bucket }: { series: MovementSeries; buck
             stacked: true,
             position: 'left',
             beginAtZero: true,
-            grid: { color: '#1e2a42' },
+            grid: { color: CHART_THEME.grid },
             ticks: { font: { size: 10 } },
             title: { display: true, text: 'altas del período', font: { size: 9 } },
           },
@@ -94,19 +95,15 @@ export function UserBaseChart({ series, bucket }: { series: MovementSeries; buck
             position: 'right',
             grid: { display: false },
             beginAtZero: true,
-            ticks: { font: { size: 10 }, color: '#06b6d4' },
-            title: { display: true, text: 'activos', color: '#06b6d4', font: { size: 9 } },
+            ticks: { font: { size: 10 }, color: SERIES[1] },
+            title: { display: true, text: 'activos', color: SERIES[1], font: { size: 9 } },
           },
         },
       },
     };
   }, [series, bucket]);
 
-  // See TeamMovementChart: a fixed-height relative box, because an auto-height
-  // parent sized by the canvas creeps down a few px on every resize tick.
-  return (
-    <div style={{ position: 'relative', height: CHART_HEIGHT }}>
-      <ChartCanvas config={config} height={CHART_HEIGHT} />
-    </div>
-  );
+  // ChartCanvas owns the fixed-height relative box: an auto-height parent sized
+  // by the canvas creeps down a few px on every resize tick.
+  return <ChartCanvas config={config} height={CHART_HEIGHT} />;
 }

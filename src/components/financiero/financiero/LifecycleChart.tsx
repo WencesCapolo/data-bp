@@ -2,7 +2,7 @@
 import { useMemo } from 'react';
 import type { ChartConfiguration } from 'chart.js';
 import { ChartCanvas } from '@/components/charts/ChartCanvas';
-import { useChartTheme } from '@/lib/client/theme';
+import { CHART_THEME } from '@/lib/client/palette';
 import { tooltipBase } from '@/components/charts/tooltip';
 import { fmt } from '@/components/financiero/contenido/format';
 
@@ -57,7 +57,6 @@ export function LifecycleChart({
   yMax?: number;
   legend?: boolean;
 }) {
-  const chartTheme = useChartTheme();
   const config = useMemo<ChartConfiguration>(
     () => ({
       type: 'bar',
@@ -99,7 +98,7 @@ export function LifecycleChart({
         plugins: {
           legend: { display: legend, position: 'bottom', labels: { boxWidth: 10, padding: 12, usePointStyle: true } },
           tooltip: {
-            ...tooltipBase(chartTheme),
+            ...tooltipBase(CHART_THEME),
             callbacks: {
               title: (items) =>
                 tooltipTitles?.[items[0]?.dataIndex ?? -1] ?? String(items[0]?.label ?? ''),
@@ -118,13 +117,13 @@ export function LifecycleChart({
             min: yMin,
             max: yMax,
             beginAtZero: yMin === undefined,
-            grid: { color: chartTheme.grid },
+            grid: { color: CHART_THEME.grid },
             ticks: { font: { size: 10 }, callback: (v) => fmt(Math.abs(Number(v))) },
           },
         },
       },
     }),
-    [labels, bars, lines, tooltipTitles, chartTheme, yMin, yMax, legend],
+    [labels, bars, lines, tooltipTitles, yMin, yMax, legend],
   );
   return <ChartCanvas config={config} height={height} />;
 }

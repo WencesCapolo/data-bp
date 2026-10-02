@@ -8,6 +8,7 @@ import {
   type FeeUploadRejection,
   type FeeUploadResultDTO,
 } from '@basket/core/dtos/FeeUploadDTO';
+import { ADVICE, M, dropzone } from './modalStyles';
 
 /**
  * The Upload screen's second source: a Provider's own fee Export.
@@ -216,7 +217,7 @@ export function FeeUploadModal({ onClose, onSwitchToPagos }: Props) {
 
   return (
     <div
-      className="modal-overlay"
+      className={M.overlay}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget && !busy) onClose();
       }}
@@ -227,33 +228,34 @@ export function FeeUploadModal({ onClose, onSwitchToPagos }: Props) {
         aria-modal="true"
         aria-labelledby="fee-modal-title"
         tabIndex={-1}
-        className="modal-dialog"
+        className={M.dialog}
         onKeyDown={onKeyDown}
       >
-        <div className="modal-head">
-          <h2 className="modal-title" id="fee-modal-title">
+        <div className={M.head}>
+          <h2 className={M.title} id="fee-modal-title">
             {step === 3 ? 'Comisiones cargadas' : step === 2 ? 'Revisar el Export de comisiones' : 'Subir un Export de comisiones'}
           </h2>
-          <span style={{ fontSize: 11, color: 'var(--text3)', fontFamily: "'DM Mono', monospace" }}>
+          <span className={M.step}>
             paso {step} de 3
           </span>
         </div>
 
-        <div className="modal-body">
+        <div className={M.body}>
           {step === 1 && (
             <>
-              <p style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.6, marginBottom: 14 }}>
+              <p className={M.intro}>
                 Este Export lo entrega el Provider, no nuestro Control Panel: es lo que{' '}
                 <strong>nos cobró</strong>. No dispara un Sync — escribe las comisiones y
                 reconstruye la vista que las lee.
               </p>
 
-              <div className="date-pills" style={{ marginBottom: 12 }}>
+              <div className="mb-3 flex flex-wrap gap-1.5" role="group" aria-label="Provider">
                 {FEE_EXPORT_SOURCES.map((s) => (
                   <button
                     key={s.id}
                     type="button"
-                    className={`date-pill ${s.id === sourceId ? 'active' : ''}`}
+                    className="pill"
+                    aria-pressed={s.id === sourceId}
                     onClick={() => {
                       setSourceId(s.id);
                       setFile(null);
@@ -265,7 +267,7 @@ export function FeeUploadModal({ onClose, onSwitchToPagos }: Props) {
                 ))}
               </div>
 
-              <ul className="modal-checklist">
+              <ul className={M.checklist}>
                 <li>{spec.hint}</li>
                 <li>
                   Un <strong>archivo por mes</strong>: el panel limita el rango de cada reporte,
@@ -278,7 +280,7 @@ export function FeeUploadModal({ onClose, onSwitchToPagos }: Props) {
               </ul>
 
               {rejection && (
-                <div className="modal-advice is-error" role="alert">
+                <div className={ADVICE.error} role="alert">
                   {rejection.message}
                 </div>
               )}
@@ -288,12 +290,12 @@ export function FeeUploadModal({ onClose, onSwitchToPagos }: Props) {
                 type="file"
                 accept={spec.accept}
                 aria-label={`Export de ${spec.label}`}
-                style={{ display: 'none' }}
+                className="hidden"
                 onChange={(e) => pick(e.target.files?.[0] ?? null)}
               />
               <button
                 type="button"
-                className={`dropzone${dragging ? ' is-dragging' : ''}${file ? ' has-file' : ''}`}
+                className={dropzone({ dragging, hasFile: Boolean(file) })}
                 disabled={uploading}
                 onDragOver={(e) => {
                   e.preventDefault();
@@ -310,32 +312,29 @@ export function FeeUploadModal({ onClose, onSwitchToPagos }: Props) {
               >
                 {file ? (
                   <>
-                    <div style={{ color: 'var(--text)', fontSize: 13, marginBottom: 4 }}>{file.name}</div>
-                    <div style={{ fontSize: 11, color: 'var(--text3)' }}>
+                    <div className="mb-1 text-[13px] text-foreground">{file.name}</div>
+                    <div className="text-[11px] text-muted">
                       {fmtSize(file.size)} · clic para elegir otro
                     </div>
                   </>
                 ) : (
                   <>
-                    <div style={{ color: 'var(--text)', fontSize: 13, marginBottom: 4 }}>
+                    <div className="mb-1 text-[13px] text-foreground">
                       Arrastrá el archivo acá
                     </div>
-                    <div style={{ fontSize: 11, color: 'var(--text3)' }}>
+                    <div className="text-[11px] text-muted">
                       o hacé clic para buscarlo en tu equipo
                     </div>
                   </>
                 )}
               </button>
 
-              <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 12, lineHeight: 1.6 }}>
+              <p className={`mt-3 ${M.note}`}>
                 ¿Buscabas el Export de <strong>Pagos</strong> del Control Panel?{' '}
                 <button
                   type="button"
                   onClick={onSwitchToPagos}
-                  style={{
-                    background: 'transparent', border: 'none', padding: 0,
-                    color: 'var(--blue)', cursor: 'pointer', fontSize: 11, textDecoration: 'underline',
-                  }}
+                  className={M.link}
                 >
                   Subirlo por acá
                 </button>
@@ -346,79 +345,79 @@ export function FeeUploadModal({ onClose, onSwitchToPagos }: Props) {
 
           {preview && (
             <>
-              <p style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 14, lineHeight: 1.6 }}>
+              <p className={M.intro}>
                 Todavía no se escribió nada. {preview.sourceLabel} · {preview.platformName}.
               </p>
 
-              <div className="modal-stats">
-                <div className="modal-stat">
-                  <div className="modal-stat-label">Operaciones</div>
-                  <div className="modal-stat-value">{fmtNum(preview.rows)}</div>
+              <div className={M.stats}>
+                <div className={M.stat}>
+                  <div className={M.statLabel}>Operaciones</div>
+                  <div className={M.statValue}>{fmtNum(preview.rows)}</div>
                 </div>
-                <div className="modal-stat">
-                  <div className="modal-stat-label">Comisión</div>
-                  <div className="modal-stat-value" style={{ color: 'var(--red)' }}>
+                <div className={M.stat}>
+                  <div className={M.statLabel}>Comisión</div>
+                  <div className={`${M.statValue} text-red-700`}>
                     {preview.feePct}%
                   </div>
                 </div>
-                <div className="modal-stat">
-                  <div className="modal-stat-label">Retención</div>
-                  <div className="modal-stat-value" style={{ color: 'var(--yellow)' }}>
+                <div className={M.stat}>
+                  <div className={M.statLabel}>Retención</div>
+                  <div className={`${M.statValue} text-amber-700`}>
                     {preview.taxPct}%
                   </div>
                 </div>
-                <div className="modal-stat">
-                  <div className="modal-stat-label">Con Pago en el espejo</div>
-                  <div className="modal-stat-value" style={{ color: 'var(--green)' }}>
+                <div className={M.stat}>
+                  <div className={M.statLabel}>Con Pago en el espejo</div>
+                  <div className={`${M.statValue} text-[var(--ok)]`}>
                     {fmtNum(preview.matchedPagos)}
                   </div>
                 </div>
               </div>
 
-              <p style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 14, lineHeight: 1.6 }}>
+              <p className={`mb-3.5 ${M.note}`}>
                 La comisión se gasta; la retención vuelve como crédito fiscal. Se guardan en
                 columnas distintas justamente para no sumarlas y decir que el Provider cuesta
                 cuatro veces lo que cobra.
               </p>
 
-              <div style={{ marginBottom: 16 }}>
-                <div className="modal-stat-label">Importes</div>
-                <div className="modal-kv">
-                  <span style={{ color: 'var(--text)' }}>Bruto</span>
+              <div className="mb-4">
+                <div className={M.statLabel}>Importes</div>
+                <div className={M.kv}>
+                  <span className="text-foreground">Bruto</span>
                   <span>{fmtMoney(preview.grossTotal, preview.currency)}</span>
                 </div>
-                <div className="modal-kv">
-                  <span style={{ color: 'var(--text)' }}>Comisión</span>
+                <div className={M.kv}>
+                  <span className="text-foreground">Comisión</span>
                   <span>{fmtMoney(preview.feeTotal, preview.currency)}</span>
                 </div>
-                <div className="modal-kv">
-                  <span style={{ color: 'var(--text)' }}>Retención</span>
+                <div className={M.kv}>
+                  <span className="text-foreground">Retención</span>
                   <span>{fmtMoney(preview.taxTotal, preview.currency)}</span>
                 </div>
-                <div className="modal-kv">
-                  <span style={{ color: 'var(--text)' }}>Neto</span>
+                <div className={M.kv}>
+                  <span className="text-foreground">Neto</span>
                   <span>{fmtMoney(preview.netTotal, preview.currency)}</span>
                 </div>
               </div>
 
-              <div style={{ marginBottom: 16 }}>
-                <div className="modal-stat-label">Window</div>
-                <div className="modal-kv">
+              <div className="mb-4">
+                <div className={M.statLabel}>Window</div>
+                <div className={M.kv}>
                   <span>
                     {fmtDate(preview.windowFrom)} → {fmtDate(preview.windowTo)}
                   </span>
-                  <span style={{ color: 'var(--text3)' }}>{preview.filename}</span>
+                  <span className="text-muted">{preview.filename}</span>
                 </div>
               </div>
 
               {Object.keys(preview.byStatus).length > 0 && (
-                <div style={{ marginBottom: 16 }}>
-                  <div className="modal-stat-label">Por estado</div>
+                <div className="mb-4">
+                  <div className={M.statLabel}>Por estado</div>
                   {Object.entries(preview.byStatus)
                     .sort((a, b) => b[1] - a[1])
                     .map(([status, count]) => (
-                      <div className="modal-kv" key={status}>
-                        <span style={{ color: 'var(--text)' }}>{status}</span>
+                      <div className={M.kv} key={status}>
+                        <span className="text-foreground">{status}</span>
                         <span>{fmtNum(count)}</span>
                       </div>
                     ))}
@@ -426,12 +425,12 @@ export function FeeUploadModal({ onClose, onSwitchToPagos }: Props) {
               )}
 
               {preview.warnings.map((w) => (
-                <div className="modal-advice is-warn" key={`${w.code}:${w.count ?? 0}`} role="status">
+                <div className={ADVICE.warn} key={`${w.code}:${w.count ?? 0}`} role="status">
                   {w.message}
                 </div>
               ))}
               {rejection && (
-                <div className="modal-advice is-error" role="alert">
+                <div className={ADVICE.error} role="alert">
                   {rejection.message}
                 </div>
               )}
@@ -440,21 +439,21 @@ export function FeeUploadModal({ onClose, onSwitchToPagos }: Props) {
 
           {result && (
             <>
-              <div className="modal-stats">
-                <div className="modal-stat">
-                  <div className="modal-stat-label">Filas escritas</div>
-                  <div className="modal-stat-value" style={{ color: 'var(--green)' }}>
+              <div className={M.stats}>
+                <div className={M.stat}>
+                  <div className={M.statLabel}>Filas escritas</div>
+                  <div className={`${M.statValue} text-[var(--ok)]`}>
                     {fmtNum(result.upserted)}
                   </div>
                 </div>
-                <div className="modal-stat">
-                  <div className="modal-stat-label">Window</div>
-                  <div className="modal-stat-value" style={{ fontSize: 13 }}>
+                <div className={M.stat}>
+                  <div className={M.statLabel}>Window</div>
+                  <div className={`${M.statValue} text-[13px]`}>
                     {fmtDate(result.windowFrom)} → {fmtDate(result.windowTo)}
                   </div>
                 </div>
               </div>
-              <p style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.6 }}>
+              <p className="text-xs leading-relaxed text-n-700">
                 {result.viewRefreshMs === null ? (
                   <>
                     Las comisiones quedaron guardadas, pero la vista no se pudo reconstruir ahora.
@@ -471,7 +470,7 @@ export function FeeUploadModal({ onClose, onSwitchToPagos }: Props) {
           )}
         </div>
 
-        <div className="modal-foot">
+        <div className={M.foot}>
           {preview && (
             <button
               type="button"
@@ -491,8 +490,7 @@ export function FeeUploadModal({ onClose, onSwitchToPagos }: Props) {
           {step === 1 && (
             <button
               type="button"
-              className="btn-primary"
-              style={{ padding: '8px 14px', fontSize: 13 }}
+              className={M.primary}
               disabled={!file || uploading}
               onClick={analyse}
             >
@@ -502,8 +500,7 @@ export function FeeUploadModal({ onClose, onSwitchToPagos }: Props) {
           {step === 2 && (
             <button
               type="button"
-              className="btn-primary"
-              style={{ padding: '8px 14px', fontSize: 13 }}
+              className={M.primary}
               disabled={ingesting}
               onClick={confirm}
             >
@@ -513,8 +510,7 @@ export function FeeUploadModal({ onClose, onSwitchToPagos }: Props) {
           {step === 3 && (
             <button
               type="button"
-              className="btn-primary"
-              style={{ padding: '8px 14px', fontSize: 13 }}
+              className={M.primary}
               onClick={() => {
                 setResult(null);
                 setFile(null);

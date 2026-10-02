@@ -47,7 +47,7 @@ export function TeamsTab() {
   const team = list.find((t) => t.teamId === selected) ?? list[0];
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '340px 1fr', gap: 16, alignItems: 'start' }}>
+    <div className="grid items-start gap-4 lg:grid-cols-[340px_minmax(0,1fr)]">
       <TeamList
         teams={list}
         selectedId={team?.teamId}
@@ -58,11 +58,11 @@ export function TeamsTab() {
         onSortChange={setSort}
       />
       {/* min-height keeps the skeleton → data swap from jumping the layout. */}
-      <div style={{ minHeight: '70vh' }}>
+      <div className="min-h-[70vh] min-w-0">
         {team ? (
           <TeamDetail team={team} filterQS={filterQS} from={data.from} to={data.to} />
         ) : (
-          <div className="no-data">Sin equipos para el rango/filtros seleccionados</div>
+          <div className="card p-10 text-center text-sm text-muted">Sin equipos para el rango/filtros seleccionados</div>
         )}
       </div>
     </div>

@@ -1,7 +1,7 @@
 'use client';
-import type { ReactNode } from 'react';
-import { Header } from '@/components/layout/Header';
 import { TabBoundary } from '@/components/ui/TabBoundary';
+import { PageTitle } from '@/components/ui/PageTitle';
+import { findDashboard } from '@/lib/dashboards';
 import { usePartidosFilters } from './state/partidosFilterStore';
 import { PartidosDimTabBar } from './components/PartidosDimTabBar';
 import { PartidosNacionalFiltersBar } from './components/PartidosNacionalFilters';
@@ -19,25 +19,25 @@ import {
   PartidosIntlChannelBreakdown,
 } from './components/PartidosIntlCharts';
 
-export function PartidosDashboard({ email, campana }: { email: string; campana?: ReactNode }) {
+const DASHBOARD = findDashboard('partidos')!;
+
+export function PartidosDashboard() {
   const dim = usePartidosFilters((s) => s.dim);
   return (
     <>
-      <Header email={email} campana={campana} />
+      <PageTitle sub={DASHBOARD.description}>{DASHBOARD.title}</PageTitle>
       <PartidosDimTabBar />
-      <main className="main">
+      <div className="flex flex-col gap-6">
         {dim === 'nacional' && (
           <>
             <PartidosNacionalFiltersBar />
             <TabBoundary>
               <PartidosNacionalKpis />
-              <div className="col2" style={{ marginTop: 24 }}>
+              <div className="grid gap-4 md:grid-cols-2">
                 <PartidosNacionalMonthlyChart />
                 <PartidosNacionalWeeklyChart />
               </div>
-              <div style={{ marginTop: 24 }}>
-                <PartidosNacionalChannelBreakdown />
-              </div>
+              <PartidosNacionalChannelBreakdown />
             </TabBoundary>
           </>
         )}
@@ -46,17 +46,15 @@ export function PartidosDashboard({ email, campana }: { email: string; campana?:
             <PartidosIntlFiltersBar />
             <TabBoundary>
               <PartidosIntlKpis />
-              <div className="col2" style={{ marginTop: 24 }}>
+              <div className="grid gap-4 md:grid-cols-2">
                 <PartidosIntlMonthlyChart />
                 <PartidosIntlWeeklyChart />
               </div>
-              <div style={{ marginTop: 24 }}>
-                <PartidosIntlChannelBreakdown />
-              </div>
+              <PartidosIntlChannelBreakdown />
             </TabBoundary>
           </>
         )}
-      </main>
+      </div>
     </>
   );
 }

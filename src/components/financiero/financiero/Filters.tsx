@@ -44,6 +44,17 @@ const PRESETS: { val: RangeKind; label: string }[] = [
 ];
 
 const TAB_COUNTRIES = 12;
+// Los selects de fecha son angostos: el `input` compartido, con menos relleno.
+const SELECT = 'input min-w-16 px-2 font-medium normal-case tracking-normal';
+// Las etiquetas apiladas sobre cada control.
+const FIELD = 'eyebrow flex flex-col gap-1.5';
+// El punto de color de cada tipo de acceso, como en el resto del dashboard.
+const ACCESS_DOT: Record<string, string> = {
+  all: 'bg-n-400',
+  real: 'bg-[var(--ok)]',
+  voucher: 'bg-amber-500',
+  antel: 'bg-blue-600',
+};
 const MONTHS_ES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 const DATA_FLOOR = '2020-01-01';
 
@@ -112,18 +123,18 @@ function DateTriple({
     `${y}-${pad2(mm)}-01` > max || `${y}-${pad2(mm)}-${pad2(daysInMonth(y, mm))}` < min;
   const yearOff = (yy: number) => `${yy}-01-01` > max || `${yy}-12-31` < min;
   return (
-    <div className="proto-date-triple">
-      <select aria-label="día" value={pad2(d)} onChange={(e) => set(y, m, Number(e.target.value))}>
+    <div className="flex gap-1.5">
+      <select aria-label="día" className={SELECT} value={pad2(d)} onChange={(e) => set(y, m, Number(e.target.value))}>
         {Array.from({ length: n }, (_, i) => (
           <option key={i} value={pad2(i + 1)} disabled={dayOff(i + 1)}>{pad2(i + 1)}</option>
         ))}
       </select>
-      <select aria-label="mes" value={pad2(m)} onChange={(e) => set(y, Number(e.target.value), d)}>
+      <select aria-label="mes" className={`${SELECT} min-w-[5.5rem]`} value={pad2(m)} onChange={(e) => set(y, Number(e.target.value), d)}>
         {MONTHS_ES.map((name, i) => (
           <option key={name} value={pad2(i + 1)} disabled={monthOff(i + 1)}>{name}</option>
         ))}
       </select>
-      <select aria-label="año" value={String(y)} onChange={(e) => set(Number(e.target.value), m, d)}>
+      <select aria-label="año" className={`${SELECT} min-w-[4.6rem]`} value={String(y)} onChange={(e) => set(Number(e.target.value), m, d)}>
         {years.map((yy) => (
           <option key={yy} value={String(yy)} disabled={yearOff(yy)}>{yy}</option>
         ))}
@@ -178,28 +189,31 @@ export function FinancieroFilters() {
 
   return (
     <>
-      <div className="proto-tabs" role="group" aria-label="País">
+      <div className="card flex items-center gap-1.5 overflow-x-auto p-2.5" role="group" aria-label="País">
         <button
           type="button"
-          className={f.countries.length === 0 ? 'active' : ''}
+          className="pill text-[13px]"
+          aria-pressed={f.countries.length === 0}
           onClick={() => f.setCountries([])}
         >
-          <span className="flag">🌎</span><span>Todos</span>
+          <span aria-hidden className="text-base">🌎</span>
+          <span>Todos</span>
         </button>
         {tabCountries.map((c) => (
           <button
             key={c}
             type="button"
-            className={f.countries.includes(c) ? 'active' : ''}
+            className="pill text-[13px]"
             aria-pressed={f.countries.includes(c)}
             onClick={() => toggleCountry(c)}
           >
-            <span className="flag">{flagOf(c)}</span><span>{labelOf(c)}</span>
+            <span aria-hidden className="text-base">{flagOf(c)}</span>
+            <span>{labelOf(c)}</span>
           </button>
         ))}
         {restCountries.length > 0 && (
           <select
-            className="proto-tabs-more"
+            className={`input ml-auto shrink-0 text-[13px] font-semibold ${restSelected.length > 0 ? 'border-[var(--accent-border)] text-accent-strong' : ''}`}
             aria-label="Más países"
             value=""
             onChange={(e) => { if (e.target.value) toggleCountry(e.target.value); }}
@@ -214,84 +228,75 @@ export function FinancieroFilters() {
         )}
       </div>
 
-      <div className="proto-filters">
-        <label>Tipo de plan
-          <select
-            value={f.subType ?? ''}
-            onChange={(e) => f.setSubType((e.target.value || undefined) as SubType | undefined)}
-          >
-            {PLANS.map((p) => (
-              <option key={p.val} value={p.val}>{p.label}</option>
-            ))}
-          </select>
-        </label>
-        <label>Desde
-          <DateTriple value={from} years={years} min={floor} max={to} onChange={(v) => setCustom(v, to)} />
-        </label>
-        <label>Hasta
-          <DateTriple value={to} years={years} min={from} max={ceiling} onChange={(v) => setCustom(from, v)} />
-        </label>
-        <label style={{ flex: 1, minWidth: 280 }}>Tipo de acceso
-          <div className="proto-chipset">
-            {ACCESS.map((a) => (
-              <span
-                key={a.key}
-                role="button"
-                tabIndex={0}
-                data-access={a.key}
-                className={`proto-chip ${f.accessType === a.val ? 'active' : ''}`}
-                onClick={() => f.setAccessType(a.val)}
-                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); f.setAccessType(a.val); } }}
+      <div className="card flex flex-col gap-4 px-5 py-4">
+        <div className="flex flex-wrap items-end gap-5">
+          <label className={FIELD}>Tipo de plan
+            <select
+              className="input min-w-36 font-medium tracking-normal normal-case"
+              value={f.subType ?? ''}
+              onChange={(e) => f.setSubType((e.target.value || undefined) as SubType | undefined)}
+            >
+              {PLANS.map((p) => (
+                <option key={p.val} value={p.val}>{p.label}</option>
+              ))}
+            </select>
+          </label>
+          <label className={FIELD}>Desde
+            <DateTriple value={from} years={years} min={floor} max={to} onChange={(v) => setCustom(v, to)} />
+          </label>
+          <label className={FIELD}>Hasta
+            <DateTriple value={to} years={years} min={from} max={ceiling} onChange={(v) => setCustom(from, v)} />
+          </label>
+          <div className={`${FIELD} min-w-[280px] flex-1`}>Tipo de acceso
+            <div className="flex flex-wrap gap-1.5 tracking-normal normal-case" role="group" aria-label="Tipo de acceso">
+              {ACCESS.map((a) => (
+                <button
+                  key={a.key}
+                  type="button"
+                  className="pill"
+                  aria-pressed={f.accessType === a.val}
+                  onClick={() => f.setAccessType(a.val)}
+                >
+                  <span aria-hidden className={`size-2 rounded-full ${ACCESS_DOT[a.key]}`} />
+                  {a.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2.5 border-t border-[var(--border)] pt-3.5">
+          <span className="eyebrow">Filtro rápido</span>
+          <div className="flex flex-wrap gap-1.5">
+            {PRESETS.map((p) => (
+              <button
+                key={p.val}
+                type="button"
+                className="pill"
+                aria-pressed={f.range === p.val}
+                onClick={() => f.setRange(p.val)}
               >
-                <span className="dot" />{a.label}
-              </span>
+                {p.label}
+              </button>
             ))}
           </div>
-        </label>
-      </div>
-
-      <div className="proto-filters proto-filters-quick">
-        <span className="proto-filters-quick-label">Filtro rápido</span>
-        <div className="proto-chipset">
-          {PRESETS.map((p) => (
-            <span
-              key={p.val}
-              role="button"
-              tabIndex={0}
-              className={`proto-chip ${f.range === p.val ? 'active' : ''}`}
-              onClick={() => f.setRange(p.val)}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); f.setRange(p.val); } }}
-            >
-              {p.label}
-            </span>
-          ))}
-        </div>
-        <span className="proto-filters-quick-label">Temporada</span>
-        <div className="proto-chipset">
-          {seasons.map((s) => {
-            const active = f.range === 'custom' && f.customFrom === s.from && f.customTo === s.to;
-            return (
-              <span
+          <span className="eyebrow ml-2.5">Temporada</span>
+          <div className="flex flex-wrap gap-1.5">
+            {seasons.map((s) => (
+              <button
                 key={s.s}
-                role="button"
-                tabIndex={0}
-                className={`proto-chip ${active ? 'active' : ''}`}
+                type="button"
+                className="pill"
+                aria-pressed={f.range === 'custom' && f.customFrom === s.from && f.customTo === s.to}
                 onClick={() => setCustom(s.from, s.to)}
-                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setCustom(s.from, s.to); } }}
               >
                 {s.label}
-              </span>
-            );
-          })}
-          <span
-            role="button"
-            tabIndex={0}
-            className={`proto-chip ${f.range === 'all' ? 'active' : ''}`}
-            onClick={() => f.setRange('all')}
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); f.setRange('all'); } }}
-          >
-            Todo el histórico
-          </span>
+              </button>
+            ))}
+            <button type="button" className="pill" aria-pressed={f.range === 'all'} onClick={() => f.setRange('all')}>
+              Todo el histórico
+            </button>
+          </div>
         </div>
       </div>
     </>

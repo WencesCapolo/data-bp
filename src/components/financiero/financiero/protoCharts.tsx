@@ -2,7 +2,7 @@
 import { useMemo } from 'react';
 import type { ChartConfiguration, ChartDataset } from 'chart.js';
 import { ChartCanvas } from '@/components/charts/ChartCanvas';
-import { useChartTheme, type ChartTheme } from '@/lib/client/theme';
+import { CHART_THEME, OTHER, type ChartTheme } from '@/lib/client/palette';
 import { tooltipBase } from '@/components/charts/tooltip';
 import { fmt, fmtUsd } from './format';
 
@@ -10,28 +10,15 @@ import { fmt, fmtUsd } from './format';
  * Los gráficos de `public/dashboard.html`, configuración por configuración.
  *
  * Cada componente transcribe el `new Chart(...)` del prototipo: los mismos
- * colores, grosores, radios, ejes y leyendas. Lo único que cambia con el tema
- * es lo que el canvas no puede leer de una variable CSS: el color de rejilla y
- * el fondo del tooltip. El prototipo es claro; en oscuro se usa la paleta del
- * tema para esas dos cosas y nada más.
+ * colores, grosores, radios, ejes y leyendas. La rejilla, la tinta y el
+ * tooltip salen de CHART_THEME, los neutros de basket-tv-ui, porque el canvas
+ * no puede leer una variable CSS.
  */
 
-const INTER = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
-
-function grid(t: ChartTheme): string {
-  return t.theme === 'light' ? 'rgba(15,23,42,0.06)' : t.grid;
-}
-function gridSoft(t: ChartTheme): string {
-  return t.theme === 'light' ? '#f1f5f9' : t.grid;
-}
-function ink(t: ChartTheme): string {
-  return t.theme === 'light' ? '#0f172a' : '#e8edf5';
-}
 function base() {
   return {
     responsive: true,
     maintainAspectRatio: false,
-    font: { family: INTER },
   } as const;
 }
 function tooltip(t: ChartTheme, callbacks?: Record<string, unknown>) {
@@ -60,7 +47,7 @@ export function CombinedChart({
   tx: number[];
   height?: number;
 }) {
-  const t = useChartTheme();
+  const t = CHART_THEME;
   const config = useMemo<ChartConfiguration>(
     () => ({
       type: 'bar',
@@ -99,7 +86,7 @@ export function CombinedChart({
         scales: {
           x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 14 } },
           yUsd: {
-            position: 'left', beginAtZero: true, grid: { color: grid(t) },
+            position: 'left', beginAtZero: true, grid: { color: t.grid },
             ticks: { callback: (v) => `$${fmt(Number(v))}`, color: '#059669' },
             title: { display: true, text: 'Ingresos netos USD', color: '#059669', font: { size: 11, weight: 600 } },
           },
@@ -134,7 +121,7 @@ export function Daily15Chart({
   netas: number[];
   height?: number;
 }) {
-  const t = useChartTheme();
+  const t = CHART_THEME;
   const config = useMemo<ChartConfiguration>(
     () => ({
       type: 'bar',
@@ -165,7 +152,7 @@ export function Daily15Chart({
         },
         scales: {
           x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: false } },
-          y: { grid: { color: grid(t) }, ticks: { callback: (v) => fmt(Math.abs(Number(v))) } },
+          y: { grid: { color: t.grid }, ticks: { callback: (v) => fmt(Math.abs(Number(v))) } },
         },
       },
     }),
@@ -186,7 +173,7 @@ export function DailyActive15Chart({
   active: number[];
   height?: number;
 }) {
-  const t = useChartTheme();
+  const t = CHART_THEME;
   const config = useMemo<ChartConfiguration>(() => {
     // Para que las diferencias diarias se vean, el eje se ancla cerca del mínimo.
     const min = active.length ? Math.min(...active) : 0;
@@ -211,7 +198,7 @@ export function DailyActive15Chart({
         },
         scales: {
           x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: false } },
-          y: { min: Math.max(0, min - pad), max: max + pad, grid: { color: grid(t) }, ticks: { callback: (v) => fmt(Number(v)) } },
+          y: { min: Math.max(0, min - pad), max: max + pad, grid: { color: t.grid }, ticks: { callback: (v) => fmt(Number(v)) } },
         },
       },
     };
@@ -237,7 +224,7 @@ export function FlowChart({
   bajas: number[];
   height?: number;
 }) {
-  const t = useChartTheme();
+  const t = CHART_THEME;
   const config = useMemo<ChartConfiguration>(
     () => ({
       type: 'bar',
@@ -263,7 +250,7 @@ export function FlowChart({
         },
         scales: {
           x: { stacked: true, grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 14 } },
-          y: { stacked: true, grid: { color: grid(t) }, ticks: { callback: (v) => fmt(Math.abs(Number(v))) } },
+          y: { stacked: true, grid: { color: t.grid }, ticks: { callback: (v) => fmt(Math.abs(Number(v))) } },
         },
       },
     }),
@@ -275,7 +262,7 @@ export function FlowChart({
 // ── Mix de planes ───────────────────────────────────────────────────────────
 const PLAN_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#64748b', '#ec4899', '#14b8a6'];
 export function PlansDonut({ labels, values, height = 300 }: { labels: string[]; values: number[]; height?: number }) {
-  const t = useChartTheme();
+  const t = CHART_THEME;
   const config = useMemo<ChartConfiguration>(() => {
     const total = values.reduce((a, b) => a + b, 0);
     return {
@@ -308,7 +295,7 @@ export function CancelMonthlyChart({
   byPlatform: { platformName: string; data: number[] }[];
   height?: number;
 }) {
-  const t = useChartTheme();
+  const t = CHART_THEME;
   const config = useMemo<ChartConfiguration>(() => {
     const total = labels.map((_, i) => byPlatform.reduce((a, p) => a + (p.data[i] ?? 0), 0));
     return {
@@ -319,7 +306,7 @@ export function CancelMonthlyChart({
           ...byPlatform.map((p) => ({
             type: 'bar' as const,
             label: `${p.platformName} (${p.platformName === 'Stripe' ? 'canceled' : 'cancelled'})`,
-            data: p.data, backgroundColor: GW_COLOR[p.platformName] ?? '#64748b', borderRadius: 3, stack: 'g', order: 3,
+            data: p.data, backgroundColor: GW_COLOR[p.platformName] ?? OTHER, borderRadius: 3, stack: 'g', order: 3,
           })),
           {
             type: 'line' as const, label: 'Total cancelaciones', data: total,
@@ -339,7 +326,7 @@ export function CancelMonthlyChart({
         },
         scales: {
           x: { stacked: true, grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 14 } },
-          y: { stacked: true, grid: { color: grid(t) }, ticks: { callback: (v) => fmt(Number(v)) } },
+          y: { stacked: true, grid: { color: t.grid }, ticks: { callback: (v) => fmt(Number(v)) } },
         },
       },
     };
@@ -351,7 +338,7 @@ export function CancelMonthlyChart({
 export const LC_BUCKETS = ['0-30', '31-60', '61-90', '91-180', '180+'] as const;
 const LC_COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#f97316', '#dc2626'];
 export function LastChargeChart({ values, height = 280 }: { values: number[]; height?: number }) {
-  const t = useChartTheme();
+  const t = CHART_THEME;
   const config = useMemo<ChartConfiguration>(() => {
     const total = values.reduce((a, b) => a + b, 0);
     return {
@@ -371,7 +358,7 @@ export function LastChargeChart({ values, height = 280 }: { values: number[]; he
         },
         scales: {
           x: { grid: { display: false }, ticks: { font: { size: 11.5, weight: 500 } } },
-          y: { grid: { color: grid(t) }, ticks: { callback: (v) => fmt(Number(v)) } },
+          y: { grid: { color: t.grid }, ticks: { callback: (v) => fmt(Number(v)) } },
         },
       },
     };
@@ -392,7 +379,7 @@ export function RevenueChart({
   totalUsd: (number | null)[];
   height?: number;
 }) {
-  const t = useChartTheme();
+  const t = CHART_THEME;
   const config = useMemo<ChartConfiguration>(
     () => ({
       type: 'line',
@@ -401,13 +388,13 @@ export function RevenueChart({
         datasets: [
           ...byCurrency.map((c) => ({
             label: `${c.currency} (neto)`, data: c.data,
-            borderColor: CUR_COLORS[c.currency] ?? '#64748b',
-            backgroundColor: `${CUR_COLORS[c.currency] ?? '#64748b'}20`,
+            borderColor: CUR_COLORS[c.currency] ?? OTHER,
+            backgroundColor: `${CUR_COLORS[c.currency] ?? OTHER}20`,
             yAxisID: 'yLocal', tension: 0.35, borderWidth: 2.5, pointRadius: 2, pointHoverRadius: 5, fill: false,
           })),
           {
             label: 'TOTAL NETO USD (MP+Stripe)', data: totalUsd,
-            borderColor: ink(t), backgroundColor: t.theme === 'light' ? 'rgba(15,23,42,0.08)' : 'rgba(232,237,245,0.08)',
+            borderColor: t.title, backgroundColor: 'rgba(28,13,16,0.06)',
             yAxisID: 'yUsd', borderDash: [6, 4], tension: 0.35, borderWidth: 2.5, pointRadius: 0, fill: true,
           },
         ] as ChartDataset[],
@@ -418,8 +405,8 @@ export function RevenueChart({
         plugins: { legend: legendBottom(), tooltip: tooltip(t) },
         scales: {
           x: { grid: { display: false } },
-          yLocal: { position: 'left', grid: { color: gridSoft(t) }, ticks: { callback: (v) => fmt(Number(v)) }, title: { display: true, text: 'Moneda local', color: '#94a3b8', font: { size: 11 } } },
-          yUsd: { position: 'right', grid: { display: false }, ticks: { callback: (v) => `$${fmt(Number(v))}`, color: ink(t) }, title: { display: true, text: 'USD', color: ink(t), font: { size: 11, weight: 600 } } },
+          yLocal: { position: 'left', grid: { color: t.grid }, ticks: { callback: (v) => fmt(Number(v)) }, title: { display: true, text: 'Moneda local', color: '#94a3b8', font: { size: 11 } } },
+          yUsd: { position: 'right', grid: { display: false }, ticks: { callback: (v) => `$${fmt(Number(v))}`, color: t.title }, title: { display: true, text: 'USD', color: t.title, font: { size: 11, weight: 600 } } },
         },
       },
     }),
@@ -442,7 +429,7 @@ export function ActiveChart({
   total: number[];
   height?: number;
 }) {
-  const t = useChartTheme();
+  const t = CHART_THEME;
   const config = useMemo<ChartConfiguration>(
     () => ({
       type: 'bar',
@@ -453,7 +440,7 @@ export function ActiveChart({
           { type: 'bar', label: 'Anuales (activos)', data: anual, backgroundColor: '#f59e0b', stack: 'active', borderRadius: 4, yAxisID: 'y' },
           {
             type: 'line', label: 'Total únicos (dedup. mensual+anual)', data: total,
-            borderColor: ink(t), backgroundColor: 'rgba(15,23,42,0.05)',
+            borderColor: t.title, backgroundColor: 'rgba(28,13,16,0.05)',
             borderDash: [5, 4], tension: 0.35, borderWidth: 2.5, pointRadius: 2, pointHoverRadius: 5, fill: false, yAxisID: 'y',
           },
         ] as ChartDataset[],
@@ -473,7 +460,7 @@ export function ActiveChart({
         },
         scales: {
           x: { stacked: true, grid: { display: false } },
-          y: { stacked: true, grid: { color: gridSoft(t) }, ticks: { callback: (v) => fmt(Number(v)) } },
+          y: { stacked: true, grid: { color: t.grid }, ticks: { callback: (v) => fmt(Number(v)) } },
         },
       },
     }),
@@ -500,7 +487,7 @@ export function SeasonsChart({
   footers: string[];
   height?: number;
 }) {
-  const t = useChartTheme();
+  const t = CHART_THEME;
   const config = useMemo<ChartConfiguration>(
     () => ({
       type: 'bar',
@@ -530,7 +517,7 @@ export function SeasonsChart({
         },
         scales: {
           x: { grid: { display: false } },
-          yL: { position: 'left', grid: { color: gridSoft(t) }, ticks: { callback: (v) => fmt(Number(v)) }, title: { display: true, text: 'Transacciones · Activos', color: '#94a3b8', font: { size: 11 } } },
+          yL: { position: 'left', grid: { color: t.grid }, ticks: { callback: (v) => fmt(Number(v)) }, title: { display: true, text: 'Transacciones · Activos', color: '#94a3b8', font: { size: 11 } } },
           yR: { position: 'right', grid: { display: false }, ticks: { callback: (v) => `$${fmt(Number(v))}`, color: '#059669' }, title: { display: true, text: 'Ingresos netos USD', color: '#059669', font: { size: 11, weight: 600 } } },
         },
       },
@@ -552,7 +539,7 @@ export function PlansFreqChart({
   anual: number[];
   height?: number;
 }) {
-  const t = useChartTheme();
+  const t = CHART_THEME;
   const config = useMemo<ChartConfiguration>(
     () => ({
       type: 'bar',
@@ -581,7 +568,7 @@ export function PlansFreqChart({
         },
         scales: {
           x: { stacked: true, grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 14 } },
-          y: { stacked: true, beginAtZero: true, grid: { color: gridSoft(t) }, ticks: { callback: (v) => fmt(Number(v)) }, title: { display: true, text: 'Transacciones de suscripción', color: '#94a3b8', font: { size: 11 } } },
+          y: { stacked: true, beginAtZero: true, grid: { color: t.grid }, ticks: { callback: (v) => fmt(Number(v)) }, title: { display: true, text: 'Transacciones de suscripción', color: '#94a3b8', font: { size: 11 } } },
         },
       },
     }),
@@ -600,7 +587,7 @@ export function FeesChart({
   byPlatform: { platformName: string; data: number[] }[];
   height?: number;
 }) {
-  const t = useChartTheme();
+  const t = CHART_THEME;
   const config = useMemo<ChartConfiguration>(
     () => ({
       type: 'bar',
@@ -609,7 +596,7 @@ export function FeesChart({
         datasets: byPlatform.map((p) => ({
           label: `Fee ${p.platformName === 'MercadoPago' ? 'MP' : p.platformName} (USD)`,
           data: p.data,
-          backgroundColor: GW_COLOR[p.platformName] ?? '#64748b',
+          backgroundColor: GW_COLOR[p.platformName] ?? OTHER,
           stack: 'fees',
           borderRadius: 4,
         })),
@@ -624,7 +611,7 @@ export function FeesChart({
         },
         scales: {
           x: { stacked: true, grid: { display: false } },
-          y: { stacked: true, grid: { color: gridSoft(t) }, ticks: { callback: (v) => `$${fmt(Number(v))}` } },
+          y: { stacked: true, grid: { color: t.grid }, ticks: { callback: (v) => `$${fmt(Number(v))}` } },
         },
       },
     }),

@@ -1,4 +1,5 @@
 export const signed = (n: number): string => (n > 0 ? `+${n}` : String(n));
 
-export const netColor = (n: number): string =>
-  n > 0 ? 'var(--green)' : n < 0 ? 'var(--red)' : 'var(--text3)';
+/** Text colour of a net change: up, down or flat. */
+export const netClass = (n: number): string =>
+  n > 0 ? 'text-[var(--ok)]' : n < 0 ? 'text-red-700' : 'text-muted';

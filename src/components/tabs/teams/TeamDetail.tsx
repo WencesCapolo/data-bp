@@ -2,14 +2,18 @@
 import { useMemo, useState } from 'react';
 import useSWR from 'swr';
 import { fetcher } from '@/lib/client/fetcher';
-import { KpiCard } from '@/components/ui/KpiCard';
+import { KpiCard, KpiGrid } from '@/components/ui/KpiCard';
+import { Card } from '@/components/ui/Card';
+import { PillGroup } from '@/components/ui/PillGroup';
 import { InfoHint } from '@/components/ui/InfoHint';
 import { TabSkeleton } from '@/components/ui/Skeleton';
 import { ErrorBox } from '@/components/ui/ErrorBox';
 import type { TeamDailyDTO, TeamRankRow } from '@basket/core/dtos/TeamsDTO';
 import { BUCKETS, bucketize, type Bucket } from './buckets';
-import { netColor, signed } from './format';
+import { netClass, signed } from './format';
 import { TeamMovementChart } from './TeamMovementChart';
+
+const BUCKET_OPTIONS = BUCKETS.map((b) => ({ val: b.key, label: b.label }));
 
 interface Props {
   team: TeamRankRow;
@@ -52,17 +56,17 @@ export function TeamDetail({ team, filterQS, from, to }: Props) {
   );
 
   const header = (
-    <div style={{ marginBottom: 12 }}>
-      <div style={{ fontSize: 20, fontWeight: 700 }}>{team.teamName}</div>
-      <div style={{ fontSize: 12, color: 'var(--text3)' }}>
+    <div>
+      <h2 className="font-display text-2xl font-semibold tracking-tight">{team.teamName}</h2>
+      <p className="mt-0.5 text-xs text-muted">
         {team.league} · {team.teamCountry} · {from} → {to}
-      </div>
+      </p>
     </div>
   );
 
   if (error) {
     return (
-      <div>
+      <div className="flex flex-col gap-4">
         {header}
         <ErrorBox message={error.message} />
       </div>
@@ -71,7 +75,7 @@ export function TeamDetail({ team, filterQS, from, to }: Props) {
 
   if (!data) {
     return (
-      <div>
+      <div className="flex flex-col gap-4">
         {header}
         <TabSkeleton kpis={5} blocks={[{ kind: 'full', height: 320 }, { kind: 'full', height: 240 }]} />
       </div>
@@ -84,10 +88,10 @@ export function TeamDetail({ team, filterQS, from, to }: Props) {
   const bucketLabelText = BUCKETS.find((b) => b.key === bucket)?.label ?? '';
 
   return (
-    <div>
+    <div className="flex flex-col gap-4">
       {header}
 
-      <div className="kpi-grid">
+      <KpiGrid>
         <KpiCard
           label="Suscripciones activas"
           value={activeEnd}
@@ -121,53 +125,35 @@ export function TeamDetail({ team, filterQS, from, to }: Props) {
           sub={`${followerConversion}% con suscripción activa`}
           hint="Suscriptores que tienen a este equipo como favorito, paguen o no. No lo afectan los filtros de plan ni tipo de acceso. El subtítulo indica qué porcentaje de ellos tiene una suscripción activa al cierre del rango."
         />
-      </div>
+      </KpiGrid>
 
-      <div className="chart-full">
-        <div
-          className="chart-title"
-          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}
-        >
-          <span>
-            Suscripciones activas y su variación
-            <span style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 400, marginLeft: 8 }}>
-              barras = altas / bajas · línea = activas al cierre del período
-            </span>
-            <InfoHint text="Barras: altas hacia arriba y bajas hacia abajo, sumadas por día, semana o mes. Línea: Suscripciones activas al cierre de cada período, en su propio eje. El movimiento se atribuye al equipo favorito actual de cada suscriptor." />
-          </span>
-          <span className="subtype-pills">
-            {BUCKETS.map((b) => (
-              <button
-                key={b.key}
-                className={`subtype-pill ${bucket === b.key ? 'active' : ''}`}
-                onClick={() => setBucket(b.key)}
-              >
-                {b.label}
-              </button>
-            ))}
-          </span>
-        </div>
+      <Card
+        title="Suscripciones activas y su variación"
+        hint="Barras: altas hacia arriba y bajas hacia abajo, sumadas por día, semana o mes. Línea: Suscripciones activas al cierre de cada período, en su propio eje. El movimiento se atribuye al equipo favorito actual de cada suscriptor."
+        desc="barras = altas / bajas · línea = activas al cierre del período"
+        actions={<PillGroup options={BUCKET_OPTIONS} value={bucket} onChange={setBucket} label="Agrupar por" />}
+      >
         <TeamMovementChart series={series} bucket={bucket} />
-      </div>
+      </Card>
 
-      <div className="chart-full" style={{ padding: 0, overflow: 'hidden' }}>
-        <table className="data-table">
+      <div className="card overflow-x-auto">
+        <table className="data-table min-w-[560px]">
           <thead>
             <tr>
               <th>
                 {bucketLabelText}
                 <InfoHint text="Solo los períodos con alguna alta o baja, del más reciente al más antiguo. Activas = suscripciones vigentes al cierre del período; Neto = altas menos bajas." />
               </th>
-              <th style={{ textAlign: 'right' }}>Activas</th>
-              <th style={{ textAlign: 'right' }}>Altas</th>
-              <th style={{ textAlign: 'right' }}>Bajas</th>
-              <th style={{ textAlign: 'right' }}>Neto</th>
+              <th className="text-right!">Activas</th>
+              <th className="text-right!">Altas</th>
+              <th className="text-right!">Bajas</th>
+              <th className="text-right!">Neto</th>
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td colSpan={5} className="no-data">
+                <td colSpan={5} className="py-10! text-center text-muted!">
                   Sin movimientos en el rango
                 </td>
               </tr>
@@ -175,11 +161,11 @@ export function TeamDetail({ team, filterQS, from, to }: Props) {
             {rows.map((r) => (
               <tr key={r.key}>
                 <td>{bucket === 'day' ? r.key : r.label}</td>
-                <td style={{ textAlign: 'right', color: 'var(--accent2)' }}>{r.active.toLocaleString()}</td>
-                <td style={{ textAlign: 'right', color: 'var(--green)' }}>{r.altas}</td>
-                <td style={{ textAlign: 'right', color: 'var(--red)' }}>{r.bajas}</td>
-                <td style={{ textAlign: 'right', fontWeight: 700, color: netColor(r.altas - r.bajas) }}>
-                  {signed(r.altas - r.bajas)}
+                <td className="text-right text-sky-700! tabular-nums">{r.active.toLocaleString()}</td>
+                <td className="text-right text-[var(--ok)]! tabular-nums">{r.altas}</td>
+                <td className="text-right text-red-700! tabular-nums">{r.bajas}</td>
+                <td className="text-right font-bold tabular-nums">
+                  <span className={netClass(r.altas - r.bajas)}>{signed(r.altas - r.bajas)}</span>
                 </td>
               </tr>
             ))}

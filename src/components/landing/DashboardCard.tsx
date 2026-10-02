@@ -1,23 +1,29 @@
+import Link from 'next/link';
 import type { Dashboard } from '@/lib/dashboards';
 
 export function DashboardCard({ dashboard }: { dashboard: Dashboard }) {
   const isSoon = dashboard.status === 'soon';
-  const className = isSoon ? 'dash-card disabled' : 'dash-card';
 
   const body = (
     <>
-      {isSoon && <span className="dash-card-soon">soon</span>}
-      <div className="dash-card-icon">{dashboard.icon}</div>
-      <h2 className="dash-card-title">{dashboard.title}</h2>
-      <p className="dash-card-desc">{dashboard.description}</p>
-      <div className="dash-card-cta">{isSoon ? 'Próximamente' : 'Abrir →'}</div>
+      {isSoon && <span className="tag tag-neutral absolute top-4 right-4 uppercase">soon</span>}
+      <div className="grid size-11 place-items-center rounded-[var(--panel-radius)] bg-accent-soft font-display text-2xl text-accent">
+        {dashboard.icon}
+      </div>
+      <h2 className="font-display text-xl font-semibold tracking-wide uppercase">{dashboard.title}</h2>
+      <p className="text-sm leading-relaxed text-muted">{dashboard.description}</p>
+      <div className="mt-auto pt-2 text-sm font-semibold text-accent">{isSoon ? 'Próximamente' : 'Abrir →'}</div>
     </>
   );
 
-  if (isSoon) return <div className={className}>{body}</div>;
+  const className = 'card relative flex flex-col gap-3 p-6';
+  if (isSoon) return <div className={`${className} cursor-not-allowed opacity-55`}>{body}</div>;
   return (
-    <a href={dashboard.href} className={className}>
+    <Link
+      href={dashboard.href}
+      className={`${className} transition hover:-translate-y-0.5 hover:border-[var(--accent-border)] hover:shadow-[var(--shadow-lift)]`}
+    >
       {body}
-    </a>
+    </Link>
   );
 }

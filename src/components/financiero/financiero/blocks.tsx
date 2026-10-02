@@ -28,25 +28,37 @@ export function Card({
   children?: ReactNode;
 }) {
   return (
-    <div className="proto-card">
-      <h2>
-        {title}
-        {hint && <InfoHint text={hint} />}
-        {note && <span className="proto-note">{note}</span>}
+    <section className="card min-w-0 p-5">
+      <h2 className="card-title flex flex-wrap items-center gap-x-2">
+        <span className="inline-flex items-center">
+          {title}
+          {hint && <InfoHint text={hint} />}
+        </span>
+        {note && <span className="font-sans text-xs font-medium tracking-normal text-muted normal-case">{note}</span>}
       </h2>
-      {desc && <div className="desc">{desc}</div>}
+      {desc && <div className="card-desc mb-4 [&_code]:font-mono [&_code]:text-[11px]">{desc}</div>}
       {children}
-      {foot && <div className="proto-foot">{foot}</div>}
-    </div>
+      {foot && <div className="mt-3.5 text-[11px] text-muted italic">{foot}</div>}
+    </section>
   );
 }
 
 /** La etiqueta que separa bloques de KPIs. `first` quita el margen de arriba. */
 export function SectionLabel({ children, first }: { children: ReactNode; first?: boolean }) {
-  return <div className={`proto-section-label${first ? ' first' : ''}`}>{children}</div>;
+  return <div className={`eyebrow flex items-center gap-1.5 px-0.5 ${first ? '' : 'mt-2'}`}>{children}</div>;
 }
 
 export type KpiTone = 'blue' | 'green' | 'amber' | 'red' | 'purple' | 'slate';
+
+// La barra de arriba, el fondo del icono y el color de la cifra, por tono.
+const TONE: Record<KpiTone, { bar: string; soft: string; ink: string }> = {
+  blue: { bar: 'before:bg-blue-600', soft: 'bg-blue-50', ink: 'text-blue-700' },
+  green: { bar: 'before:bg-[var(--ok)]', soft: 'bg-[var(--ok-soft)]', ink: 'text-[var(--ok)]' },
+  amber: { bar: 'before:bg-amber-500', soft: 'bg-amber-50', ink: 'text-amber-700' },
+  red: { bar: 'before:bg-accent', soft: 'bg-accent-soft', ink: 'text-accent-strong' },
+  purple: { bar: 'before:bg-violet-600', soft: 'bg-violet-50', ink: 'text-violet-700' },
+  slate: { bar: 'before:bg-n-400', soft: 'bg-n-100', ink: 'text-foreground' },
+};
 
 /** La tarjeta KPI del prototipo: barra de color, icono, título, número y un
  *  subtítulo que puede traer el desglose (`<Breakdown>`). */
@@ -67,14 +79,18 @@ export function Kpi({
   children?: ReactNode;
 }) {
   return (
-    <div className={`proto-kpi ${tone}`}>
-      <div className="icon">{icon}</div>
-      <h3>
+    <div
+      className={`card relative overflow-hidden p-5 before:absolute before:inset-x-0 before:top-0 before:h-[3px] before:content-[''] ${TONE[tone].bar}`}
+    >
+      <div className={`mb-3 flex size-10 items-center justify-center rounded-[var(--panel-radius)] text-xl ${TONE[tone].soft}`}>
+        {icon}
+      </div>
+      <h3 className="eyebrow mb-1.5 flex items-center">
         {title}
         {hint && <InfoHint text={hint} />}
       </h3>
-      <div className="v">{value}</div>
-      <div className="s">{children}</div>
+      <div className={`figure ${TONE[tone].ink}`}>{value}</div>
+      <div className="mt-2 text-xs font-medium text-muted">{children}</div>
     </div>
   );
 }
@@ -92,23 +108,26 @@ export interface BreakdownRow {
 
 export function Breakdown({ rows }: { rows: (BreakdownRow | { head: string })[] }) {
   return (
-    <div className="kpi-breakdown">
+    <div className="mt-2.5 flex flex-col gap-1.5 border-t border-[var(--border)] pt-2.5 text-[13px]">
       {rows.map((r, i) =>
         'head' in r ? (
-          <div className="row sep head" key={i}>
+          <div className="eyebrow mt-1 border-t border-[var(--border)] pt-1.5" key={i}>
             {r.head}
           </div>
         ) : (
-          <div className={`row${r.sep ? ' sep' : ''}`} key={i}>
-            <span className="label">
-              <span className="swatch" style={{ background: r.swatch }} />
+          <div
+            className={`flex items-center justify-between gap-2 ${r.sep ? 'mt-1 border-t border-[var(--border)] pt-1.5' : ''}`}
+            key={i}
+          >
+            <span className="flex items-center gap-1.5 text-n-700">
+              <span className="inline-block size-2 rounded-[2px]" style={{ background: r.swatch }} />
               {r.label}
             </span>
             <span>
-              <span className="num" style={{ color: r.color ?? 'inherit' }}>
+              <span className="font-semibold text-foreground tabular-nums" style={r.color ? { color: r.color } : undefined}>
                 {r.value}
               </span>
-              {r.pct !== undefined && <span className="pct">{r.pct}</span>}
+              {r.pct !== undefined && <span className="ml-1 text-[11px] font-medium text-muted">{r.pct}</span>}
             </span>
           </div>
         ),
@@ -139,6 +158,20 @@ export function delta(cur: number, prev: number, invert = false): Delta {
   return { cls, arrow, pctStr };
 }
 
+const MS_TONE: Record<'tx' | 'active' | 'revenue', { bar: string; ink: string }> = {
+  tx: { bar: 'before:bg-blue-600', ink: 'text-blue-700' },
+  active: { bar: 'before:bg-violet-600', ink: 'text-violet-700' },
+  revenue: { bar: 'before:bg-[var(--ok)]', ink: 'text-[var(--ok)]' },
+};
+
+/** El color de una variación: verde si mejora, rojo si empeora. */
+export const DELTA_TAG: Record<Delta['cls'], string> = { up: 'tag-ok', down: 'tag-bad', flat: 'tag-neutral' };
+export const DELTA_INK: Record<Delta['cls'], string> = {
+  up: 'text-[var(--ok)]',
+  down: 'text-accent-strong',
+  flat: 'text-muted',
+};
+
 /** Una de las tres columnas del snapshot. */
 export function MsCol({
   tone,
@@ -159,37 +192,39 @@ export function MsCol({
   foot?: ReactNode;
 }) {
   return (
-    <div className={`proto-ms-col ${tone}`}>
-      <h4>
+    <div
+      className={`card relative overflow-hidden px-5 py-4.5 before:absolute before:inset-x-0 before:top-0 before:h-[3px] before:content-[''] ${MS_TONE[tone].bar}`}
+    >
+      <h4 className="eyebrow mb-1 flex items-center">
         {title}
         {hint && <InfoHint text={hint} />}
       </h4>
-      <div className="proto-ms-big">{big}</div>
-      <div className={`proto-ms-delta ${bigDelta.d.cls}`}>
+      <div className={`figure mt-1 ${MS_TONE[tone].ink}`}>{big}</div>
+      <div className={`tag mt-2 ${DELTA_TAG[bigDelta.d.cls]}`}>
         {bigDelta.d.arrow} {bigDelta.d.pctStr}
-        <span className="prev">vs {bigDelta.prev}</span>
+        <span className="ml-1 font-medium opacity-75">vs {bigDelta.prev}</span>
       </div>
-      <div className="proto-ms-items">
+      <div className="mt-3.5 flex flex-col gap-1.5 border-t border-[var(--border)] pt-3 text-[12.5px]">
         {rows.map((r, i) =>
           'head' in r ? (
-            <div className="row head" key={i}>
+            <div className="eyebrow mt-1 border-t border-[var(--border)] pt-1.5" key={i}>
               {r.head}
             </div>
           ) : (
-            <div className="row" key={i}>
-              <span className="label">
-                <span className="swatch" style={{ background: r.swatch }} />
+            <div className="grid grid-cols-[1fr_auto_auto] items-center gap-2.5" key={i}>
+              <span className="flex items-center gap-1.5 text-n-700">
+                <span className="inline-block size-2 shrink-0 rounded-[2px]" style={{ background: r.swatch }} />
                 {r.label}
               </span>
-              <span className="num">{r.value}</span>
-              <span className={`d ${r.d.cls}`}>
+              <span className="min-w-14 text-right font-semibold text-foreground tabular-nums">{r.value}</span>
+              <span className={`min-w-14 text-right text-[10.5px] font-bold tabular-nums ${DELTA_INK[r.d.cls]}`}>
                 {r.d.arrow} {r.d.pctStr}
               </span>
             </div>
           ),
         )}
       </div>
-      {foot && <div className="proto-foot">{foot}</div>}
+      {foot && <div className="mt-3.5 text-[11px] text-muted italic">{foot}</div>}
     </div>
   );
 }
@@ -242,9 +277,9 @@ export function Pending({
 }) {
   const label = kind === 'plan' ? 'Real vs Plan · en desarrollo' : 'Asistente · en desarrollo';
   return (
-    <div className="proto-pending">
-      <span className="proto-pending-badge dev">{label}</span>
-      <div className="proto-pending-body">
+    <div className="flex flex-col items-start gap-2 rounded-[var(--panel-radius)] border border-dashed border-n-300 bg-n-50 p-5.5">
+      <span className="tag tag-info uppercase">{label}</span>
+      <div className="max-w-[70ch] text-xs leading-relaxed text-n-700">
         {children ?? (
           // Lo que falta para encenderlo — la planilla compartida en modo
           // lectura con la cuenta de servicio, y GOOGLE_SHEETS_ID_TARGETS /

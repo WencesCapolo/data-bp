@@ -1,5 +1,6 @@
 'use client';
 import type { AccessType } from '@basket/core/dtos/shared';
+import { PillGroup } from './PillGroup';
 
 const OPTS: { val: AccessType | undefined; label: string }[] = [
   { val: undefined, label: 'Todos' },
@@ -8,25 +9,6 @@ const OPTS: { val: AccessType | undefined; label: string }[] = [
   { val: 'antel', label: 'Antel' },
 ];
 
-export function AccessPills({
-  value,
-  onChange,
-}: {
-  value?: AccessType;
-  onChange: (v?: AccessType) => void;
-}) {
-  return (
-    <div className="date-pills">
-      {OPTS.map((o) => (
-        <button
-          key={o.label}
-          type="button"
-          className={`date-pill ${value === o.val ? 'active' : ''}`}
-          onClick={() => onChange(o.val)}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
-  );
+export function AccessPills({ value, onChange }: { value?: AccessType; onChange: (v?: AccessType) => void }) {
+  return <PillGroup options={OPTS} value={value} onChange={onChange} label="Acceso" />;
 }

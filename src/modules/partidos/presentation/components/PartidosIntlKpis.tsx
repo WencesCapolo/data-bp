@@ -1,5 +1,5 @@
 'use client';
-import { KpiCard } from '@/components/ui/KpiCard';
+import { KpiCard, KpiGrid } from '@/components/ui/KpiCard';
 import { KpiGridSkeleton } from '@/components/ui/Skeleton';
 import { useIntlOverview } from '../hooks/usePartidosData';
 
@@ -7,7 +7,7 @@ export function PartidosIntlKpis() {
   const { data, isLoading } = useIntlOverview();
   if (isLoading || !data) return <KpiGridSkeleton count={6} />;
   return (
-    <div className="kpi-grid">
+    <KpiGrid>
       <KpiCard
         label="Total temporada"
         value={data.totalSeason}
@@ -48,6 +48,6 @@ export function PartidosIntlKpis() {
         value={data.externoProducido}
         hint="Partidos producidos por terceros. Suma la columna 'Externo Producido' más las columnas de cada liga que cuentan como producción externa (TV Uruguay, señal completa, ATM, CDO, TVN)."
       />
-    </div>
+    </KpiGrid>
   );
 }

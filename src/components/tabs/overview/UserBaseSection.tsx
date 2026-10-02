@@ -2,13 +2,17 @@
 import { useMemo, useState } from 'react';
 import useSWR from 'swr';
 import { fetcher } from '@/lib/client/fetcher';
-import { KpiCard } from '@/components/ui/KpiCard';
+import { KpiCard, KpiGrid } from '@/components/ui/KpiCard';
 import { InfoHint } from '@/components/ui/InfoHint';
+import { Card } from '@/components/ui/Card';
+import { PillGroup } from '@/components/ui/PillGroup';
 import { ChartSkeleton, KpiGridSkeleton } from '@/components/ui/Skeleton';
 import { ErrorBox } from '@/components/ui/ErrorBox';
 import { BUCKETS, bucketize, type Bucket } from '@/lib/client/buckets';
 import { UserBaseChart, type MovementSeries } from './UserBaseChart';
 import type { LifecycleDTO } from '@basket/core/dtos/LifecycleDTO';
+
+const BUCKET_OPTIONS = BUCKETS.map((b) => ({ val: b.key, label: b.label }));
 
 const pct = (part: number, whole: number): string =>
   `${((part / Math.max(1, whole)) * 100).toFixed(1)}% del total`;
@@ -36,27 +40,27 @@ export function UserBaseSection({ filterQS }: { filterQS: string }) {
   }, [data, bucket]);
 
   const title = (
-    <div className="chart-title" style={{ marginBottom: 12 }}>
+    <h2 className="card-title flex items-center">
       Base de usuarios
       <InfoHint text="Las cuentas de la Plataforma y su relación con las suscripciones: cuántas existen, cuántas pagaron alguna vez y cómo se mueven las altas frente a la base activa." />
-    </div>
+    </h2>
   );
 
   if (error) {
     return (
-      <div style={{ marginBottom: 24 }}>
+      <section className="flex flex-col gap-4">
         {title}
         <ErrorBox message={error.message} />
-      </div>
+      </section>
     );
   }
   if (isLoading && !data) {
     return (
-      <div style={{ marginBottom: 24 }}>
+      <section className="flex flex-col gap-4">
         {title}
         <KpiGridSkeleton count={5} />
         <ChartSkeleton height={300} />
-      </div>
+      </section>
     );
   }
   if (!data) return null;
@@ -73,10 +77,10 @@ export function UserBaseSection({ filterQS }: { filterQS: string }) {
   const loginNote = 'últimos 30 días, a hoy';
 
   return (
-    <div style={{ marginBottom: 24 }}>
+    <section className="flex flex-col gap-4">
       {title}
 
-      <div className="kpi-grid">
+      <KpiGrid>
         <KpiCard
           label="Usuarios totales"
           value={funnel.totalUsers}
@@ -109,34 +113,16 @@ export function UserBaseSection({ filterQS }: { filterQS: string }) {
           sub={usersNote ? `${loginNote} · ${usersNote}` : loginNote}
           hint="Cuentas que iniciaron sesión en los últimos 30 días y jamás tuvieron un Pago exitoso. Siempre medido a hoy: la Plataforma guarda solo el último inicio de sesión."
         />
-      </div>
+      </KpiGrid>
 
-      <div className="chart-full">
-        <div
-          className="chart-title"
-          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}
-        >
-          <span>
-            Altas de suscripción y base activa
-            <InfoHint text="Barras: cada Suscriptor que pagó ese día, como nuevo (primer Pago de su historia), reactivación (más de 37 días tras vencer) o renovación. Línea: Suscripciones vigentes al cierre de cada punto." />
-            <span style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 400, marginLeft: 8 }}>
-              barras = nuevos / reactivaciones / renovaciones · línea = suscriptores activos al cierre
-            </span>
-          </span>
-          <span className="subtype-pills">
-            {BUCKETS.map((b) => (
-              <button
-                key={b.key}
-                className={`subtype-pill ${bucket === b.key ? 'active' : ''}`}
-                onClick={() => setBucket(b.key)}
-              >
-                {b.label}
-              </button>
-            ))}
-          </span>
-        </div>
+      <Card
+        title="Altas de suscripción y base activa"
+        hint="Barras: cada Suscriptor que pagó ese día, como nuevo (primer Pago de su historia), reactivación (más de 37 días tras vencer) o renovación. Línea: Suscripciones vigentes al cierre de cada punto."
+        desc="barras = nuevos / reactivaciones / renovaciones · línea = suscriptores activos al cierre"
+        actions={<PillGroup options={BUCKET_OPTIONS} value={bucket} onChange={setBucket} label="Agrupar por" />}
+      >
         <UserBaseChart series={series} bucket={bucket} />
-      </div>
-    </div>
+      </Card>
+    </section>
   );
 }

@@ -1,8 +1,9 @@
 'use client';
 import useSWR from 'swr';
 import { fetcher } from '@/lib/client/fetcher';
-import { KpiCard } from '@/components/ui/KpiCard';
-import { InfoHint } from '@/components/ui/InfoHint';
+import { KpiCard, KpiGrid } from '@/components/ui/KpiCard';
+import { Card } from '@/components/ui/Card';
+import { ACCESS, COUNTRY, OTHER, SERIES, TREND } from '@/lib/client/palette';
 import { LineChart } from '@/components/charts/LineChart';
 import { DoughnutChart } from '@/components/charts/DoughnutChart';
 import { BarChart } from '@/components/charts/BarChart';
@@ -13,9 +14,11 @@ import { ErrorBox } from '@/components/ui/ErrorBox';
 import { UserBaseSection } from './overview/UserBaseSection';
 import type { OverviewDTO } from '@basket/core/dtos/OverviewDTO';
 
-const ACCESS_COLORS = ['#10b981', '#06b6d4', '#fbbf24'];
-const SUBTYPE_COLORS = ['#94a3b8', '#4f8ef7', '#22d3ee', '#a78bfa', '#fb923c'];
-const COUNTRY_COLORS = ['#4f8ef7', '#22d3ee', '#f43f5e', '#a78bfa', '#34d399', '#fb923c', '#94a3b8'];
+// Amber for vouchers, as on every chart that splits real from voucher.
+// In the order accessBreakdown lists them.
+const ACCESS_COLORS = [ACCESS.real, ACCESS.antel, ACCESS.voucher];
+const SUBTYPE_COLORS = [OTHER, SERIES[0], SERIES[1], SERIES[3], SERIES[5]];
+const COUNTRY_COLORS = [COUNTRY.AR, COUNTRY.UY, COUNTRY.CL, COUNTRY.EC, COUNTRY.BR, COUNTRY.BO, OTHER];
 
 function rangeLabel(r: string): string {
   if (r === 'yesterday') return 'ayer';
@@ -52,8 +55,8 @@ export function OverviewTab() {
   const { kpis, trend, accessBreakdown, subTypeBreakdown, countryBreakdown } = data;
 
   return (
-    <div>
-      <div className="kpi-grid">
+    <div className="flex flex-col gap-6">
+      <KpiGrid>
         <KpiCard
           label="Activos totales"
           value={kpis.activeAll}
@@ -100,93 +103,80 @@ export function OverviewTab() {
           variant="green"
           hint="Suscriptores cuyo primer Pago exitoso de toda su historia cae dentro del rango seleccionado. Incluye vouchers y Antel, no solo Pagos con dinero."
         />
-      </div>
+      </KpiGrid>
 
       <UserBaseSection filterQS={filterQS} />
 
-      <div className="chart-full">
-        <div className="chart-title">
-          Tendencia ({rangeLabel(range)}) · activos por tipo de acceso
-          <InfoHint text="Suscriptores activos por día en el rango seleccionado. Reales (eje izquierdo) pagaron con dinero; Vouchers (eje derecho, línea punteada) tienen un Pago en $0 vigente. Casi todos los vouchers acompañan a un Pago real del mismo suscriptor, así que no se suman a Reales. Llega hasta ayer." />
-        </div>
-        <div style={{ height: 260 }}>
-          <LineChart
-            height={260}
-            labels={trend.map((p) => p.day.slice(5))}
-            tooltipTitles={bucketTitles(trend.map((p) => p.day), 'day')}
-            series={[
-              // Total is not drawn: it sits within one subscriber of Reales, so
-              // the two lines overlap. Vouchers is a subset of Reales, not a
-              // slice — nearly every $0 pago twins a real one — and an order
-              // of magnitude smaller, so it gets its own axis.
-              { label: 'Reales', data: trend.map((p) => p.realActive), color: '#10b981', fill: true },
-              { label: 'Vouchers', data: trend.map((p) => p.voucherActive), color: '#fbbf24', axis: 'right' },
-            ]}
+      <Card
+        title={`Tendencia (${rangeLabel(range)}) · activos por tipo de acceso`}
+        hint="Suscriptores activos por día en el rango seleccionado. Reales (eje izquierdo) pagaron con dinero; Vouchers (eje derecho, línea punteada) tienen un Pago en $0 vigente. Casi todos los vouchers acompañan a un Pago real del mismo suscriptor, así que no se suman a Reales. Llega hasta ayer."
+      >
+        <LineChart
+          height={260}
+          labels={trend.map((p) => p.day.slice(5))}
+          tooltipTitles={bucketTitles(trend.map((p) => p.day), 'day')}
+          series={[
+            // Total is not drawn: it sits within one subscriber of Reales, so
+            // the two lines overlap. Vouchers is a subset of Reales, not a
+            // slice — nearly every $0 pago twins a real one — and an order
+            // of magnitude smaller, so it gets its own axis.
+            { label: 'Reales', data: trend.map((p) => p.realActive), color: TREND.up, fill: true },
+            { label: 'Vouchers', data: trend.map((p) => p.voucherActive), color: ACCESS.voucher, axis: 'right' },
+          ]}
+        />
+      </Card>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <Card
+          title="Mix de acceso"
+          hint="Reparto de los activos a la fecha según tipo de acceso: real (pagó con dinero), voucher (Pago con monto cero, sin proveedor) y antel (facturado por Antel)."
+        >
+          <DoughnutChart
+            labels={accessBreakdown.map((b) => b.label)}
+            values={accessBreakdown.map((b) => b.count)}
+            colors={ACCESS_COLORS}
           />
-        </div>
-      </div>
-
-      <div className="col2">
-        <div className="chart-card">
-          <div className="chart-title">
-            Mix de acceso
-            <InfoHint text="Reparto de los activos a la fecha según tipo de acceso: real (pagó con dinero), voucher (Pago con monto cero, sin proveedor) y antel (facturado por Antel)." />
-          </div>
-          <div style={{ height: 220 }}>
-            <DoughnutChart
-              labels={accessBreakdown.map((b) => b.label)}
-              values={accessBreakdown.map((b) => b.count)}
-              colors={ACCESS_COLORS}
-            />
-          </div>
-        </div>
-        <div className="chart-card">
-          <div className="chart-title">
-            Distribución por país · activos
-            <InfoHint text="Activos a la fecha según el país de la cuenta del Suscriptor, no el del Pago. Uruguay, Argentina y Chile van por separado; el resto se agrupa en Other." />
-          </div>
-          <div style={{ height: 220 }}>
-            <DoughnutChart
-              labels={countryBreakdown.map((b) => b.label)}
-              values={countryBreakdown.map((b) => b.count)}
-              colors={COUNTRY_COLORS}
-            />
-          </div>
-        </div>
-      </div>
-
-      <div className="chart-full">
-        <div className="chart-title">
-          Mix por subtipo · activos
-          <InfoHint text="Activos a la fecha por plan: Free (período 0), Mensual Básico, Mensual Total y Anual Total. Los Pagos sin plan reconocible (Otros) no se grafican." />
-        </div>
-        <div style={{ height: 220 }}>
-          <BarChart
-            labels={subTypeBreakdown.map((b) => b.label)}
-            values={subTypeBreakdown.map((b) => b.count)}
-            color={SUBTYPE_COLORS[1]}
+        </Card>
+        <Card
+          title="Distribución por país · activos"
+          hint="Activos a la fecha según el país de la cuenta del Suscriptor, no el del Pago. Uruguay, Argentina y Chile van por separado; el resto se agrupa en Other."
+        >
+          <DoughnutChart
+            labels={countryBreakdown.map((b) => b.label)}
+            values={countryBreakdown.map((b) => b.count)}
+            colors={COUNTRY_COLORS}
           />
-        </div>
+        </Card>
       </div>
 
-      <div className="col2">
-        <div className="summary-card">
-          <div className="summary-card-title">
-            💰 Revenue · {rangeLabel(range)}
-            <InfoHint text="Suma bruta de los Pagos exitosos con monto mayor a cero fechados en el rango seleccionado, por moneda y sin conversión. No descuenta comisiones del proveedor ni cuenta intentos fallidos." />
-          </div>
-          <div className="summary-card-body">
+      <Card
+        title="Mix por subtipo · activos"
+        hint="Activos a la fecha por plan: Free (período 0), Mensual Básico, Mensual Total y Anual Total. Los Pagos sin plan reconocible (Otros) no se grafican."
+      >
+        <BarChart
+          labels={subTypeBreakdown.map((b) => b.label)}
+          values={subTypeBreakdown.map((b) => b.count)}
+          color={SUBTYPE_COLORS[1]}
+        />
+      </Card>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <Card
+          title={`💰 Revenue · ${rangeLabel(range)}`}
+          hint="Suma bruta de los Pagos exitosos con monto mayor a cero fechados en el rango seleccionado, por moneda y sin conversión. No descuenta comisiones del proveedor ni cuenta intentos fallidos."
+        >
+          <div className="font-mono text-xs leading-loose text-n-700">
             {kpis.revenueInRangeByCurrency.length === 0 ? (
               <div>(sin datos)</div>
             ) : (
               kpis.revenueInRangeByCurrency.map((r) => (
                 <div key={r.currency}>
-                  {r.currency}: <strong style={{ color: 'var(--text)' }}>{fmtCurrency(r.amount, r.currency)}</strong>
+                  {r.currency}: <strong className="text-foreground">{fmtCurrency(r.amount, r.currency)}</strong>
                 </div>
               ))
             )}
           </div>
-        </div>
+        </Card>
       </div>
     </div>
   );

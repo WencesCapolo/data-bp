@@ -2,7 +2,6 @@
 import { Chart, type ChartConfiguration } from 'chart.js';
 import { useEffect, useRef } from 'react';
 import { ensureChartJs } from '@/lib/client/chartjs-setup';
-import { useChartTheme } from '@/lib/client/theme';
 
 interface Props {
   config: ChartConfiguration;
@@ -12,22 +11,17 @@ interface Props {
 export function ChartCanvas({ config, height = 220 }: Props) {
   const ref = useRef<HTMLCanvasElement | null>(null);
   const instance = useRef<Chart | null>(null);
-  const chartTheme = useChartTheme();
 
   useEffect(() => {
     ensureChartJs();
     if (!ref.current) return;
-    // El color de leyendas y ejes es global en Chart.js, así que se fija aquí,
-    // en el único sitio por el que pasan todos los gráficos, y no en el setup
-    // que corre una sola vez.
-    Chart.defaults.color = chartTheme.tick;
     instance.current?.destroy();
     instance.current = new Chart(ref.current, config);
     return () => {
       instance.current?.destroy();
       instance.current = null;
     };
-  }, [config, chartTheme]);
+  }, [config]);
 
   // Fixed-height relative box, and the canvas carries no height of its own.
   //
@@ -42,7 +36,7 @@ export function ChartCanvas({ config, height = 220 }: Props) {
   // free to fill it. That is also why the box is `position: relative` — it is what
   // Chart.js's own responsive guidance asks for.
   return (
-    <div style={{ position: 'relative', height, width: '100%' }}>
+    <div className="relative w-full" style={{ height }}>
       <canvas ref={ref} />
     </div>
   );

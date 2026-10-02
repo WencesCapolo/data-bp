@@ -1,7 +1,7 @@
 'use client';
 import useSWR from 'swr';
 import { fetcher } from '@/lib/client/fetcher';
-import { KpiCard } from '@/components/ui/KpiCard';
+import { KpiCard, KpiGrid } from '@/components/ui/KpiCard';
 import { InfoHint } from '@/components/ui/InfoHint';
 import { TabSkeleton } from '@/components/ui/Skeleton';
 import { ErrorBox } from '@/components/ui/ErrorBox';
@@ -28,11 +28,17 @@ const ISSUE_LABEL: Record<string, { name: string; description: string }> = {
 };
 const issueName = (code: string): string => ISSUE_LABEL[code]?.name ?? code.replace(/_/g, ' ');
 
-const SEV_COLOR = {
-  low: 'var(--text2)',
-  med: 'var(--yellow)',
-  high: 'var(--red)',
-};
+const SEV_TEXT = {
+  low: 'text-n-700!',
+  med: 'text-amber-700!',
+  high: 'text-red-700!',
+} as const;
+
+const SEV_TAG = {
+  low: 'tag-neutral',
+  med: 'tag-warn',
+  high: 'tag-bad',
+} as const;
 
 const KIND_LABEL: Record<SyncLogEntry['kind'], string> = {
   manual: 'Manual · Pagos',
@@ -59,8 +65,8 @@ export function DataQualityTab() {
   if (!dq) return null;
 
   return (
-    <div>
-      <div className="kpi-grid">
+    <div className="flex flex-col gap-6">
+      <KpiGrid>
         <KpiCard
           label="Usuarios"
           value={dq.totals.users}
@@ -85,120 +91,95 @@ export function DataQualityTab() {
           sub={new Date(dq.generatedAt).toLocaleDateString('es-UY')}
           hint="Momento en que se calcularon estos conteos, es decir, cuando se abrió esta pestaña. No es la fecha de la última sincronización: esa se ve en el registro de abajo."
         />
-      </div>
+      </KpiGrid>
 
-      <div className="chart-full" style={{ padding: 0, overflow: 'hidden' }}>
-        <div className="chart-title" style={{ padding: '20px 24px 0' }}>
+      <section className="card overflow-hidden">
+        <h2 className="card-title flex items-center px-5 pt-5 pb-4">
           Issues detectados
           <InfoHint text="Controles de consistencia sobre la copia local. El % se calcula sobre el total de Pagos (códigos payment…) o de suscriptores (los demás). Severidad «high» si pasa de 5000 filas o si es un Pago sin suscriptor o un plan pago en $0; «med» si pasa de 500." />
+        </h2>
+        <div className="overflow-x-auto">
+          <table className="data-table min-w-[640px]">
+            <thead>
+              <tr>
+                <th>Problema</th>
+                <th>Descripción</th>
+                <th className="text-right!">Cantidad</th>
+                <th className="text-right!">% del total</th>
+                <th className="w-20 text-center!">Severidad</th>
+              </tr>
+            </thead>
+            <tbody>
+              {dq.issues.map((i) => {
+                const sev = severityOf(i);
+                const total = i.code.startsWith('payment') ? dq.totals.payments : dq.totals.users;
+                const pct = total > 0 ? (i.count / total) * 100 : 0;
+                return (
+                  <tr key={i.code}>
+                    <td className="font-semibold">{issueName(i.code)}</td>
+                    <td>{ISSUE_LABEL[i.code]?.description ?? i.description}</td>
+                    <td className={`text-right font-semibold tabular-nums ${SEV_TEXT[sev]}`}>
+                      {i.count.toLocaleString()}
+                    </td>
+                    <td className="text-right text-muted! tabular-nums">{pct.toFixed(2)}%</td>
+                    <td className="text-center">
+                      <span className={`tag ${SEV_TAG[sev]} uppercase`}>{SEV_LABEL[sev]}</span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
-        <table className="data-table" style={{ marginTop: 12 }}>
-          <thead>
-            <tr>
-              <th>Problema</th>
-              <th>Descripción</th>
-              <th style={{ textAlign: 'right' }}>Cantidad</th>
-              <th style={{ textAlign: 'right' }}>% del total</th>
-              <th style={{ width: 80, textAlign: 'center' }}>Severidad</th>
-            </tr>
-          </thead>
-          <tbody>
-            {dq.issues.map((i) => {
-              const sev = severityOf(i);
-              const total = i.code.startsWith('payment') ? dq.totals.payments : dq.totals.users;
-              const pct = total > 0 ? (i.count / total) * 100 : 0;
-              return (
-                <tr key={i.code}>
-                  <td style={{ fontWeight: 600 }}>{issueName(i.code)}</td>
-                  <td>{ISSUE_LABEL[i.code]?.description ?? i.description}</td>
-                  <td style={{ textAlign: 'right', color: SEV_COLOR[sev], fontWeight: 600 }}>
-                    {i.count.toLocaleString()}
-                  </td>
-                  <td style={{ textAlign: 'right', color: 'var(--text3)' }}>{pct.toFixed(2)}%</td>
-                  <td style={{ textAlign: 'center' }}>
-                    <span
-                      style={{
-                        display: 'inline-block',
-                        padding: '2px 8px',
-                        borderRadius: 99,
-                        fontSize: 10,
-                        textTransform: 'uppercase',
-                        letterSpacing: 1,
-                        background: `${SEV_COLOR[sev]}22`,
-                        color: SEV_COLOR[sev],
-                      }}
-                    >
-                      {SEV_LABEL[sev]}
-                    </span>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+      </section>
 
-      <div className="chart-full" style={{ padding: 0, overflow: 'hidden' }}>
-        <div className="chart-title" style={{ padding: '20px 24px 0' }}>
+      <section className="card overflow-hidden">
+        <h2 className="card-title flex items-center px-5 pt-5 pb-4">
           Log de sincronizaciones
           <InfoHint text="Últimas 60 entradas, la más nueva primero: cargas manuales de la exportación de Pagos, ingestas automáticas de la casilla de correo, corridas programadas y por token de acceso. Pagos = filas ingresadas. Si el estado es error, el motivo aparece al pasar el mouse por la fila." />
-        </div>
-        <table className="data-table" style={{ marginTop: 12 }}>
-          <thead>
-            <tr>
-              <th>Fecha</th>
-              <th>Tipo</th>
-              <th>Usuario</th>
-              <th>Detalle</th>
-              <th style={{ textAlign: 'right' }}>Pagos</th>
-              <th style={{ textAlign: 'right' }}>Duración</th>
-              <th style={{ width: 80, textAlign: 'center' }}>Estado</th>
-            </tr>
-          </thead>
-          <tbody>
-            {dq.syncLog.length === 0 && (
+        </h2>
+        <div className="overflow-x-auto">
+          <table className="data-table min-w-[760px]">
+            <thead>
               <tr>
-                <td colSpan={7} className="no-data">Sin registros</td>
+                <th>Fecha</th>
+                <th>Tipo</th>
+                <th>Usuario</th>
+                <th>Detalle</th>
+                <th className="text-right!">Pagos</th>
+                <th className="text-right!">Duración</th>
+                <th className="w-20 text-center!">Estado</th>
               </tr>
-            )}
-            {dq.syncLog.map((e, idx) => {
-              const color = e.error ? 'var(--red)' : 'var(--green)';
-              return (
+            </thead>
+            <tbody>
+              {dq.syncLog.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="py-10! text-center text-muted!">Sin registros</td>
+                </tr>
+              )}
+              {dq.syncLog.map((e, idx) => (
                 <tr key={`${e.at}-${idx}`} title={e.error ?? undefined}>
-                  <td style={{ fontSize: 11, color: 'var(--text2)', whiteSpace: 'nowrap' }}>
+                  <td className="text-[11px] whitespace-nowrap text-n-700!">
                     {new Date(e.at).toLocaleString('es-UY')}
                   </td>
                   <td>{KIND_LABEL[e.kind] ?? e.kind}</td>
-                  <td style={{ fontSize: 11, color: 'var(--text2)' }}>{e.actor}</td>
-                  <td style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--text3)' }}>{e.detail}</td>
-                  <td style={{ textAlign: 'right' }}>{e.rows?.toLocaleString() ?? '—'}</td>
-                  <td style={{ textAlign: 'right', color: 'var(--text3)' }}>{fmtDuration(e.durationMs)}</td>
-                  <td style={{ textAlign: 'center' }}>
-                    <span
-                      style={{
-                        display: 'inline-block',
-                        padding: '2px 8px',
-                        borderRadius: 99,
-                        fontSize: 10,
-                        textTransform: 'uppercase',
-                        letterSpacing: 1,
-                        background: `${color}22`,
-                        color,
-                      }}
-                    >
-                      {e.error ? 'error' : 'ok'}
-                    </span>
+                  <td className="text-[11px] text-n-700!">{e.actor}</td>
+                  <td className="font-mono text-[11px] text-muted!">{e.detail}</td>
+                  <td className="text-right tabular-nums">{e.rows?.toLocaleString() ?? '—'}</td>
+                  <td className="text-right text-muted! tabular-nums">{fmtDuration(e.durationMs)}</td>
+                  <td className="text-center">
+                    <span className={`tag uppercase ${e.error ? 'tag-bad' : 'tag-ok'}`}>{e.error ? 'error' : 'ok'}</span>
                   </td>
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       {meta?.dataRange && (
-        <div className="alert-box">
-          <div className="alert-box-title">
+        <div className="rounded-[var(--panel-radius)] border border-sky-200 bg-sky-50 px-4 py-3.5 text-sm leading-relaxed text-n-700">
+          <div className="mb-1.5 flex items-center font-display text-sm font-semibold tracking-[0.08em] text-sky-800 uppercase">
             📅 Rango de datos disponible
             <InfoHint text="Primer y último día con suscripciones activas calculadas: desde el Pago exitoso más antiguo hasta hoy o hasta el último vencimiento más 7 días, lo que ocurra antes. Fuera de este rango los gráficos no tienen datos." />
           </div>
@@ -211,4 +192,3 @@ export function DataQualityTab() {
     </div>
   );
 }
-

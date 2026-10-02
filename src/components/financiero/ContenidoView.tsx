@@ -2,8 +2,10 @@
 import { useMemo, useState } from 'react';
 import useSWR from 'swr';
 import { fetcher } from '@/lib/client/fetcher';
-import { KpiCard } from '@/components/ui/KpiCard';
+import { KpiCard, KpiGrid } from '@/components/ui/KpiCard';
+import { Card } from '@/components/ui/Card';
 import { InfoHint } from '@/components/ui/InfoHint';
+import { SERIES } from '@/lib/client/palette';
 import { LineChart } from '@/components/charts/LineChart';
 import { TabSkeleton } from '@/components/ui/Skeleton';
 import { ErrorBox } from '@/components/ui/ErrorBox';
@@ -16,11 +18,14 @@ import type { ContenidoDTO, ContenidoTournamentRow } from '@basket/core/dtos/Con
 // The catalogue's own bounds, not a relative window: the interesting spans here
 // are whole seasons, and the first published match is a fixed date.
 const CATALOGUE_FLOOR = '2020-10-01';
-const VIEWS = '#4f8ef7';
-const USERS = '#e30613';
-const PIECES = '#10b981';
-const ACTIVE = '#e8edf5';
-const RATIO = '#a78bfa';
+const VIEWS = SERIES[0];
+const USERS = SERIES[7];
+const PIECES = SERIES[4];
+// La base activa va en tinta, para leerse contra las barras de views.
+const ACTIVE = '#2e2826';
+const RATIO = SERIES[3];
+const NO_DATA = 'flex min-h-[120px] items-center justify-center text-xs font-medium text-muted';
+const TABLE_SCROLL = 'overflow-auto rounded-[var(--panel-radius)] border border-[var(--border)]';
 
 /** Tournaments need at least this many pieces to enter the average-views ranking. */
 const MIN_PIECES_FOR_AVG = 10;
@@ -97,7 +102,7 @@ export function ContenidoView() {
 
   if (isLoading) return <TabSkeleton />;
   if (error) return <ErrorBox message={error.message} />;
-  if (!data) return <div className="no-data">Sin datos</div>;
+  if (!data) return <div className={NO_DATA}>Sin datos</div>;
 
   const T = data.totals;
   const isFiltered =
@@ -115,11 +120,11 @@ export function ContenidoView() {
   const topTournaments = data.byTournament.slice(0, TOP_TOURNAMENTS);
 
   return (
-    <>
-      <div className="section-hero">
-        <div className="section-hero-eyebrow">basquetpass.tv · catálogo</div>
-        <div className="section-hero-title">🏀 Contenido y audiencia</div>
-        <div className="section-hero-desc">
+    <div className="flex flex-col gap-5">
+      <div className="card px-6 py-5">
+        <div className="eyebrow mb-1.5">basquetpass.tv · catálogo</div>
+        <h2 className="font-display text-2xl font-semibold tracking-wide">🏀 Contenido y audiencia</h2>
+        <div className="mt-1.5 max-w-[90ch] text-xs leading-relaxed text-n-700">
           Visualizaciones del catálogo: views, usuarios, partidos por torneo, equipo
           y país. Al final, cruces entre contenido y suscriptores para entender la
           dinámica de audiencia frente a la base activa.
@@ -134,7 +139,7 @@ export function ContenidoView() {
         ceiling={ceiling}
       />
 
-      <div className="kpi-grid">
+      <KpiGrid>
         <KpiCard
           label="Contenidos publicados"
           value={fmt(T.contentCount)}
@@ -182,21 +187,22 @@ export function ContenidoView() {
           variant="yellow"
           hint="Tiempo total visto dividido por la suma de usuarios únicos por contenido. Como el denominador cuenta a la misma persona una vez por pieza, subestima el tiempo real por persona."
         />
-      </div>
+      </KpiGrid>
 
-      <div className="chart-full">
-        <div className="chart-title">
-          📈 Vistas y usuarios mensuales
-          <InfoHint text="Por mes de la fecha del contenido (día del partido): suma de views, de usuarios únicos por pieza y cantidad de contenidos publicados. Son acumulados de cada pieza asignados al mes en que se emitió." />
-        </div>
-        <div className="chart-desc">
-          Barras: total de <b>views</b> por mes (eje izquierdo). Líneas:{' '}
-          <b>usuarios únicos</b> que vieron contenido y número de{' '}
-          <b>contenidos publicados</b> ese mes (eje derecho). El patrón estacional
-          sigue al básquet sudamericano.
-        </div>
+      <Card
+        title="📈 Vistas y usuarios mensuales"
+        hint="Por mes de la fecha del contenido (día del partido): suma de views, de usuarios únicos por pieza y cantidad de contenidos publicados. Son acumulados de cada pieza asignados al mes en que se emitió."
+        desc={
+          <>
+            Barras: total de <b>views</b> por mes (eje izquierdo). Líneas:{' '}
+            <b>usuarios únicos</b> que vieron contenido y número de{' '}
+            <b>contenidos publicados</b> ese mes (eje derecho). El patrón estacional
+            sigue al básquet sudamericano.
+          </>
+        }
+      >
         {months.length === 0 ? (
-          <div className="no-data">Sin contenidos en el rango</div>
+          <div className={NO_DATA}>Sin contenidos en el rango</div>
         ) : (
           <ComboChart
             labels={months}
@@ -210,20 +216,21 @@ export function ContenidoView() {
             height={330}
           />
         )}
-      </div>
+      </Card>
 
-      <div className="col2">
-        <div className="chart-card">
-          <div className="chart-title">
-          🌎 Audiencia por país de contenido
-          <InfoHint text="Views y usuarios sumados por el país donde se jugó el partido, top 10 por views. No es el país del suscriptor y no responde al filtro de país del resto de /financiero." />
-        </div>
-          <div className="chart-desc">
-            Top países por <b>origen del contenido</b>, no por país del suscriptor.
-            Argentina concentra la mayor parte por el peso de la LNB.
-          </div>
+      <div className="grid gap-5 lg:grid-cols-2">
+        <Card
+          title="🌎 Audiencia por país de contenido"
+          hint="Views y usuarios sumados por el país donde se jugó el partido, top 10 por views. No es el país del suscriptor y no responde al filtro de país del resto de /financiero."
+          desc={
+            <>
+              Top países por <b>origen del contenido</b>, no por país del suscriptor.
+              Argentina concentra la mayor parte por el peso de la LNB.
+            </>
+          }
+        >
           {topCountries.length === 0 ? (
-            <div className="no-data">Sin contenidos en el rango</div>
+            <div className={NO_DATA}>Sin contenidos en el rango</div>
           ) : (
             <GroupedBarChart
               labels={topCountries.map((r) => r.country)}
@@ -234,79 +241,81 @@ export function ContenidoView() {
               height={320}
             />
           )}
-        </div>
+        </Card>
 
-        <div className="chart-card">
-          <div className="chart-title">
-          🏆 Top torneos por audiencia
-          <InfoHint text="Los 12 torneos con más views sumadas en el rango, con su cantidad de contenidos y usuarios. Incluye programas y resúmenes, no sólo partidos." />
-        </div>
-          <div className="chart-desc">
-            Top {TOP_TOURNAMENTS} torneos por <b>views totales</b> en el rango. Mide
-            qué ligas mueven más volumen de audiencia agregada.
-          </div>
-          <div className="table-scroll" style={{ maxHeight: 320 }}>
+        <Card
+          title="🏆 Top torneos por audiencia"
+          hint="Los 12 torneos con más views sumadas en el rango, con su cantidad de contenidos y usuarios. Incluye programas y resúmenes, no sólo partidos."
+          desc={
+            <>
+              Top {TOP_TOURNAMENTS} torneos por <b>views totales</b> en el rango. Mide
+              qué ligas mueven más volumen de audiencia agregada.
+            </>
+          }
+        >
+          <div className={`${TABLE_SCROLL} max-h-80`}>
             <table className="data-table">
               <thead>
                 <tr>
                   <th>Torneo</th>
                   <th>País</th>
-                  <th style={{ textAlign: 'right' }}>Contenidos</th>
-                  <th style={{ textAlign: 'right' }}>Views</th>
-                  <th style={{ textAlign: 'right' }}>Users</th>
+                  <th className="text-right!">Contenidos</th>
+                  <th className="text-right!">Views</th>
+                  <th className="text-right!">Users</th>
                 </tr>
               </thead>
               <tbody>
                 {topTournaments.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="no-data">Sin datos en el rango</td>
+                    <td colSpan={5} className={`${NO_DATA} text-muted!`}>Sin datos en el rango</td>
                   </tr>
                 ) : (
                   topTournaments.map((r) => (
                     <tr key={r.tournamentId}>
                       <td>
                         <b>{r.name}</b>
-                        <div style={{ color: 'var(--text3)', fontSize: 10 }}>id {r.tournamentId}</div>
+                        <div className="text-[10px] text-muted">id {r.tournamentId}</div>
                       </td>
                       <td>{r.countryMaster}</td>
-                      <td style={{ textAlign: 'right' }}>{fmt(r.count)}</td>
-                      <td style={{ textAlign: 'right', fontWeight: 600 }}>{fmt(r.views)}</td>
-                      <td style={{ textAlign: 'right' }}>{fmt(r.users)}</td>
+                      <td className="text-right">{fmt(r.count)}</td>
+                      <td className="text-right font-semibold">{fmt(r.views)}</td>
+                      <td className="text-right">{fmt(r.users)}</td>
                     </tr>
                   ))
                 )}
               </tbody>
             </table>
           </div>
-        </div>
+        </Card>
       </div>
 
-      <div className="chart-full">
-        <div className="chart-title">
-          📊 Top torneos por media de views
-          <InfoHint text="Views totales ÷ contenidos de cada torneo en el rango, sólo torneos con al menos 10 contenidos. Mide cuánto rinde cada pieza, no el volumen del torneo." />
-        </div>
-        <div className="chart-desc">
-          Para cada torneo, <b>views ÷ nº de contenidos</b> en el rango. Mide qué tan
-          vista es en promedio cada pieza de la liga, no su volumen. Se exigen al
-          menos <b>{MIN_PIECES_FOR_AVG} contenidos</b> en el rango para entrar al
-          ranking, así un único partido viral no lo encabeza.
-        </div>
-        <div className="table-scroll" style={{ maxHeight: 380 }}>
+      <Card
+        title="📊 Top torneos por media de views"
+        hint="Views totales ÷ contenidos de cada torneo en el rango, sólo torneos con al menos 10 contenidos. Mide cuánto rinde cada pieza, no el volumen del torneo."
+        desc={
+          <>
+            Para cada torneo, <b>views ÷ nº de contenidos</b> en el rango. Mide qué tan
+            vista es en promedio cada pieza de la liga, no su volumen. Se exigen al
+            menos <b>{MIN_PIECES_FOR_AVG} contenidos</b> en el rango para entrar al
+            ranking, así un único partido viral no lo encabeza.
+          </>
+        }
+      >
+        <div className={`${TABLE_SCROLL} max-h-[380px]`}>
           <table className="data-table">
             <thead>
               <tr>
                 <th>Torneo</th>
                 <th>País</th>
-                <th style={{ textAlign: 'right' }}>Contenidos</th>
-                <th style={{ textAlign: 'right' }}>Views totales</th>
-                <th style={{ textAlign: 'right' }}>Media views/contenido</th>
+                <th className="text-right!">Contenidos</th>
+                <th className="text-right!">Views totales</th>
+                <th className="text-right!">Media views/contenido</th>
               </tr>
             </thead>
             <tbody>
               {byTournamentAvg.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="no-data">
+                  <td colSpan={5} className={`${NO_DATA} text-muted!`}>
                     Sin torneos con ≥{MIN_PIECES_FOR_AVG} contenidos en el rango
                   </td>
                 </tr>
@@ -315,12 +324,12 @@ export function ContenidoView() {
                   <tr key={r.tournamentId}>
                     <td>
                       <b>{r.name}</b>
-                      <div style={{ color: 'var(--text3)', fontSize: 10 }}>id {r.tournamentId}</div>
+                      <div className="text-[10px] text-muted">id {r.tournamentId}</div>
                     </td>
                     <td>{r.countryMaster}</td>
-                    <td style={{ textAlign: 'right' }}>{fmt(r.count)}</td>
-                    <td style={{ textAlign: 'right' }}>{fmt(r.views)}</td>
-                    <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--accent2)' }}>
+                    <td className="text-right">{fmt(r.count)}</td>
+                    <td className="text-right">{fmt(r.views)}</td>
+                    <td className="text-right font-bold text-sky-700!">
                       {fmt(r.avg)}
                     </td>
                   </tr>
@@ -329,20 +338,21 @@ export function ContenidoView() {
             </tbody>
           </table>
         </div>
-      </div>
+      </Card>
 
-      <div className="col2">
-        <div className="chart-card">
-          <div className="chart-title">
-          👥 Top equipos por views
-          <InfoHint text="Suma de views y usuarios de cada partido en que apareció el equipo, como local o visitante; un partido suma para ambos. Top 15 por views." />
-        </div>
-          <div className="chart-desc">
-            Top 15 equipos por visualizaciones acumuladas. Un partido cuenta para
-            ambos equipos, como local y como visitante.
-          </div>
+      <div className="grid gap-5 lg:grid-cols-2">
+        <Card
+          title="👥 Top equipos por views"
+          hint="Suma de views y usuarios de cada partido en que apareció el equipo, como local o visitante; un partido suma para ambos. Top 15 por views."
+          desc={
+            <>
+              Top 15 equipos por visualizaciones acumuladas. Un partido cuenta para
+              ambos equipos, como local y como visitante.
+            </>
+          }
+        >
           {topTeams.length === 0 ? (
-            <div className="no-data">Sin partidos en el rango</div>
+            <div className={NO_DATA}>Sin partidos en el rango</div>
           ) : (
             <GroupedBarChart
               labels={topTeams.map((r) => r.team)}
@@ -353,81 +363,74 @@ export function ContenidoView() {
               height={380}
             />
           )}
-        </div>
+        </Card>
 
-        <div className="chart-card">
-          <div className="chart-title">
-          ⭐ Top contenidos individuales
-          <InfoHint text="Los 15 contenidos del catálogo filtrado con más views acumuladas, con su fecha y torneo. Pueden ser partidos, finales o programas." />
-        </div>
-          <div className="chart-desc">
-            Los 15 contenidos más vistos del rango. Incluye finales, eventos y
-            programas especiales, no sólo partidos.
-          </div>
-          <div className="table-scroll" style={{ maxHeight: 380 }}>
+        <Card
+          title="⭐ Top contenidos individuales"
+          hint="Los 15 contenidos del catálogo filtrado con más views acumuladas, con su fecha y torneo. Pueden ser partidos, finales o programas."
+          desc={
+            <>
+              Los 15 contenidos más vistos del rango. Incluye finales, eventos y
+              programas especiales, no sólo partidos.
+            </>
+          }
+        >
+          <div className={`${TABLE_SCROLL} max-h-[380px]`}>
             <table className="data-table">
               <thead>
                 <tr>
                   <th>Fecha</th>
                   <th>Partido / Título</th>
-                  <th style={{ textAlign: 'right' }}>Views</th>
-                  <th style={{ textAlign: 'right' }}>Users</th>
+                  <th className="text-right!">Views</th>
+                  <th className="text-right!">Users</th>
                 </tr>
               </thead>
               <tbody>
                 {data.topViews.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="no-data">Sin contenidos en el rango</td>
+                    <td colSpan={4} className={`${NO_DATA} text-muted!`}>Sin contenidos en el rango</td>
                   </tr>
                 ) : (
                   data.topViews.map((r, i) => (
                     <tr key={`${r.date}:${i}`}>
-                      <td style={{ color: 'var(--text3)' }}>{r.date}</td>
+                      <td className="whitespace-nowrap text-muted!">{r.date}</td>
                       <td>
                         {r.team1 && r.team2 ? `${r.team1} vs ${r.team2}` : r.title || '—'}
                         {r.tournamentName && (
-                          <div style={{ color: 'var(--text3)', fontSize: 10 }}>{r.tournamentName}</div>
+                          <div className="text-[10px] text-muted">{r.tournamentName}</div>
                         )}
                       </td>
-                      <td style={{ textAlign: 'right', fontWeight: 600 }}>{fmt(r.views)}</td>
-                      <td style={{ textAlign: 'right' }}>{fmt(r.users)}</td>
+                      <td className="text-right font-semibold">{fmt(r.views)}</td>
+                      <td className="text-right">{fmt(r.users)}</td>
                     </tr>
                   ))
                 )}
               </tbody>
             </table>
           </div>
-        </div>
+        </Card>
       </div>
 
-      <div className="chart-full">
-        <div className="chart-title">
-          🏟️ Partidos por liga
-          <InfoHint text="Sólo contenidos con dos equipos, agrupados por torneo: partidos, views, usuarios y views ÷ partidos. La métrica del selector ordena el ranking y dibuja el top 20." />
-        </div>
-        <div className="chart-desc">
-          Sólo partidos con dos equipos: los programas y los resúmenes quedan
-          afuera, y por eso los totales aquí son menores que en la tabla de
-          torneos. Ordená por la métrica que te interese.
-        </div>
-        <div
-          style={{
-            display: 'flex',
-            gap: 12,
-            alignItems: 'center',
-            flexWrap: 'wrap',
-            marginBottom: 12,
-            fontSize: 11,
-            color: 'var(--text3)',
-          }}
-        >
-          <span style={{ fontWeight: 600, color: 'var(--text2)' }}>
+      <Card
+        title="🏟️ Partidos por liga"
+        hint="Sólo contenidos con dos equipos, agrupados por torneo: partidos, views, usuarios y views ÷ partidos. La métrica del selector ordena el ranking y dibuja el top 20."
+        desc={
+          <>
+            Sólo partidos con dos equipos: los programas y los resúmenes quedan
+            afuera, y por eso los totales aquí son menores que en la tabla de
+            torneos. Ordená por la métrica que te interese.
+          </>
+        }
+      >
+        <div className="mb-3 flex flex-wrap items-center gap-3 text-[11px] text-muted">
+          <span className="font-semibold text-n-700">
             {fmt(data.byLeague.reduce((a, r) => a + r.matches, 0))} partidos en{' '}
             {data.byLeague.length} ligas
           </span>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
+          <label className="ml-auto flex items-center gap-1.5">
             Métrica:
             <select
+              className="input text-xs"
               value={leagueMetric}
               onChange={(e) => setLeagueMetric(e.target.value as LeagueMetric)}
             >
@@ -440,7 +443,7 @@ export function ContenidoView() {
           </label>
         </div>
         {leagues.length === 0 ? (
-          <div className="no-data">Sin partidos en el rango</div>
+          <div className={NO_DATA}>Sin partidos en el rango</div>
         ) : (
           <GroupedBarChart
             labels={leagues.map((r) => r.name)}
@@ -462,14 +465,14 @@ export function ContenidoView() {
             height={Math.max(320, leagues.length * 26)}
           />
         )}
-      </div>
+      </Card>
 
-      <div className="section-callout">
-        <div className="section-callout-title">
+      <div className="card border-l-[3px] border-l-sky-600 px-4.5 py-3.5">
+        <div className="mb-1.5 flex items-center text-[10px] font-bold tracking-[0.12em] text-sky-700 uppercase">
           Cruces contenido × suscriptores
           <InfoHint text="Los bloques que siguen cruzan el catálogo (por fecha del partido) con la base de suscriptores activos, que sale de los Pagos y existe desde 2024-05. Antes de esa fecha hay audiencia pero no base." />
         </div>
-        <div className="section-callout-body">
+        <div className="max-w-[100ch] text-xs leading-relaxed text-n-700">
           Las visualizaciones siguientes combinan la audiencia con la base de
           suscriptores activos: <i>¿la audiencia crece junto con la base?</i>,{' '}
           <i>¿los eventos top traen altas?</i> El catálogo llega hasta 2020-10,
@@ -482,19 +485,20 @@ export function ContenidoView() {
         </div>
       </div>
 
-      <div className="chart-full">
-        <div className="chart-title">
-          🔗 Audiencia mensual vs suscriptores activos
-          <InfoHint text="Views del mes (por fecha del contenido) contra los suscriptores activos el último día de ese mes, según la vista diaria de activos. Sólo meses con ambas series." />
-        </div>
-        <div className="chart-desc">
-          Barras: views mensuales (eje izquierdo). Línea: suscriptores activos al
-          cierre del mes (eje derecho). Si la audiencia crece más rápido que la
-          base hay <b>upside</b> de engagement; si crece menos, hay fatiga de
-          consumo.
-        </div>
+      <Card
+        title="🔗 Audiencia mensual vs suscriptores activos"
+        hint="Views del mes (por fecha del contenido) contra los suscriptores activos el último día de ese mes, según la vista diaria de activos. Sólo meses con ambas series."
+        desc={
+          <>
+            Barras: views mensuales (eje izquierdo). Línea: suscriptores activos al
+            cierre del mes (eje derecho). Si la audiencia crece más rápido que la
+            base hay <b>upside</b> de engagement; si crece menos, hay fatiga de
+            consumo.
+          </>
+        }
+      >
         {crossed.labels.length === 0 ? (
-          <div className="no-data">Sin meses con audiencia y base activa a la vez</div>
+          <div className={NO_DATA}>Sin meses con audiencia y base activa a la vez</div>
         ) : (
           <ComboChart
             labels={crossed.labels}
@@ -505,21 +509,22 @@ export function ContenidoView() {
             height={330}
           />
         )}
-      </div>
+      </Card>
 
-      <div className="col2">
-        <div className="chart-card">
-          <div className="chart-title">
-          📊 Engagement: views por activo
-          <InfoHint text="Views del mes divididas por suscriptores activos al cierre de ese mes. Las views son acumuladas de las piezas emitidas ese mes, así que el ratio mezcla audiencia posterior con la base de ese momento." />
-        </div>
-          <div className="chart-desc">
-            Ratio mensual <b>views ÷ activos</b>: cuántas veces, en promedio, cada
-            suscriptor activo ve contenido en el mes. Creciente indica mayor
-            consumo unitario.
-          </div>
+      <div className="grid gap-5 lg:grid-cols-2">
+        <Card
+          title="📊 Engagement: views por activo"
+          hint="Views del mes divididas por suscriptores activos al cierre de ese mes. Las views son acumuladas de las piezas emitidas ese mes, así que el ratio mezcla audiencia posterior con la base de ese momento."
+          desc={
+            <>
+              Ratio mensual <b>views ÷ activos</b>: cuántas veces, en promedio, cada
+              suscriptor activo ve contenido en el mes. Creciente indica mayor
+              consumo unitario.
+            </>
+          }
+        >
           {crossed.labels.length === 0 ? (
-            <div className="no-data">Sin datos</div>
+            <div className={NO_DATA}>Sin datos</div>
           ) : (
             <LineChart
               height={300}
@@ -527,43 +532,44 @@ export function ContenidoView() {
               series={[{ label: 'Views por activo', data: crossed.ratio, color: RATIO, fill: true }]}
             />
           )}
-        </div>
+        </Card>
 
-        <div className="chart-card">
-          <div className="chart-title">
-          🎯 Top eventos × altas del mismo día
-          <InfoHint text="Los 12 contenidos más vistos y los Pagos de alta del mismo día: primer Pago de un suscriptor, o reactivación tras más de 7 días vencido. Coincidencia de fecha, no causalidad." />
-        </div>
-          <div className="chart-desc">
-            Los 12 contenidos más vistos del rango, con las altas reales de ese
-            mismo día. Un evento sólo aparece como conversión si la persona se
-            suscribió el mismo día, así que esto detecta qué partidos movieron la
-            base, no cuánta base trajo cada uno.
-          </div>
-          <div className="table-scroll" style={{ maxHeight: 340 }}>
+        <Card
+          title="🎯 Top eventos × altas del mismo día"
+          hint="Los 12 contenidos más vistos y los Pagos de alta del mismo día: primer Pago de un suscriptor, o reactivación tras más de 7 días vencido. Coincidencia de fecha, no causalidad."
+          desc={
+            <>
+              Los 12 contenidos más vistos del rango, con las altas reales de ese
+              mismo día. Un evento sólo aparece como conversión si la persona se
+              suscribió el mismo día, así que esto detecta qué partidos movieron la
+              base, no cuánta base trajo cada uno.
+            </>
+          }
+        >
+          <div className={`${TABLE_SCROLL} max-h-[340px]`}>
             <table className="data-table">
               <thead>
                 <tr>
                   <th>Fecha</th>
                   <th>Partido / Título</th>
-                  <th style={{ textAlign: 'right' }}>Views</th>
-                  <th style={{ textAlign: 'right' }}>Altas del día</th>
+                  <th className="text-right!">Views</th>
+                  <th className="text-right!">Altas del día</th>
                 </tr>
               </thead>
               <tbody>
                 {data.topEventDays.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="no-data">Sin eventos en el rango</td>
+                    <td colSpan={4} className={`${NO_DATA} text-muted!`}>Sin eventos en el rango</td>
                   </tr>
                 ) : (
                   data.topEventDays.map((r, i) => (
                     <tr key={`${r.date}:${i}`}>
-                      <td style={{ color: 'var(--text3)' }}>{r.date}</td>
+                      <td className="whitespace-nowrap text-muted!">{r.date}</td>
                       <td>{r.team1 && r.team2 ? `${r.team1} vs ${r.team2}` : r.title || '—'}</td>
-                      <td style={{ textAlign: 'right', fontWeight: 600 }}>{fmt(r.views)}</td>
-                      <td style={{ textAlign: 'right' }}>
+                      <td className="text-right font-semibold">{fmt(r.views)}</td>
+                      <td className="text-right">
                         <b>{fmt(r.newSubs + r.reactivated)}</b>
-                        <div style={{ color: 'var(--text3)', fontSize: 10 }}>
+                        <div className="text-[10px] text-muted">
                           {fmt(r.newSubs)} nuevas + {fmt(r.reactivated)} react
                         </div>
                       </td>
@@ -573,10 +579,10 @@ export function ContenidoView() {
               </tbody>
             </table>
           </div>
-        </div>
+        </Card>
       </div>
 
-      <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 8, lineHeight: 1.6 }}>
+      <div className="text-[10px] leading-relaxed text-muted">
         Catálogo filtrado como en el prototipo: sólo contenido publicado
         y con al menos {data.catalogue.minAvgSecondsPerView}{' '}
         segundos vistos por view. De {fmt(data.catalogue.rowsInRange)} filas en el
@@ -585,6 +591,6 @@ export function ContenidoView() {
         {fmt(data.catalogue.rowsDroppedShort)} demasiado cortas — tráilers,
         emisiones de prueba y reproducciones abortadas.
       </div>
-    </>
+    </div>
   );
 }

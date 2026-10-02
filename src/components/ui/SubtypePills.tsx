@@ -1,5 +1,6 @@
 'use client';
 import type { SubType } from '@basket/core/dtos/shared';
+import { PillGroup } from './PillGroup';
 
 const OPTS: { val: SubType | undefined; label: string }[] = [
   { val: undefined, label: 'Todos' },
@@ -10,25 +11,6 @@ const OPTS: { val: SubType | undefined; label: string }[] = [
   { val: 'Otros', label: 'Otros' },
 ];
 
-export function SubtypePills({
-  value,
-  onChange,
-}: {
-  value?: SubType;
-  onChange: (v?: SubType) => void;
-}) {
-  return (
-    <div className="subtype-pills">
-      {OPTS.map((o) => (
-        <button
-          key={o.label}
-          type="button"
-          className={`subtype-pill ${value === o.val ? 'active' : ''}`}
-          onClick={() => onChange(o.val)}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
-  );
+export function SubtypePills({ value, onChange }: { value?: SubType; onChange: (v?: SubType) => void }) {
+  return <PillGroup options={OPTS} value={value} onChange={onChange} label="Subtipo" />;
 }

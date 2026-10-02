@@ -1,7 +1,6 @@
 'use client';
-import type { ReactNode } from 'react';
-import { Header } from '@/components/layout/Header';
 import { TabBar } from '@/components/layout/TabBar';
+import { PageTitle } from '@/components/ui/PageTitle';
 import { OverviewTab } from '@/components/tabs/OverviewTab';
 import { EvolutionTab } from '@/components/tabs/EvolutionTab';
 import { TeamsTab } from '@/components/tabs/TeamsTab';
@@ -11,16 +10,19 @@ import { FilterRow } from '@/components/ui/FilterRow';
 import { TabBoundary } from '@/components/ui/TabBoundary';
 import { UrlFilterSync } from '@/lib/client/UrlFilterSync';
 import { useFilters } from '@/lib/client/filterStore';
+import { findDashboard } from '@/lib/dashboards';
 
-export function BasketDashboard({ email, campana }: { email: string; campana?: ReactNode }) {
+const DASHBOARD = findDashboard('basket-subs')!;
+
+export function BasketDashboard() {
   const tab = useFilters((s) => s.tab);
 
   return (
     <>
       <UrlFilterSync />
-      <Header email={email} campana={campana} />
+      <PageTitle sub={DASHBOARD.description}>{DASHBOARD.title}</PageTitle>
       <TabBar />
-      <main className="main">
+      <div className="flex flex-col gap-6">
         {tab === 'overview' && (
           <>
             <FilterRow showCountries showAccess showSubType />
@@ -52,7 +54,7 @@ export function BasketDashboard({ email, campana }: { email: string; campana?: R
           </>
         )}
         {tab === 'quality' && <TabBoundary><DataQualityTab /></TabBoundary>}
-      </main>
+      </div>
     </>
   );
 }
