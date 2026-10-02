@@ -16,6 +16,7 @@ import {
   TimeScale,
   Tooltip,
 } from 'chart.js';
+import { CHART_THEME } from './palette';
 
 let registered = false;
 export function ensureChartJs(): void {
@@ -36,8 +37,11 @@ export function ensureChartJs(): void {
     Legend,
     Tooltip,
   );
-  Chart.defaults.color = '#8899bb';
-  Chart.defaults.font.family = "'Poppins', system-ui, sans-serif";
+  Chart.defaults.color = CHART_THEME.tick;
+  Chart.defaults.borderColor = CHART_THEME.grid;
+  // next/font serves Poppins under a hashed family name; the variable holds it.
+  Chart.defaults.font.family =
+    getComputedStyle(document.documentElement).getPropertyValue('--font-poppins').trim() || "'Poppins', system-ui, sans-serif";
   Chart.defaults.font.size = 11;
   registered = true;
 }

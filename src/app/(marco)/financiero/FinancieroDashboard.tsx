@@ -1,6 +1,5 @@
 'use client';
-import { useState, type ReactNode } from 'react';
-import { Header } from '@/components/layout/Header';
+import { useState } from 'react';
 import { TabBoundary } from '@/components/ui/TabBoundary';
 import { FinancieroView } from '@/components/financiero/FinancieroView';
 import { ContenidoView } from '@/components/financiero/ContenidoView';
@@ -24,12 +23,11 @@ const VIEWS: { key: FinView; label: string; icon: string }[] = [
   { key: 'contenido', label: 'Contenido', icon: '🏀' },
 ];
 
-export function FinancieroDashboard({ email, campana }: { email: string; campana?: ReactNode }) {
+export function FinancieroDashboard() {
   const [view, setView] = useState<FinView>('financiero');
 
   return (
     <>
-      <Header email={email} campana={campana} />
       <div className="proto-page">
         <FinancieroHero />
         <div className="proto-wrap">

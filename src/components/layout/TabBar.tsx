@@ -1,5 +1,6 @@
 'use client';
 import { useFilters, type TabKey } from '@/lib/client/filterStore';
+import { SegmentedTabs } from '@/components/ui/SegmentedTabs';
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'overview', label: 'Visión General' },
@@ -12,19 +13,5 @@ const TABS: { key: TabKey; label: string }[] = [
 export function TabBar() {
   const tab = useFilters((s) => s.tab);
   const setTab = useFilters((s) => s.setTab);
-  return (
-    <div className="tabs" role="tablist">
-      {TABS.map((t) => (
-        <button
-          key={t.key}
-          role="tab"
-          aria-selected={tab === t.key}
-          className={`tab ${tab === t.key ? 'active' : ''}`}
-          onClick={() => setTab(t.key)}
-        >
-          {t.label}
-        </button>
-      ))}
-    </div>
-  );
+  return <SegmentedTabs tabs={TABS} value={tab} onChange={setTab} label="Vista" />;
 }

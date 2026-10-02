@@ -50,7 +50,7 @@ export function InfoHint({ text, label = 'Qué significa' }: { text: ReactNode; 
       <button
         ref={btn}
         type="button"
-        className="info-hint"
+        className="ml-1.5 inline-flex size-[15px] shrink-0 cursor-help items-center justify-center rounded-full border border-n-300 align-middle font-sans text-[10px] leading-none font-semibold tracking-normal text-n-500 normal-case transition-colors hover:border-accent hover:text-foreground focus-visible:border-accent focus-visible:text-foreground focus-visible:outline-hidden"
         aria-label={label}
         aria-describedby={open ? id : undefined}
         aria-expanded={open}
@@ -72,7 +72,7 @@ export function InfoHint({ text, label = 'Qué significa' }: { text: ReactNode; 
           <div
             id={id}
             role="tooltip"
-            className={`info-hint-bubble ${pos.below ? 'below' : 'above'}`}
+            className={`pointer-events-none fixed z-[1000] w-[280px] max-w-[calc(100vw-16px)] rounded-[var(--panel-radius)] border border-[var(--border)] bg-surface px-3 py-2.5 text-left font-sans text-xs leading-relaxed font-normal tracking-normal text-foreground normal-case shadow-[var(--shadow-lift)] [&_strong]:font-semibold ${pos.below ? '' : '-translate-y-full'}`}
             style={{ top: pos.top, left: pos.left }}
           >
             {text}

@@ -2,7 +2,7 @@
 import { useMemo } from 'react';
 import type { ChartConfiguration } from 'chart.js';
 import { ChartCanvas } from './ChartCanvas';
-import { useChartTheme } from '@/lib/client/theme';
+import { CHART_THEME } from '@/lib/client/palette';
 import { tooltipBase } from './tooltip';
 
 interface Props {
@@ -15,7 +15,6 @@ interface Props {
 const DEFAULT_COLORS = ['#4f8ef7', '#22d3ee', '#f43f5e', '#a78bfa', '#34d399', '#fb923c', '#94a3b8', '#e30613'];
 
 export function DoughnutChart({ labels, values, colors, height = 220 }: Props) {
-  const chartTheme = useChartTheme();
   const config = useMemo<ChartConfiguration>(
     () => ({
       type: 'doughnut',
@@ -25,7 +24,7 @@ export function DoughnutChart({ labels, values, colors, height = 220 }: Props) {
           {
             data: values,
             backgroundColor: colors ?? DEFAULT_COLORS.slice(0, labels.length),
-            borderColor: chartTheme.surface,
+            borderColor: CHART_THEME.surface,
             borderWidth: 2,
           },
         ],
@@ -37,7 +36,7 @@ export function DoughnutChart({ labels, values, colors, height = 220 }: Props) {
         plugins: {
           legend: { position: 'right', labels: { boxWidth: 10, font: { size: 11 } } },
           tooltip: {
-            ...tooltipBase(chartTheme),
+            ...tooltipBase(CHART_THEME),
             callbacks: {
               label: (ctx) => {
                 const total = (ctx.dataset.data as number[]).reduce((a, b) => a + b, 0);
@@ -50,7 +49,7 @@ export function DoughnutChart({ labels, values, colors, height = 220 }: Props) {
         },
       },
     }),
-    [labels, values, colors, chartTheme],
+    [labels, values, colors],
   );
   return <ChartCanvas config={config} height={height} />;
 }

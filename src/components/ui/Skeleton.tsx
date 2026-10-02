@@ -1,12 +1,12 @@
-export function ChartSkeleton({ height = 260, mb = 0 }: { height?: number; mb?: number }) {
-  return <div className="skeleton" style={{ height, marginBottom: mb || undefined }} />;
+export function ChartSkeleton({ height = 260 }: { height?: number }) {
+  return <div className="skeleton" style={{ height }} />;
 }
 
 export function KpiGridSkeleton({ count = 4 }: { count?: number }) {
   return (
-    <div className="kpi-grid">
+    <div className="grid grid-cols-2 gap-4 sm:grid-cols-[repeat(auto-fit,minmax(180px,1fr))]">
       {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="skeleton" style={{ height: 96 }} />
+        <div key={i} className="skeleton h-24" />
       ))}
     </div>
   );
@@ -18,20 +18,18 @@ type Block =
 
 export function TabSkeleton({ kpis = 4, blocks = [] }: { kpis?: number; blocks?: Block[] }) {
   return (
-    <div>
+    <div className="flex flex-col gap-6">
       <KpiGridSkeleton count={kpis} />
-      {blocks.map((b, i) => {
-        const mb = i < blocks.length - 1 ? 24 : 0;
-        if (b.kind === 'col2') {
-          return (
-            <div key={i} className="col2" style={{ marginBottom: mb || undefined }}>
-              <ChartSkeleton height={b.height} />
-              <ChartSkeleton height={b.height} />
-            </div>
-          );
-        }
-        return <ChartSkeleton key={i} height={b.height} mb={mb} />;
-      })}
+      {blocks.map((b, i) =>
+        b.kind === 'col2' ? (
+          <div key={i} className="grid gap-4 md:grid-cols-2">
+            <ChartSkeleton height={b.height} />
+            <ChartSkeleton height={b.height} />
+          </div>
+        ) : (
+          <ChartSkeleton key={i} height={b.height} />
+        ),
+      )}
     </div>
   );
 }

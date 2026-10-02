@@ -2,7 +2,7 @@
 import { useMemo } from 'react';
 import type { ChartConfiguration, ChartDataset } from 'chart.js';
 import { ChartCanvas } from '@/components/charts/ChartCanvas';
-import { useChartTheme, type ChartTheme } from '@/lib/client/theme';
+import { CHART_THEME, type ChartTheme } from '@/lib/client/palette';
 import { tooltipBase } from '@/components/charts/tooltip';
 import { fmt, fmtUsd } from './format';
 
@@ -16,16 +16,16 @@ import { fmt, fmtUsd } from './format';
  * tema para esas dos cosas y nada más.
  */
 
-const INTER = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+const INTER = "var(--font-poppins), 'Poppins', system-ui, sans-serif";
 
 function grid(t: ChartTheme): string {
-  return t.theme === 'light' ? 'rgba(15,23,42,0.06)' : t.grid;
+  return t.grid;
 }
 function gridSoft(t: ChartTheme): string {
-  return t.theme === 'light' ? '#f1f5f9' : t.grid;
+  return t.grid;
 }
 function ink(t: ChartTheme): string {
-  return t.theme === 'light' ? '#0f172a' : '#e8edf5';
+  return t.title;
 }
 function base() {
   return {
@@ -60,7 +60,7 @@ export function CombinedChart({
   tx: number[];
   height?: number;
 }) {
-  const t = useChartTheme();
+  const t = CHART_THEME;
   const config = useMemo<ChartConfiguration>(
     () => ({
       type: 'bar',
@@ -134,7 +134,7 @@ export function Daily15Chart({
   netas: number[];
   height?: number;
 }) {
-  const t = useChartTheme();
+  const t = CHART_THEME;
   const config = useMemo<ChartConfiguration>(
     () => ({
       type: 'bar',
@@ -186,7 +186,7 @@ export function DailyActive15Chart({
   active: number[];
   height?: number;
 }) {
-  const t = useChartTheme();
+  const t = CHART_THEME;
   const config = useMemo<ChartConfiguration>(() => {
     // Para que las diferencias diarias se vean, el eje se ancla cerca del mínimo.
     const min = active.length ? Math.min(...active) : 0;
@@ -237,7 +237,7 @@ export function FlowChart({
   bajas: number[];
   height?: number;
 }) {
-  const t = useChartTheme();
+  const t = CHART_THEME;
   const config = useMemo<ChartConfiguration>(
     () => ({
       type: 'bar',
@@ -275,7 +275,7 @@ export function FlowChart({
 // ── Mix de planes ───────────────────────────────────────────────────────────
 const PLAN_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#64748b', '#ec4899', '#14b8a6'];
 export function PlansDonut({ labels, values, height = 300 }: { labels: string[]; values: number[]; height?: number }) {
-  const t = useChartTheme();
+  const t = CHART_THEME;
   const config = useMemo<ChartConfiguration>(() => {
     const total = values.reduce((a, b) => a + b, 0);
     return {
@@ -308,7 +308,7 @@ export function CancelMonthlyChart({
   byPlatform: { platformName: string; data: number[] }[];
   height?: number;
 }) {
-  const t = useChartTheme();
+  const t = CHART_THEME;
   const config = useMemo<ChartConfiguration>(() => {
     const total = labels.map((_, i) => byPlatform.reduce((a, p) => a + (p.data[i] ?? 0), 0));
     return {
@@ -351,7 +351,7 @@ export function CancelMonthlyChart({
 export const LC_BUCKETS = ['0-30', '31-60', '61-90', '91-180', '180+'] as const;
 const LC_COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#f97316', '#dc2626'];
 export function LastChargeChart({ values, height = 280 }: { values: number[]; height?: number }) {
-  const t = useChartTheme();
+  const t = CHART_THEME;
   const config = useMemo<ChartConfiguration>(() => {
     const total = values.reduce((a, b) => a + b, 0);
     return {
@@ -392,7 +392,7 @@ export function RevenueChart({
   totalUsd: (number | null)[];
   height?: number;
 }) {
-  const t = useChartTheme();
+  const t = CHART_THEME;
   const config = useMemo<ChartConfiguration>(
     () => ({
       type: 'line',
@@ -407,7 +407,7 @@ export function RevenueChart({
           })),
           {
             label: 'TOTAL NETO USD (MP+Stripe)', data: totalUsd,
-            borderColor: ink(t), backgroundColor: t.theme === 'light' ? 'rgba(15,23,42,0.08)' : 'rgba(232,237,245,0.08)',
+            borderColor: ink(t), backgroundColor: 'rgba(28,13,16,0.06)',
             yAxisID: 'yUsd', borderDash: [6, 4], tension: 0.35, borderWidth: 2.5, pointRadius: 0, fill: true,
           },
         ] as ChartDataset[],
@@ -442,7 +442,7 @@ export function ActiveChart({
   total: number[];
   height?: number;
 }) {
-  const t = useChartTheme();
+  const t = CHART_THEME;
   const config = useMemo<ChartConfiguration>(
     () => ({
       type: 'bar',
@@ -500,7 +500,7 @@ export function SeasonsChart({
   footers: string[];
   height?: number;
 }) {
-  const t = useChartTheme();
+  const t = CHART_THEME;
   const config = useMemo<ChartConfiguration>(
     () => ({
       type: 'bar',
@@ -552,7 +552,7 @@ export function PlansFreqChart({
   anual: number[];
   height?: number;
 }) {
-  const t = useChartTheme();
+  const t = CHART_THEME;
   const config = useMemo<ChartConfiguration>(
     () => ({
       type: 'bar',
@@ -600,7 +600,7 @@ export function FeesChart({
   byPlatform: { platformName: string; data: number[] }[];
   height?: number;
 }) {
-  const t = useChartTheme();
+  const t = CHART_THEME;
   const config = useMemo<ChartConfiguration>(
     () => ({
       type: 'bar',

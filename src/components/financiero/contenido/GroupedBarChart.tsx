@@ -2,7 +2,7 @@
 import { useMemo } from 'react';
 import type { ChartConfiguration } from 'chart.js';
 import { ChartCanvas } from '@/components/charts/ChartCanvas';
-import { useChartTheme } from '@/lib/client/theme';
+import { CHART_THEME } from '@/lib/client/palette';
 import { tooltipBase } from '@/components/charts/tooltip';
 import { fmt } from './format';
 
@@ -21,7 +21,6 @@ export function GroupedBarChart({
   series: { label: string; data: number[]; color: string }[];
   height?: number;
 }) {
-  const chartTheme = useChartTheme();
   const config = useMemo<ChartConfiguration>(
     () => ({
       type: 'bar',
@@ -41,17 +40,17 @@ export function GroupedBarChart({
         plugins: {
           legend: { position: 'bottom', labels: { boxWidth: 10, padding: 12, usePointStyle: true } },
           tooltip: {
-            ...tooltipBase(chartTheme),
+            ...tooltipBase(CHART_THEME),
             callbacks: { label: (ctx) => `${ctx.dataset.label}: ${fmt(Number(ctx.parsed.x))}` },
           },
         },
         scales: {
-          x: { grid: { color: chartTheme.grid }, ticks: { font: { size: 10 }, callback: (v) => fmt(Number(v)) } },
+          x: { grid: { color: CHART_THEME.grid }, ticks: { font: { size: 10 }, callback: (v) => fmt(Number(v)) } },
           y: { grid: { display: false }, ticks: { font: { size: 10 } } },
         },
       },
     }),
-    [labels, series, chartTheme],
+    [labels, series],
   );
   return <ChartCanvas config={config} height={height} />;
 }

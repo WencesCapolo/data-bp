@@ -1,8 +1,8 @@
 export function ErrorBox({ message }: { message: string }) {
   return (
-    <div className="alert-box" style={{ background: 'rgba(239,68,68,0.08)', borderColor: 'rgba(239,68,68,0.3)' }}>
-      <div className="alert-box-title" style={{ color: 'var(--red)' }}>⚠ Error</div>
-      <div style={{ fontFamily: 'DM Mono, monospace' }}>{message}</div>
+    <div role="alert" className="rounded-[var(--panel-radius)] border border-[var(--accent-border)] bg-accent-soft px-4 py-3.5">
+      <div className="font-display text-sm font-semibold tracking-[0.08em] text-accent-strong uppercase">⚠ Error</div>
+      <div className="mt-1 font-mono text-xs leading-relaxed text-n-800">{message}</div>
     </div>
   );
 }

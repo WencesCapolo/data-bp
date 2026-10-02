@@ -1,12 +1,10 @@
 'use client';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import useSWR, { useSWRConfig } from 'swr';
 import { fetcher } from '@/lib/client/fetcher';
-import { portalLogoutHref } from '@/lib/portal-links';
 import { SyncModal, type LastUploadInfo } from '@/components/layout/SyncModal';
 import { FeeUploadModal } from '@/components/layout/FeeUploadModal';
-import { ThemeToggle } from '@/components/ui/ThemeToggle';
-import { HomeLink } from '@/components/ui/HomeLink';
 import type { UploadResultDTO } from '@basket/core/dtos/PaymentUploadDTO';
 
 interface SyncState {
@@ -48,15 +46,9 @@ function relative(iso: string): string {
   return `${Math.floor(s / 86400)}d ago`;
 }
 
-interface HeaderProps {
-  /** Who is signed in, read by the page's server component from the session. */
-  email: string;
-  /** The Solicitudes bell, rendered by the page's server component; absent
-   *  for anyone who may not decide analytics Solicitudes. */
-  campana?: ReactNode;
-}
-
-export function Header({ email, campana }: HeaderProps) {
+/** The header's sync controls: how fresh the data is, the Sync button that
+ *  opens the Upload modals, and what the last Sync or Upload reported. */
+export function SyncControls() {
   const [syncErr, setSyncErr] = useState<string | null>(null);
   // Which Upload is open. The two are one screen from the user's side and two
   // flows underneath: a Pagos Export runs a Sync, a fee Export writes the fee
@@ -127,110 +119,77 @@ export function Header({ email, campana }: HeaderProps) {
     .at(-1);
   const ageH = latest ? (Date.now() - new Date(latest).getTime()) / 3_600_000 : Infinity;
   const inFlight = data?.inFlight ?? false;
-  const dotClass = inFlight ? 'live' : !latest ? 'error' : ageH > 12 ? 'stale' : '';
-  const badgeClass = inFlight ? 'sync-badge live' : 'sync-badge';
+  const dotClass = inFlight
+    ? 'bg-accent animate-sync-pulse'
+    : !latest
+      ? 'bg-red-600'
+      : ageH > 12
+        ? 'bg-amber-500'
+        : 'bg-[var(--ok)]';
   const persistErr = syncErr ?? data?.lastError ?? null;
   const cookieExpired = persistErr ? /Expiró la Cookie|cookie/i.test(persistErr) : false;
+  const status = inFlight ? 'Sincronizando…' : latest ? `synced ${relative(latest)}` : 'no sync';
 
   return (
-    <header className={inFlight ? 'header in-flight' : 'header'}>
-      <div className="header-left">
-        <a href="/" className="logo" aria-label="Basket.tv">
-          <img src="/Basket.tv%20horizontal%20blanco.png" alt="Basket.tv" className="logo-img" />
-          <span className="subtitle">Analytics</span>
-        </a>
-        <HomeLink href="/" title="Volver a Analytics" />
-      </div>
-      <div className="header-meta">
-        <span className={badgeClass} aria-live="polite">
-          <span className={`sync-dot ${dotClass}`} />
-          {inFlight ? 'Sincronizando…' : latest ? `synced ${relative(latest)}` : 'no sync'}
+    <div className="flex items-center gap-2 sm:gap-3">
+      <span
+        className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 font-mono text-xs ${
+          inFlight
+            ? 'border-[var(--accent-border)] bg-accent-soft text-accent-strong'
+            : 'border-[var(--border)] bg-surface text-n-600'
+        }`}
+        aria-live="polite"
+        title={status}
+      >
+        <span className={`size-1.5 shrink-0 rounded-full ${dotClass}`} />
+        <span className="hidden md:inline">{status}</span>
+      </span>
+      {cookieExpired && (
+        <span aria-live="polite" title={persistErr ?? undefined} className="tag tag-bad">
+          ⚠<span className="hidden md:inline"> Expiró la Cookie</span>
         </span>
-        {cookieExpired && (
-          <span
-            aria-live="polite"
-            title={persistErr ?? undefined}
-            style={{
-              background: 'var(--red)',
-              color: 'white',
-              borderRadius: 6,
-              padding: '2px 10px',
-              fontSize: 11,
-              fontWeight: 600,
-            }}
-          >
-            ⚠ Expiró la Cookie
-          </span>
-        )}
-        {uploadResult && (
-          <button
-            type="button"
-            onClick={() => setUploadResult(null)}
-            aria-live="polite"
-            title="Resultado del último Upload — clic para ocultar"
-            style={{
-              background: 'transparent',
-              color: 'var(--green)',
-              border: '1px solid color-mix(in srgb, var(--green) 40%, transparent)',
-              borderRadius: 6,
-              padding: '2px 10px',
-              fontSize: 11,
-              cursor: 'pointer',
-              fontFamily: "'DM Mono', monospace",
-            }}
-          >
-            ✓ {uploadResult.rowsIngested.toLocaleString('es-AR')} ingresados ·{' '}
-            {uploadResult.rowsSkipped.toLocaleString('es-AR')} omitidos
-          </button>
-        )}
+      )}
+      {uploadResult && (
         <button
-          ref={syncBtnRef}
           type="button"
-          onClick={() => setModal('pagos')}
-          disabled={inFlight}
-          aria-haspopup="dialog"
-          aria-expanded={modal !== 'none'}
-          title={syncErr ?? 'Subir el Pagos Export y sincronizar'}
-          style={{
-            background: inFlight ? 'transparent' : 'var(--bg3)',
-            color: syncErr ? 'var(--red)' : 'var(--text2)',
-            border: `1px solid ${syncErr ? 'var(--red)' : 'var(--border)'}`,
-            borderRadius: 6,
-            padding: '4px 10px',
-            cursor: inFlight ? 'not-allowed' : 'pointer',
-            fontSize: 11,
-            fontFamily: 'inherit',
-            opacity: inFlight ? 0.6 : 1,
-            transition: 'all 0.15s',
-          }}
+          onClick={() => setUploadResult(null)}
+          aria-live="polite"
+          title="Resultado del último Upload — clic para ocultar"
+          className="tag tag-ok hidden font-mono lg:inline-flex"
         >
-          {inFlight ? '…' : '↻ Sync'}
+          ✓ {uploadResult.rowsIngested.toLocaleString('es-AR')} ingresados ·{' '}
+          {uploadResult.rowsSkipped.toLocaleString('es-AR')} omitidos
         </button>
-        {campana}
-        <ThemeToggle />
-        <span className="header-date">{new Date().toISOString().slice(0, 10)}</span>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-          <span className="header-email" style={{ color: 'var(--text2)' }}>{email}</span>
-          <a
-            href={portalLogoutHref()}
-            style={{ background: 'transparent', color: 'var(--text3)', border: '1px solid var(--border)', borderRadius: 4, padding: '2px 8px', textDecoration: 'none', fontSize: 11 }}
-          >
-            salir
-          </a>
-        </span>
-      </div>
-      {modal === 'pagos' && (
-        <SyncModal
-          onClose={closeModal}
-          onConfirm={confirmUpload}
-          lastUpload={data?.lastUpload ?? null}
-          syncInFlight={inFlight}
-          onSwitchToFees={() => setModal('fees')}
-        />
       )}
-      {modal === 'fees' && (
-        <FeeUploadModal onClose={closeModal} onSwitchToPagos={() => setModal('pagos')} />
-      )}
-    </header>
+      <button
+        ref={syncBtnRef}
+        type="button"
+        onClick={() => setModal('pagos')}
+        disabled={inFlight}
+        aria-haspopup="dialog"
+        aria-expanded={modal !== 'none'}
+        title={syncErr ?? 'Subir el Pagos Export y sincronizar'}
+        className={`btn-ghost ${syncErr ? 'border-[var(--accent-border)] text-accent-strong' : ''}`}
+      >
+        {inFlight ? '…' : '↻ Sync'}
+      </button>
+      {/* To <body>: the header's backdrop-blur would trap a fixed overlay inside it. */}
+      {modal === 'pagos' &&
+        createPortal(
+          <SyncModal
+            onClose={closeModal}
+            onConfirm={confirmUpload}
+            lastUpload={data?.lastUpload ?? null}
+            syncInFlight={inFlight}
+            onSwitchToFees={() => setModal('fees')}
+          />,
+          document.body,
+        )}
+      {modal === 'fees' &&
+        createPortal(
+          <FeeUploadModal onClose={closeModal} onSwitchToPagos={() => setModal('pagos')} />,
+          document.body,
+        )}
+    </div>
   );
 }

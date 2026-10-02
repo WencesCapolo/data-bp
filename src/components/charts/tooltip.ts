@@ -1,17 +1,17 @@
 import type { TooltipItem, TooltipOptions } from 'chart.js';
-import type { ChartTheme } from '@/lib/client/theme';
+import { CHART_THEME, type ChartTheme } from '@/lib/client/palette';
 
-/** El tooltip pinta sobre el canvas, así que necesita el color resuelto y no
- *  una variable CSS. Sin `theme` cae en la paleta oscura, que es la de por
- *  defecto de la app. */
-export function tooltipBase(theme?: ChartTheme) {
+/** The tooltip paints on the canvas, so it needs resolved colours, not CSS
+ *  variables: a white card with the shared border, like the InfoHint bubble. */
+export function tooltipBase(theme: ChartTheme = CHART_THEME) {
   return {
-    backgroundColor: theme?.surface ?? '#0f1525',
-    borderColor: theme?.border ?? '#2a3752',
+    backgroundColor: theme.surface,
+    borderColor: theme.border,
     borderWidth: 1,
     padding: 10,
-    titleColor: theme?.theme === 'light' ? '#0f172a' : '#e8edf5',
-    bodyColor: theme?.theme === 'light' ? '#334155' : '#e8edf5',
+    cornerRadius: 8,
+    titleColor: theme.title,
+    bodyColor: theme.body,
   };
 }
 
@@ -21,7 +21,7 @@ export const TOOLTIP_BASE = tooltipBase();
 // keeps its short label, the tooltip shows the full dated one.
 export function tooltipOpts(
   tooltipTitles?: string[],
-  theme?: ChartTheme,
+  theme: ChartTheme = CHART_THEME,
 ): Partial<TooltipOptions> {
   const base = tooltipBase(theme);
   if (!tooltipTitles) return base as Partial<TooltipOptions>;

@@ -1,3 +1,4 @@
+import { cache } from 'react';
 import { headers } from 'next/headers';
 import { authEnv } from '@/lib/env';
 import { resolveSessionUser, type Resolution, type SessionUser } from './acceso-policy';
@@ -13,11 +14,12 @@ async function requestedUrl(): Promise<string> {
 
 // Session + analytics Acceso, resolved on every request. The role comes from
 // the Nivel of the `analytics` row, never from the portal-owned authUser.role.
-export async function resolveRequestUser(): Promise<Resolution> {
+// Cached per request: the Marco layout and the page both ask.
+export const resolveRequestUser = cache(async (): Promise<Resolution> => {
   const session = await readSession();
   const acceso = session ? await readAnalyticsAcceso(session.id) : null;
   return resolveSessionUser({ session, acceso, returnTo: await requestedUrl(), portalUrl: authEnv.portalUrl });
-}
+});
 
 // For API routes: null when there is no session or no Acceso (they answer 401).
 // Pages use requireSession, which redirects instead.

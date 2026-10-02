@@ -37,17 +37,17 @@ export function FilterRow({
     f.countries.length > 0 || f.accessType !== undefined || f.subType !== undefined;
 
   return (
-    <div className="filter-row">
+    <div className="card flex flex-wrap items-center gap-x-3 gap-y-2.5 p-3.5">
       {showRange && (
         <>
-          <span className="filter-label">Rango</span>
+          <span className="eyebrow">Rango</span>
           <DatePills value={f.range} onChange={f.setRange} />
         </>
       )}
       {showGranularity && (
         <>
-          <span className="filter-divider" />
-          <span className="filter-label">Granularidad</span>
+          <span aria-hidden className="mx-1 h-5 w-px bg-[var(--border)] max-sm:hidden" />
+          <span className="eyebrow">Granularidad</span>
           <GranularityToggle
             value={granularityScope === 'lifecycle' ? f.lifecycleGranularity : f.granularity}
             onChange={
@@ -58,7 +58,7 @@ export function FilterRow({
       )}
       {showCountries && (
         <>
-          <span className="filter-divider" />
+          <span aria-hidden className="mx-1 h-5 w-px bg-[var(--border)] max-sm:hidden" />
           <MultiSelect
             label="Países"
             options={meta?.countries ?? []}
@@ -69,26 +69,25 @@ export function FilterRow({
       )}
       {showAccess && (
         <>
-          <span className="filter-divider" />
-          <span className="filter-label">Acceso</span>
+          <span aria-hidden className="mx-1 h-5 w-px bg-[var(--border)] max-sm:hidden" />
+          <span className="eyebrow">Acceso</span>
           <AccessPills value={f.accessType} onChange={f.setAccessType} />
         </>
       )}
       {showSubType && (
         <>
-          <span className="filter-divider" />
-          <span className="filter-label">Subtipo</span>
+          <span aria-hidden className="mx-1 h-5 w-px bg-[var(--border)] max-sm:hidden" />
+          <span className="eyebrow">Subtipo</span>
           <SubtypePills value={f.subType} onChange={f.setSubType} />
         </>
       )}
       {showReset && (
         <>
-          <span className="filter-divider" />
+          <span aria-hidden className="mx-1 h-5 w-px bg-[var(--border)] max-sm:hidden" />
           <button
             type="button"
-            className="date-pill"
+            className="pill text-muted"
             onClick={f.resetFilters}
-            style={{ color: 'var(--text3)' }}
           >
             ↺ Reset
           </button>

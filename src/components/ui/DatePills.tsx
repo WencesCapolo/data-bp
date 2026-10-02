@@ -1,5 +1,6 @@
 'use client';
 import { useFilters, type RangeKind } from '@/lib/client/filterStore';
+import { PillGroup } from './PillGroup';
 
 const PILLS: { val: RangeKind; label: string }[] = [
   { val: 'yesterday', label: 'Ayer' },
@@ -11,16 +12,6 @@ const PILLS: { val: RangeKind; label: string }[] = [
   { val: 'custom', label: 'Personalizado' },
 ];
 
-const dateInputStyle: React.CSSProperties = {
-  background: 'var(--bg3)',
-  border: '1px solid var(--border)',
-  color: 'var(--text2)',
-  borderRadius: 6,
-  fontSize: 11,
-  padding: '5px 8px',
-  colorScheme: 'dark',
-};
-
 export function DatePills({ value, onChange }: { value: RangeKind; onChange: (r: RangeKind) => void }) {
   const customFrom = useFilters((s) => s.customFrom);
   const customTo = useFilters((s) => s.customTo);
@@ -28,29 +19,23 @@ export function DatePills({ value, onChange }: { value: RangeKind; onChange: (r:
   const setCustomTo = useFilters((s) => s.setCustomTo);
 
   return (
-    <div className="date-pills" style={{ alignItems: 'center' }}>
-      {PILLS.map((p) => (
-        <button
-          key={p.val}
-          className={`date-pill ${value === p.val ? 'active' : ''}`}
-          onClick={() => onChange(p.val)}
-        >
-          {p.label}
-        </button>
-      ))}
+    <div className="flex flex-wrap items-center gap-1.5">
+      <PillGroup options={PILLS} value={value} onChange={onChange} label="Rango" />
       {value === 'custom' && (
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+        <span className="inline-flex items-center gap-1">
           <input
             type="date"
-            style={dateInputStyle}
+            aria-label="Desde"
+            className="input py-1 text-xs"
             value={customFrom}
             max={customTo}
             onChange={(e) => setCustomFrom(e.target.value)}
           />
-          <span style={{ fontSize: 11, color: 'var(--text3)' }}>→</span>
+          <span className="text-xs text-muted">→</span>
           <input
             type="date"
-            style={dateInputStyle}
+            aria-label="Hasta"
+            className="input py-1 text-xs"
             value={customTo}
             min={customFrom}
             onChange={(e) => setCustomTo(e.target.value)}
