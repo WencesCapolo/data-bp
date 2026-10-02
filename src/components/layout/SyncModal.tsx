@@ -5,6 +5,7 @@ import {
   type UploadPreviewDTO,
   type UploadRejection,
 } from '@basket/core/dtos/PaymentUploadDTO';
+import { ADVICE, M, dropzone } from './modalStyles';
 
 /** Last Upload, as the sync endpoint reports it. Everything is optional: the
  *  modal simply hides the line when the API does not provide it. */
@@ -224,7 +225,7 @@ export function SyncModal({ onClose, onConfirm, lastUpload, syncInFlight, onSwit
 
   return (
     <div
-      className="modal-overlay"
+      className={M.overlay}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget && !busy) onClose();
       }}
@@ -235,26 +236,26 @@ export function SyncModal({ onClose, onConfirm, lastUpload, syncInFlight, onSwit
         aria-modal="true"
         aria-labelledby="sync-modal-title"
         tabIndex={-1}
-        className="modal-dialog"
+        className={M.dialog}
         onKeyDown={onKeyDown}
       >
-        <div className="modal-head">
-          <h2 className="modal-title" id="sync-modal-title">
+        <div className={M.head}>
+          <h2 className={M.title} id="sync-modal-title">
             {preview ? 'Revisar el Pagos Export' : 'Subir el Pagos Export'}
           </h2>
-          <span style={{ fontSize: 11, color: 'var(--text3)', fontFamily: "'DM Mono', monospace" }}>
+          <span className={M.step}>
             paso {preview ? 2 : 1} de 2
           </span>
         </div>
 
-        <div className="modal-body">
+        <div className={M.body}>
           {!preview && (
             <>
-              <p style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.6, marginBottom: 14 }}>
+              <p className={M.intro}>
                 Descargá el Export desde el Control Panel y subilo acá. Antes de subirlo,
                 revisá estos dos puntos:
               </p>
-              <ul className="modal-checklist">
+              <ul className={M.checklist}>
                 <li>
                   Descargalo en formato <strong>CSV</strong>, no en Excel. Los archivos{' '}
                   <strong>.xls</strong> o <strong>.xlsx</strong> se rechazan.
@@ -267,12 +268,12 @@ export function SyncModal({ onClose, onConfirm, lastUpload, syncInFlight, onSwit
               </ul>
 
               {rejection && (
-                <div className="modal-advice is-error" role="alert">
+                <div className={ADVICE.error} role="alert">
                   {rejection.message}
                 </div>
               )}
               {notice && (
-                <div className="modal-advice is-info" role="status">
+                <div className={ADVICE.info} role="status">
                   {notice}
                 </div>
               )}
@@ -282,12 +283,12 @@ export function SyncModal({ onClose, onConfirm, lastUpload, syncInFlight, onSwit
                 type="file"
                 accept=".csv,text/csv"
                 aria-label="Pagos Export en CSV"
-                style={{ display: 'none' }}
+                className="hidden"
                 onChange={(e) => pick(e.target.files?.[0] ?? null)}
               />
               <button
                 type="button"
-                className={`dropzone${dragging ? ' is-dragging' : ''}${file ? ' has-file' : ''}`}
+                className={dropzone({ dragging, hasFile: Boolean(file) })}
                 disabled={uploading}
                 onDragOver={(e) => {
                   e.preventDefault();
@@ -304,19 +305,19 @@ export function SyncModal({ onClose, onConfirm, lastUpload, syncInFlight, onSwit
               >
                 {file ? (
                   <>
-                    <div style={{ color: 'var(--text)', fontSize: 13, marginBottom: 4 }}>
+                    <div className="mb-1 text-[13px] text-foreground">
                       {file.name}
                     </div>
-                    <div style={{ fontSize: 11, color: 'var(--text3)' }}>
+                    <div className="text-[11px] text-muted">
                       {fmtSize(file.size)} · clic para elegir otro
                     </div>
                   </>
                 ) : (
                   <>
-                    <div style={{ color: 'var(--text)', fontSize: 13, marginBottom: 4 }}>
+                    <div className="mb-1 text-[13px] text-foreground">
                       Arrastrá el CSV acá
                     </div>
-                    <div style={{ fontSize: 11, color: 'var(--text3)' }}>
+                    <div className="text-[11px] text-muted">
                       o hacé clic para buscarlo en tu equipo
                     </div>
                   </>
@@ -324,16 +325,13 @@ export function SyncModal({ onClose, onConfirm, lastUpload, syncInFlight, onSwit
               </button>
 
               {onSwitchToFees && (
-                <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 12, lineHeight: 1.6 }}>
+                <p className={`mt-3 ${M.note}`}>
                   ¿Es el Export de <strong>comisiones</strong> de un Provider (Cobros de
                   MercadoPago)?{' '}
                   <button
                     type="button"
                     onClick={onSwitchToFees}
-                    style={{
-                      background: 'transparent', border: 'none', padding: 0,
-                      color: 'var(--blue)', cursor: 'pointer', fontSize: 11, textDecoration: 'underline',
-                    }}
+                    className={M.link}
                   >
                     Subilo por acá
                   </button>
@@ -342,7 +340,7 @@ export function SyncModal({ onClose, onConfirm, lastUpload, syncInFlight, onSwit
               )}
 
               {lastUpload?.uploadedAt && (
-                <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 12, fontFamily: "'DM Mono', monospace" }}>
+                <p className="mt-3 font-mono text-[11px] text-muted">
                   Último Upload: {fmtDateTime(lastUpload.uploadedAt)}
                   {lastUpload.uploadedBy ? ` · ${lastUpload.uploadedBy}` : ''}
                   {lastUpload.filename ? ` · ${lastUpload.filename}` : ''}
@@ -353,105 +351,105 @@ export function SyncModal({ onClose, onConfirm, lastUpload, syncInFlight, onSwit
 
           {preview && (
             <>
-              <p style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 14, lineHeight: 1.6 }}>
+              <p className={M.intro}>
                 Todavía no se escribió nada. Revisá el resumen y confirmá para lanzar el Sync.
               </p>
 
-              <div className="modal-stats">
-                <div className="modal-stat">
-                  <div className="modal-stat-label">Filas</div>
-                  <div className="modal-stat-value">{fmtNum(preview.rowTotal)}</div>
+              <div className={M.stats}>
+                <div className={M.stat}>
+                  <div className={M.statLabel}>Filas</div>
+                  <div className={M.statValue}>{fmtNum(preview.rowTotal)}</div>
                 </div>
-                <div className="modal-stat">
-                  <div className="modal-stat-label">Aprobados</div>
-                  <div className="modal-stat-value" style={{ color: 'var(--green)' }}>
+                <div className={M.stat}>
+                  <div className={M.statLabel}>Aprobados</div>
+                  <div className={`${M.statValue} text-[var(--ok)]`}>
                     {fmtNum(preview.approved)}
                   </div>
                 </div>
-                <div className="modal-stat">
-                  <div className="modal-stat-label">Rechazados</div>
-                  <div className="modal-stat-value" style={{ color: 'var(--red)' }}>
+                <div className={M.stat}>
+                  <div className={M.statLabel}>Rechazados</div>
+                  <div className={`${M.statValue} text-red-700`}>
                     {fmtNum(preview.rejected)}
                   </div>
                 </div>
-                <div className="modal-stat">
-                  <div className="modal-stat-label">Pendientes</div>
-                  <div className="modal-stat-value" style={{ color: 'var(--yellow)' }}>
+                <div className={M.stat}>
+                  <div className={M.statLabel}>Pendientes</div>
+                  <div className={`${M.statValue} text-amber-700`}>
                     {fmtNum(preview.pending)}
                   </div>
                 </div>
                 {preview.otherNotApproved > 0 && (
-                  <div className="modal-stat">
-                    <div className="modal-stat-label">Otros no aprobados</div>
-                    <div className="modal-stat-value" style={{ color: 'var(--text2)' }}>
+                  <div className={M.stat}>
+                    <div className={M.statLabel}>Otros no aprobados</div>
+                    <div className={`${M.statValue} text-n-700`}>
                       {fmtNum(preview.otherNotApproved)}
                     </div>
                   </div>
                 )}
-                <div className="modal-stat">
-                  <div className="modal-stat-label">Se omitirían</div>
-                  <div className="modal-stat-value" style={{ color: 'var(--yellow)' }}>
+                <div className={M.stat}>
+                  <div className={M.statLabel}>Se omitirían</div>
+                  <div className={`${M.statValue} text-amber-700`}>
                     {fmtNum(preview.wouldSkip)}
                   </div>
                 </div>
               </div>
 
               {preview.pending > 0 && (
-                <p style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 14, lineHeight: 1.6 }}>
+                <p className={`mb-3.5 ${M.note}`}>
                   Los Pendientes no son fallas: son Pagos en efectivo (Rapipago, PagoFácil) que el
                   Suscriptor todavía puede ir a pagar, y muchos terminan aprobados.
                 </p>
               )}
 
-              <div style={{ marginBottom: 16 }}>
-                <div className="modal-stat-label">Window</div>
-                <div className="modal-kv">
+              <div className="mb-4">
+                <div className={M.statLabel}>Window</div>
+                <div className={M.kv}>
                   <span>
                     {fmtDate(preview.windowFrom)} → {fmtDate(preview.windowTo)}
                   </span>
-                  <span style={{ color: 'var(--text3)' }}>
+                  <span className="text-muted">
                     {preview.windowDays === null ? 'sin fechas' : `${fmtNum(preview.windowDays)} días`}
                   </span>
                 </div>
               </div>
 
-              <div style={{ marginBottom: 16 }}>
-                <div className="modal-stat-label">Por Provider</div>
+              <div className="mb-4">
+                <div className={M.statLabel}>Por Provider</div>
                 {providers.length === 0 ? (
-                  <div className="modal-kv">
+                  <div className={M.kv}>
                     <span>sin Providers</span>
                   </div>
                 ) : (
                   providers
                     .sort((a, b) => b[1] - a[1])
                     .map(([name, count]) => (
-                      <div className="modal-kv" key={name}>
-                        <span style={{ color: 'var(--text)' }}>{name}</span>
+                      <div className={M.kv} key={name}>
+                        <span className="text-foreground">{name}</span>
                         <span>{fmtNum(count)}</span>
                       </div>
                     ))
                 )}
               </div>
 
-              <div className="modal-kv" style={{ marginBottom: 16 }}>
+              <div className={`${M.kv} mb-4`}>
                 <span>{preview.filename}</span>
-                <span style={{ color: 'var(--text3)' }}>{fmtSize(preview.byteSize)}</span>
+                <span className="text-muted">{fmtSize(preview.byteSize)}</span>
               </div>
 
               {preview.warnings.map((w) => (
-                <div className="modal-advice is-warn" key={w.code} role="status">
+                <div className={ADVICE.warn} key={w.code} role="status">
                   {w.message}
                   {typeof w.count === 'number' ? ` (${fmtNum(w.count)})` : ''}
                 </div>
               ))}
 
               {notice && (
-                <div className="modal-advice is-info" role="status">
+                <div className={ADVICE.info} role="status">
                   {notice}
                 </div>
               )}
               {syncInFlight && !notice && (
-                <div className="modal-advice is-info" role="status">
+                <div className={ADVICE.info} role="status">
                   Hay un Sync en curso. Esperá a que termine para confirmar este Upload.
                 </div>
               )}
@@ -459,7 +457,7 @@ export function SyncModal({ onClose, onConfirm, lastUpload, syncInFlight, onSwit
           )}
         </div>
 
-        <div className="modal-foot">
+        <div className={M.foot}>
           {preview && (
             <button
               type="button"
@@ -480,8 +478,7 @@ export function SyncModal({ onClose, onConfirm, lastUpload, syncInFlight, onSwit
           {!preview ? (
             <button
               type="button"
-              className="btn-primary"
-              style={{ padding: '8px 14px', fontSize: 13 }}
+              className={M.primary}
               disabled={!file || uploading}
               onClick={upload}
             >
@@ -490,8 +487,7 @@ export function SyncModal({ onClose, onConfirm, lastUpload, syncInFlight, onSwit
           ) : (
             <button
               type="button"
-              className="btn-primary"
-              style={{ padding: '8px 14px', fontSize: 13 }}
+              className={M.primary}
               disabled={confirming || syncInFlight}
               onClick={confirm}
             >

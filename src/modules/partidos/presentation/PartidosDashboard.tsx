@@ -33,13 +33,11 @@ export function PartidosDashboard() {
             <PartidosNacionalFiltersBar />
             <TabBoundary>
               <PartidosNacionalKpis />
-              <div className="col2" style={{ marginTop: 24 }}>
+              <div className="grid gap-4 md:grid-cols-2">
                 <PartidosNacionalMonthlyChart />
                 <PartidosNacionalWeeklyChart />
               </div>
-              <div style={{ marginTop: 24 }}>
-                <PartidosNacionalChannelBreakdown />
-              </div>
+              <PartidosNacionalChannelBreakdown />
             </TabBoundary>
           </>
         )}
@@ -48,13 +46,11 @@ export function PartidosDashboard() {
             <PartidosIntlFiltersBar />
             <TabBoundary>
               <PartidosIntlKpis />
-              <div className="col2" style={{ marginTop: 24 }}>
+              <div className="grid gap-4 md:grid-cols-2">
                 <PartidosIntlMonthlyChart />
                 <PartidosIntlWeeklyChart />
               </div>
-              <div style={{ marginTop: 24 }}>
-                <PartidosIntlChannelBreakdown />
-              </div>
+              <PartidosIntlChannelBreakdown />
             </TabBoundary>
           </>
         )}

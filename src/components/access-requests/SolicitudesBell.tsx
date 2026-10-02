@@ -16,24 +16,14 @@ export function SolicitudesBell({ solicitudes, aprobar, rechazar }: Props) {
   const [aviso, setAviso] = useState<DecisionResult | null>(null);
 
   return (
-    <span className="campana-solicitudes" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+    <span className="inline-flex items-center gap-2">
       {aviso && (
         <button
           type="button"
           onClick={() => setAviso(null)}
           aria-live="polite"
           title="Clic para ocultar"
-          style={{
-            background: 'transparent',
-            color: aviso.intent === 'ok' ? 'var(--green)' : 'var(--red)',
-            border: `1px solid color-mix(in srgb, ${aviso.intent === 'ok' ? 'var(--green)' : 'var(--red)'} 40%, transparent)`,
-            borderRadius: 6,
-            padding: '2px 10px',
-            fontSize: 11,
-            cursor: 'pointer',
-            maxWidth: 360,
-            textAlign: 'left',
-          }}
+          className={`tag max-w-[360px] text-left whitespace-normal ${aviso.intent === 'ok' ? 'tag-ok' : 'tag-bad'}`}
         >
           {aviso.notice}
         </button>

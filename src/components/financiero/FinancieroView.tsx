@@ -5,6 +5,7 @@ import { fetcher } from '@/lib/client/fetcher';
 import { useFilterQS, useFilters } from '@/lib/client/filterStore';
 import { TabSkeleton } from '@/components/ui/Skeleton';
 import { ErrorBox } from '@/components/ui/ErrorBox';
+import { OTHER } from '@/lib/client/palette';
 import { Breakdown, Card, Kpi, MsCol, OutsidePagosFoot, Pending, SectionLabel, delta } from './financiero/blocks';
 import {
   ActiveChart,
@@ -51,12 +52,12 @@ import type { MonthlyLifecyclePoint, ActiveByMonthPoint } from '@basket/core/dto
  * diferentes de la misma venta.
  */
 
-const GW_COLOR: Record<string, string> = { MercadoPago: '#06b6d4', Stripe: '#635bff', PayPal: '#003087', Antel: '#fb923c', Voucher: '#fbbf24', Manual: '#94a3b8' };
+const GW_COLOR: Record<string, string> = { MercadoPago: '#06b6d4', Stripe: '#635bff', PayPal: '#003087', Antel: '#fb923c', Voucher: '#fbbf24', Manual: OTHER };
 const CUR_PALETTE: Record<string, string> = {
-  USD: '#10b981', ARS: '#3b82f6', EUR: '#8b5cf6', MXN: '#f59e0b', CLP: '#ef4444', BRL: '#06b6d4', COP: '#ec4899', PEN: '#64748b', UYU: '#0891b2', BOB: '#ea580c',
+  USD: '#10b981', ARS: '#3b82f6', EUR: '#8b5cf6', MXN: '#d97706', CLP: '#ef4444', BRL: '#06b6d4', COP: '#ec4899', PEN: '#64748b', UYU: '#0891b2', BOB: '#ea580c',
 };
 const PLAN_PALETTE: Record<string, string> = {
-  Total: '#3b82f6', 'Básico': '#10b981', Free: '#94a3b8', Otros: '#8b5cf6', 'Partido único': '#94a3b8',
+  Total: '#3b82f6', 'Básico': '#10b981', Free: OTHER, Otros: '#8b5cf6', 'Partido único': OTHER,
 };
 const MARKET_LABEL: Record<string, string> = {
   Argentina: '🇦🇷 Argentina', Brazil: '🇧🇷 Brasil', Bolivia: '🇧🇴 Bolivia', Chile: '🇨🇱 Chile', Ecuador: '🇪🇨 Ecuador',
@@ -80,6 +81,13 @@ const SEASON_METRICS: { key: SeasonMetric; label: string; title: string }[] = [
   { key: 'ingresos_netos_usd', label: 'Ingresos netos (USD)', title: 'INGRESOS NETOS (USD)' },
   { key: 'ingresos_netos_local', label: 'Ingresos netos (moneda local)', title: 'INGRESOS NETOS (MONEDA LOCAL)' },
 ];
+
+// Las piezas que se repiten en esta vista: el hueco sin datos, la fila de
+// controles de una tarjeta, sus selects y el marco que hace scroll de una tabla.
+const NO_DATA = 'flex min-h-[120px] items-center justify-center text-xs font-medium text-muted';
+const CONTROLS = 'mb-3.5 flex flex-wrap items-center gap-4 [&_label]:eyebrow [&_label]:flex [&_label]:flex-col [&_label]:gap-1.5';
+const SELECT = 'input min-w-40 font-medium tracking-normal normal-case';
+const TABLE_SCROLL = 'overflow-auto rounded-[var(--panel-radius)] border border-[var(--border)]';
 
 const sumBy = <T,>(rows: T[], f: (r: T) => number): number => rows.reduce((a, r) => a + f(r), 0);
 
@@ -436,12 +444,12 @@ export function FinancieroView() {
   const fmtMonths = (v: number | null): string => (v === null ? '—' : `${v.toLocaleString('es-AR', { maximumFractionDigits: 1 })} meses`);
 
   return (
-    <div>
+    <div className="flex flex-col gap-5">
       {/* ── Snapshot rolling ── */}
       <SectionLabel first>
         📅 Últimos {pc.windowDays} días ({fmtDayShort(A.start)} → {fmtDayShort(A.end)}) vs {pc.windowDays} días anteriores ({fmtDayShort(B.start)} → {fmtDayShort(B.end)})
       </SectionLabel>
-      <div className="proto-ms-grid">
+      <div className="grid gap-4 lg:grid-cols-3">
         <MsCol
           tone="tx"
           title="Transacciones"
@@ -453,7 +461,7 @@ export function FinancieroView() {
             { swatch: '#3b82f6', label: 'Recurrentes', value: fmt(A.tx.recurring), d: delta(A.tx.recurring, B.tx.recurring) },
             { swatch: '#f59e0b', label: 'Reactivados', value: fmt(A.tx.reactivated), d: delta(A.tx.reactivated, B.tx.reactivated) },
             { swatch: '#ef4444', label: 'Bajas', value: fmt(A.tx.churned), d: delta(A.tx.churned, B.tx.churned, true) },
-            { swatch: '#94a3b8', label: 'Partido único', value: fmt(A.tx.oneOff), d: delta(A.tx.oneOff, B.tx.oneOff) },
+            { swatch: OTHER, label: 'Partido único', value: fmt(A.tx.oneOff), d: delta(A.tx.oneOff, B.tx.oneOff) },
             { swatch: '#1d4ed8', label: 'Mensuales', value: fmt(A.tx.mensual), d: delta(A.tx.mensual, B.tx.mensual) },
             { swatch: '#d97706', label: 'Anuales', value: fmt(A.tx.anual), d: delta(A.tx.anual, B.tx.anual) },
           ]}
@@ -479,7 +487,7 @@ export function FinancieroView() {
           big={fmtUsd(Math.round(netA))}
           bigDelta={{ d: delta(netA, netB), prev: fmtUsd(Math.round(netB)) }}
           rows={gwNames.map((name) => ({
-            swatch: GW_COLOR[name] ?? '#64748b',
+            swatch: GW_COLOR[name] ?? OTHER,
             label: name,
             value: fmtUsdRound(gwWindow(A, name)),
             d: delta(gwWindow(A, name), gwWindow(B, name)),
@@ -490,7 +498,7 @@ export function FinancieroView() {
 
       {/* ── KPIs · Suscriptores y transacciones ── */}
       <SectionLabel>👥 Suscriptores y transacciones</SectionLabel>
-      <div className="proto-kpis">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))] gap-3.5">
         <Kpi
           tone="purple"
           icon="👥"
@@ -522,7 +530,7 @@ export function FinancieroView() {
               { swatch: '#10b981', label: 'Altas (nuevos)', value: fmt(totals.nuevos), pct: pctOf(totals.nuevos, txTotal), color: '#059669' },
               { swatch: '#f59e0b', label: 'Reactivados', value: fmt(totals.reactivados), pct: pctOf(totals.reactivados, txTotal), color: '#d97706' },
               { swatch: '#3b82f6', label: 'Recurrentes', value: fmt(totals.recurrentes), pct: pctOf(totals.recurrentes, txTotal), color: '#1d4ed8' },
-              { swatch: '#94a3b8', label: 'Partido único', value: fmt(totals.oneOff), pct: pctOf(totals.oneOff, txTotal), color: '#475569' },
+              { swatch: OTHER, label: 'Partido único', value: fmt(totals.oneOff), pct: pctOf(totals.oneOff, txTotal), color: '#4a423f' },
               { swatch: '#ef4444', label: 'Bajas', value: `−${fmt(totals.bajas)}`, pct: 'flujo', color: '#dc2626', sep: true },
             ]}
           />
@@ -539,7 +547,7 @@ export function FinancieroView() {
             rows={[
               { swatch: '#3b82f6', label: 'Mensual', value: fmt(totals.mensual), pct: pctOf(totals.mensual, freqTot), color: '#1d4ed8' },
               { swatch: '#f59e0b', label: 'Anual', value: fmt(totals.anual), pct: pctOf(totals.anual, freqTot), color: '#d97706' },
-              ...(freqOtro > 0 ? [{ swatch: '#94a3b8', label: 'Otro / Único', value: fmt(freqOtro), pct: pctOf(freqOtro, freqTot), color: '#475569' }] : []),
+              ...(freqOtro > 0 ? [{ swatch: OTHER, label: 'Otro / Único', value: fmt(freqOtro), pct: pctOf(freqOtro, freqTot), color: '#4a423f' }] : []),
             ]}
           />
         </Kpi>
@@ -553,7 +561,7 @@ export function FinancieroView() {
           transacciones · top: {planSorted[0]?.[0] ?? '—'}{planSorted[0] && planTot > 0 ? ` (${pctOf(planSorted[0][1], planTot)})` : ''}
           <Breakdown
             rows={planSorted.slice(0, 5).map(([name, v]) => ({
-              swatch: PLAN_PALETTE[name] ?? '#64748b',
+              swatch: PLAN_PALETTE[name] ?? OTHER,
               label: name,
               value: fmt(v),
               pct: pctOf(v, planTot),
@@ -564,7 +572,7 @@ export function FinancieroView() {
 
       {/* ── KPIs · Ingresos y costes ── */}
       <SectionLabel>💰 Ingresos y costes</SectionLabel>
-      <div className="proto-kpis">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))] gap-3.5">
         <Kpi
           tone="green"
           icon="💵"
@@ -576,11 +584,11 @@ export function FinancieroView() {
           <Breakdown
             rows={
               netByCurSorted.length
-                ? netByCurSorted.map(([cu, v]) => ({ swatch: CUR_PALETTE[cu] ?? '#94a3b8', label: cu, value: fmt(Math.round(v)) }))
-                : [{ swatch: '#94a3b8', label: 'sin ingresos', value: '' }]
+                ? netByCurSorted.map(([cu, v]) => ({ swatch: CUR_PALETTE[cu] ?? OTHER, label: cu, value: fmt(Math.round(v)) }))
+                : [{ swatch: OTHER, label: 'sin ingresos', value: '' }]
             }
           />
-          <div className="proto-foot"><OutsidePagosFoot rows={outsideRangeRows} /></div>
+          <div className="mt-3.5 text-[11px] text-muted italic"><OutsidePagosFoot rows={outsideRangeRows} /></div>
         </Kpi>
         <Kpi
           tone="blue"
@@ -590,7 +598,7 @@ export function FinancieroView() {
           hint="El mismo neto en USD, repartido por Proveedor. Dos cifras en USD sí se suman; una moneda sin cotización (hoy EUR) queda ausente y no resta."
         >
           neto combinado en USD
-          <Breakdown rows={netByGw.map((x) => ({ swatch: GW_COLOR[x.name] ?? '#64748b', label: x.name, value: fmtUsdRound(x.v), pct: pctOf(x.v, sumBy(netByGw, (y) => y.v)) }))} />
+          <Breakdown rows={netByGw.map((x) => ({ swatch: GW_COLOR[x.name] ?? OTHER, label: x.name, value: fmtUsdRound(x.v), pct: pctOf(x.v, sumBy(netByGw, (y) => y.v)) }))} />
         </Kpi>
         <Kpi
           tone="slate"
@@ -600,7 +608,7 @@ export function FinancieroView() {
           hint="Bruto liquidado por cada Proveedor en el rango, convertido a USD día por día, antes de comisión y retención. Es el bruto del plano de liquidación, no lo facturado al suscriptor en su moneda."
         >
           antes de fees · por pasarela
-          <Breakdown rows={grossByGw.map((x) => ({ swatch: GW_COLOR[x.name] ?? '#64748b', label: x.name, value: fmtUsdRound(x.v), pct: pctOf(x.v, totalUsdGross) }))} />
+          <Breakdown rows={grossByGw.map((x) => ({ swatch: GW_COLOR[x.name] ?? OTHER, label: x.name, value: fmtUsdRound(x.v), pct: pctOf(x.v, totalUsdGross) }))} />
         </Kpi>
         <Kpi
           tone="red"
@@ -610,24 +618,23 @@ export function FinancieroView() {
           hint="La comisión de cada Proveedor en el rango, en USD día por día. Sólo comisión: la retención impositiva de MercadoPago no es un fee, vuelve como crédito fiscal y no está acá. El % es comisión ÷ bruto liquidado."
         >
           {feePct} del bruto · por pasarela
-          <Breakdown rows={feeByGw.map((x) => ({ swatch: GW_COLOR[x.name] ?? '#64748b', label: x.name, value: fmtUsdRound(x.v), pct: pctOf(x.v, totalFeeUsd) }))} />
+          <Breakdown rows={feeByGw.map((x) => ({ swatch: GW_COLOR[x.name] ?? OTHER, label: x.name, value: fmtUsdRound(x.v), pct: pctOf(x.v, totalFeeUsd) }))} />
         </Kpi>
       </div>
       {usdMissing.length > 0 && (
-        <div className="proto-foot" style={{ margin: '6px 2px 0' }}>
+        <div className="-mt-3 px-0.5 text-[11px] text-muted italic">
           Sin cotización, y por eso ausentes de toda cifra en USD: {usdMissing.map((t) => `${t.platformName} ${t.settlementCurrency}`).join(', ')}.
         </div>
       )}
 
       {/* ── Vista consolidada ── */}
-      <div style={{ marginTop: 20 }} />
       <Card
         title="📈 Vista consolidada: ingresos, activos y transacciones"
         hint="Neto de liquidación por mes convertido a USD día por día, contra la cantidad de Pagos exitosos de ese mes y los Subscribers con acceso vigente al cierre del mes. Las series usan relojes distintos: fecha de captura, fecha del Pago y último día del mes."
         desc="Barras: ingresos netos en USD por mes (eje izquierdo). Líneas: suscriptores activos reales y número de transacciones (eje derecho). Permite ver de un vistazo si los ingresos crecen en línea con la base de suscriptores activa y el volumen transaccional."
       >
         {mList.length === 0 ? (
-          <div className="no-data">Sin datos en rango</div>
+          <div className={NO_DATA}>Sin datos en rango</div>
         ) : (
           <CombinedChart
             labels={mList}
@@ -650,7 +657,7 @@ export function FinancieroView() {
         }
       >
         {lc.daily.length === 0 ? (
-          <div className="no-data">Sin Pagos</div>
+          <div className={NO_DATA}>Sin Pagos</div>
         ) : (
           <Daily15Chart
             labels={dLabels}
@@ -670,7 +677,7 @@ export function FinancieroView() {
         desc="Snapshot diario de suscriptores activos (personas únicas con suscripción vigente al cierre del día): mensuales y anuales dentro de su cobertura pagada más 7 días de gracia. Responde a los filtros de arriba."
       >
         {lc.daily.length === 0 ? (
-          <div className="no-data">Sin Pagos</div>
+          <div className={NO_DATA}>Sin Pagos</div>
         ) : (
           <DailyActive15Chart labels={dLabels} titles={dTitles} active={lc.daily.map((r) => r.active)} />
         )}
@@ -686,33 +693,33 @@ export function FinancieroView() {
           </>
         }
       >
-        <div className="proto-controls">
+        <div className={CONTROLS}>
           <label>
             Pasarela
-            <select disabled defaultValue="mercadopago">
+            <select className={SELECT} disabled defaultValue="mercadopago">
               <option value="mercadopago">Mercado Pago (ARS)</option>
               <option value="stripe">Stripe (USD)</option>
             </select>
           </label>
           <label>
             Mes a mostrar
-            <select disabled defaultValue="">
+            <select className={SELECT} disabled defaultValue="">
               <option value="">{lc.asOf.slice(0, 7)}</option>
             </select>
           </label>
         </div>
-        <div className="proto-table-scroll" style={{ marginBottom: 14 }}>
-          <table className="tbl-mt">
+        <div className={`${TABLE_SCROLL} mb-3.5`}>
+          <table className="data-table text-[12.5px] [&_th]:bg-[var(--navy)]! [&_th]:text-white! [&_th]:tracking-[0.04em]">
             <thead>
               <tr>
                 <th>Fecha</th>
-                <th className="right">Real</th>
-                <th className="right">Plan</th>
-                <th className="right">Dif vs Plan</th>
-                <th className="right">Var Real vs Plan</th>
-                <th className="right">Real Mes Ant.</th>
-                <th className="right">Dif vs Mes Ant.</th>
-                <th className="right">Var Real vs Mes Ant.</th>
+                <th className="text-right!">Real</th>
+                <th className="text-right!">Plan</th>
+                <th className="text-right!">Dif vs Plan</th>
+                <th className="text-right!">Var Real vs Plan</th>
+                <th className="text-right!">Real Mes Ant.</th>
+                <th className="text-right!">Dif vs Mes Ant.</th>
+                <th className="text-right!">Var Real vs Mes Ant.</th>
               </tr>
             </thead>
           </table>
@@ -721,7 +728,7 @@ export function FinancieroView() {
       </Card>
 
       {/* ── Transacciones mensuales · Mix de planes ── */}
-      <div className="proto-grid2">
+      <div className="grid gap-5 lg:grid-cols-2">
         <Card
           title="Transacciones mensuales"
           hint="Cada Pago exitoso del mes, clasificado: nuevo si es el primero del Subscriber, recurrente si llega antes de 37 días tras el vencimiento del anterior, reactivación si llega después, partido único si es un Pago sin derecho recurrente. Las bajas, hacia abajo, son los Subscribers cuya cobertura venció ese mes sin ningún Pago posterior que la solape. Todo sale de los Pagos, así que MercadoPago y Stripe cuentan igual."
@@ -732,7 +739,7 @@ export function FinancieroView() {
           }
         >
           {mList.length === 0 ? (
-            <div className="no-data">Sin Pagos en rango</div>
+            <div className={NO_DATA}>Sin Pagos en rango</div>
           ) : (
             <FlowChart
               labels={mList}
@@ -750,7 +757,7 @@ export function FinancieroView() {
           desc="Distribución de eventos por tipo de suscripción"
         >
           {data.catalog.length === 0 ? (
-            <div className="no-data">Sin datos</div>
+            <div className={NO_DATA}>Sin datos</div>
           ) : (
             (() => {
               const idx = new Map<string, number>();
@@ -769,7 +776,7 @@ export function FinancieroView() {
       </div>
 
       {/* ── Cancelaciones · antigüedad del último cargo ── */}
-      <div className="proto-grid2">
+      <div className="grid gap-5 lg:grid-cols-2">
         <Card
           title="📉 Cancelaciones por mes (MP + Stripe oficial)"
           hint="Cancelaciones registradas por cada Proveedor, bucketeadas por su fecha de cancelación. Sólo las que traen fecha entran al gráfico; MercadoPago no registra cuándo se canceló una preaprobación, así que su serie está vacía y su churn se lee del estado de la suscripción. No afectado por los filtros: una suscripción no tiene país ni plan propios."
@@ -777,7 +784,7 @@ export function FinancieroView() {
           foot={`${fmt(undated)} de ${fmt(canceledTotal)} cancelaciones no traen fecha y no se pueden dibujar en el tiempo; el churn se lee del estado.${g.subscriptionsIgnoreFilters ? ' No afectado por los filtros.' : ''}`}
         >
           {mList.length === 0 ? (
-            <div className="no-data">Sin suscripciones en rango</div>
+            <div className={NO_DATA}>Sin suscripciones en rango</div>
           ) : (
             <CancelMonthlyChart labels={mList} byPlatform={cancelByGw} />
           )}
@@ -789,10 +796,10 @@ export function FinancieroView() {
           desc="Distribución de suscriptores actualmente authorized/active según cuándo fue su último cobro: ideal 0-30 días (al día). Las bandas más viejas (61+) son zombies o subs en mora — buena señal preventiva de churn próximo. Filtrable por pasarela."
           foot={lcUnknown > 0 ? `${fmt(lcUnknown)} suscripciones vivas sin Pago vinculado (cliente sin Subscriber conocido) quedan fuera de las barras.` : undefined}
         >
-          <div className="proto-controls">
+          <div className={CONTROLS}>
             <label>
               Pasarela
-              <select value={lcPlatform} onChange={(e) => setLcPlatform(e.target.value as typeof lcPlatform)} style={{ minWidth: 180 }}>
+              <select value={lcPlatform} onChange={(e) => setLcPlatform(e.target.value as typeof lcPlatform)} className={`${SELECT} min-w-[180px]`}>
                 <option value="all">Todas</option>
                 <option value="MercadoPago">Mercado Pago</option>
                 <option value="Stripe">Stripe</option>
@@ -800,7 +807,7 @@ export function FinancieroView() {
             </label>
           </div>
           {lcVals.every((v) => v === 0) ? (
-            <div className="no-data" style={{ height: 280 }}>Sin suscripciones vivas</div>
+            <div className={`${NO_DATA} h-[280px]`}>Sin suscripciones vivas</div>
           ) : (
             <LastChargeChart values={lcVals} />
           )}
@@ -814,22 +821,22 @@ export function FinancieroView() {
         desc="Meses promedio que un suscriptor se mantuvo activo, sumando reactivaciones (un cliente que canceló y volvió cuenta como un solo lifetime extendido). Sólo se promedian clientes «cerrados» (sin suscripción activa hoy) para no inflar con clientes vivos cuyo ciclo aún no terminó. Responde a los filtros."
         foot="Para Argentina (mayoría MP) la mediana es la mejor métrica — distribución muy sesgada por una larga cola de clientes legacy con muchos meses de antigüedad."
       >
-        <div className="proto-mini-kpis">
-          <div className="proto-mini-kpi">
-            <div className="lbl">Promedio</div>
-            <div className="val">{fmtMonths(lifetime.meanMonths)}</div>
-            <div className="sub">{countryLabel.toLowerCase() === 'todos los países' ? 'todos los países (MP+Stripe)' : countryLabel} · {fmt(lifetime.closed)} clientes cerrados</div>
+        <div className="mt-2 grid gap-3.5 md:grid-cols-2">
+          <div className="rounded-[var(--panel-radius)] bg-n-50 px-4.5 py-4">
+            <div className="eyebrow">Promedio</div>
+            <div className="figure mt-1 text-[1.75rem]">{fmtMonths(lifetime.meanMonths)}</div>
+            <div className="mt-1.5 text-xs font-medium text-muted">{countryLabel.toLowerCase() === 'todos los países' ? 'todos los países (MP+Stripe)' : countryLabel} · {fmt(lifetime.closed)} clientes cerrados</div>
           </div>
-          <div className="proto-mini-kpi blue">
-            <div className="lbl">Mediana</div>
-            <div className="val">{fmtMonths(lifetime.medianMonths)}</div>
-            <div className="sub">P25 {fmt(lifetime.p25Months ?? 0)} · P75 {fmt(lifetime.p75Months ?? 0)} · max {fmt(lifetime.maxMonths ?? 0)}</div>
+          <div className="rounded-[var(--panel-radius)] bg-blue-50 px-4.5 py-4">
+            <div className="eyebrow">Mediana</div>
+            <div className="figure mt-1 text-[1.75rem]">{fmtMonths(lifetime.medianMonths)}</div>
+            <div className="mt-1.5 text-xs font-medium text-muted">P25 {fmt(lifetime.p25Months ?? 0)} · P75 {fmt(lifetime.p75Months ?? 0)} · max {fmt(lifetime.maxMonths ?? 0)}</div>
           </div>
         </div>
       </Card>
 
       {/* ── Ingresos netos por mes · activos reales ── */}
-      <div className="proto-grid2">
+      <div className="grid gap-5 lg:grid-cols-2">
         <Card
           title="Ingresos netos por mes"
           hint="Neto de liquidación por mes y moneda, por fecha de captura: bruto liquidado menos comisión y retención, según el feed de comisiones de cada Proveedor, sólo de cobros con un Pago en el Control Panel. La línea punteada es la suma de todo convertido a USD con la cotización de cada día."
@@ -841,7 +848,7 @@ export function FinancieroView() {
           foot={<OutsidePagosFoot rows={outsideSeriesTotal} prefix="Fuera de Pagos en estos meses" />}
         >
           {mList.length === 0 ? (
-            <div className="no-data">Sin datos de liquidación en rango</div>
+            <div className={NO_DATA}>Sin datos de liquidación en rango</div>
           ) : (
             <RevenueChart
               labels={mList}
@@ -860,7 +867,7 @@ export function FinancieroView() {
           }
         >
           {mList.length === 0 ? (
-            <div className="no-data">Sin Pagos en rango</div>
+            <div className={NO_DATA}>Sin Pagos en rango</div>
           ) : (
             <ActiveChart
               labels={mList.map((x) => (m.active.get(x)?.partial ? `${x} ⏳` : x))}
@@ -873,7 +880,7 @@ export function FinancieroView() {
       </div>
 
       {/* ── Temporadas ── */}
-      <div className="proto-grid2">
+      <div className="grid gap-5 lg:grid-cols-2">
         <Card
           title="🏆 Comparativa por temporadas deportivas"
           hint="Pagos exitosos, bajas y pico mensual de activos por temporada deportiva (1 de septiembre a 31 de agosto), y el neto en USD de liquidación convertido por día. Una temporada con menos de 12 meses en el rango se marca con * y la que sigue en curso con ⏳."
@@ -884,7 +891,7 @@ export function FinancieroView() {
           }
         >
           {seasons.length === 0 ? (
-            <div className="no-data">Sin datos</div>
+            <div className={NO_DATA}>Sin datos</div>
           ) : (
             <SeasonsChart
               labels={seasons.map((s) => s.label)}
@@ -906,7 +913,7 @@ export function FinancieroView() {
           }
         >
           {mList.length === 0 ? (
-            <div className="no-data">Sin datos</div>
+            <div className={NO_DATA}>Sin datos</div>
           ) : (
             <PlansFreqChart labels={mList} mensual={mList.map((x) => bk(x)?.mensual ?? 0)} anual={mList.map((x) => bk(x)?.anual ?? 0)} />
           )}
@@ -923,10 +930,10 @@ export function FinancieroView() {
           </>
         }
       >
-        <div className="proto-controls">
+        <div className={CONTROLS}>
           <label>
             Métrica a comparar
-            <select value={seasonMetric} onChange={(e) => setSeasonMetric(e.target.value as SeasonMetric)} style={{ minWidth: 260 }}>
+            <select value={seasonMetric} onChange={(e) => setSeasonMetric(e.target.value as SeasonMetric)} className={`${SELECT} min-w-[260px]`}>
               {SEASON_METRICS.map((x) => (
                 <option key={x.key} value={x.key}>{x.label}</option>
               ))}
@@ -934,14 +941,14 @@ export function FinancieroView() {
           </label>
           <label>
             País
-            <select disabled value="" style={{ minWidth: 220 }}>
+            <select className={`${SELECT} min-w-[220px]`} disabled value="">
               <option value="">{countryLabel}</option>
             </select>
           </label>
         </div>
-        <div className="proto-table-scroll" style={{ maxHeight: 520 }}>
+        <div className={`${TABLE_SCROLL} max-h-[520px]`}>
           {!seasonTable ? (
-            <table className="tbl-seasons"><tbody><tr><td>Sin datos</td></tr></tbody></table>
+            <div className={NO_DATA}>Sin datos</div>
           ) : (
             <SeasonTable t={seasonTable} countryLabel={countryLabel} />
           )}
@@ -955,7 +962,7 @@ export function FinancieroView() {
         desc="Fees cobrados por MercadoPago y Stripe mes a mes, en USD. PayPal no tiene feed de comisiones y no aparece."
       >
         {mList.length === 0 ? (
-          <div className="no-data">Sin comisiones en rango</div>
+          <div className={NO_DATA}>Sin comisiones en rango</div>
         ) : (
           <FeesChart labels={mList} byPlatform={feesByGw} />
         )}
@@ -977,20 +984,20 @@ export function FinancieroView() {
           </>
         }
       >
-        <div className="proto-table-scroll" style={{ maxHeight: 420 }}>
-          <table>
+        <div className={`${TABLE_SCROLL} max-h-[420px]`}>
+          <table className="data-table">
             <thead>
               <tr>
                 <th>Mes</th>
                 {mainCcys.map((c) => (
                   <SeasonCells key={c}>
-                    <th className="right">Bruto {c} ({ccyPlatforms(c)})</th>
-                    <th className="right">Neto {c} ({ccyPlatforms(c)})</th>
+                    <th className="text-right!">Bruto {c} ({ccyPlatforms(c)})</th>
+                    <th className="text-right!">Neto {c} ({ccyPlatforms(c)})</th>
                   </SeasonCells>
                 ))}
-                <th className="right">Otras monedas (neto)</th>
-                <th className="right">BRUTO USD</th>
-                <th className="right">NETO USD</th>
+                <th className="text-right!">Otras monedas (neto)</th>
+                <th className="text-right!">BRUTO USD</th>
+                <th className="text-right!">NETO USD</th>
               </tr>
             </thead>
             <tbody>
@@ -1003,20 +1010,20 @@ export function FinancieroView() {
                 const nU = m.netUsd.get(x);
                 return (
                   <tr key={x}>
-                    <td className="mono ink" style={{ fontWeight: 600 }}>{x}</td>
+                    <td className="font-mono text-xs font-semibold text-foreground!">{x}</td>
                     {mainCcys.map((c) => {
                       const gv = Math.round(m.grossLocal.get(c)?.get(x) ?? 0);
                       const nv = Math.round(m.netLocal.get(c)?.get(x) ?? 0);
                       return (
                         <SeasonCells key={c}>
-                          <td className="right mono" style={{ color: '#94a3b8' }}>{gv ? fmt(gv) : '—'}</td>
-                          <td className="right mono" style={{ color: c === 'ARS' ? '#0891b2' : '#1d4ed8', fontWeight: 600 }}>{nv ? fmt(nv) : '—'}</td>
+                          <td className="text-right font-mono text-xs text-n-400!">{gv ? fmt(gv) : '—'}</td>
+                          <td className={`text-right font-mono text-xs font-semibold ${c === 'ARS' ? 'text-cyan-700!' : 'text-blue-700!'}`}>{nv ? fmt(nv) : '—'}</td>
                         </SeasonCells>
                       );
                     })}
-                    <td className="right mono muted" style={{ fontSize: 11 }}>{others || '—'}</td>
-                    <td className="right mono" style={{ color: '#94a3b8' }}>{gU && Math.round(gU) ? fmtUsdRound(gU) : '—'}</td>
-                    <td className="right mono ink" style={{ fontWeight: 700 }}>{nU && Math.round(nU) ? fmtUsdRound(nU) : '—'}</td>
+                    <td className="text-right font-mono text-[11px] text-muted!">{others || '—'}</td>
+                    <td className="text-right font-mono text-xs text-n-400!">{gU && Math.round(gU) ? fmtUsdRound(gU) : '—'}</td>
+                    <td className="text-right font-mono text-xs font-bold text-foreground!">{nU && Math.round(nU) ? fmtUsdRound(nU) : '—'}</td>
                   </tr>
                 );
               })}
@@ -1037,39 +1044,39 @@ export function FinancieroView() {
         foot={grossByPlatform.length > 0 ? <>La fila Total suma sólo Pagos; los montos no se totalizan porque están en monedas distintas.</> : undefined}
       >
         {grossByPlatform.length === 0 ? (
-          <div className="no-data">Sin Pagos en rango</div>
+          <div className={NO_DATA}>Sin Pagos en rango</div>
         ) : (
-          <div className="proto-table-scroll" style={{ maxHeight: 420 }}>
-            <table>
+          <div className={`${TABLE_SCROLL} max-h-[420px]`}>
+            <table className="data-table">
               <thead>
                 <tr>
                   <th>Proveedor</th>
-                  <th className="right">Pagos</th>
-                  <th className="right">% Pagos</th>
-                  {grossCcys.map((c) => <th key={c} className="right">Bruto {c}</th>)}
+                  <th className="text-right!">Pagos</th>
+                  <th className="text-right!">% Pagos</th>
+                  {grossCcys.map((c) => <th key={c} className="text-right!">Bruto {c}</th>)}
                 </tr>
               </thead>
               <tbody>
                 {grossByPlatform.map((r) => (
                   <tr key={r.platformName}>
-                    <td className="ink" style={{ fontWeight: 600 }}>
-                      <span className="swatch" style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, marginRight: 8, background: GW_COLOR[r.platformName] ?? '#94a3b8' }} />
+                    <td className="font-semibold text-foreground!">
+                      <span className="mr-2 inline-block size-2 rounded-[2px]" style={{ background: GW_COLOR[r.platformName] ?? OTHER }} />
                       {r.platformName}
                     </td>
-                    <td className="right mono">{fmt(r.txCount)}</td>
-                    <td className="right muted">{pctOf(r.txCount, grossTx)}</td>
+                    <td className="text-right font-mono text-xs">{fmt(r.txCount)}</td>
+                    <td className="text-right text-muted!">{pctOf(r.txCount, grossTx)}</td>
                     {grossCcys.map((c) => {
                       const v = r.byCcy.get(c);
-                      return <td key={c} className="right mono" style={{ color: v ? CUR_PALETTE[c] ?? 'inherit' : undefined }}>{v ? fmt(Math.round(v)) : '—'}</td>;
+                      return <td key={c} className="text-right font-mono text-xs" style={v && CUR_PALETTE[c] ? { color: CUR_PALETTE[c] } : undefined}>{v ? fmt(Math.round(v)) : '—'}</td>;
                     })}
                   </tr>
                 ))}
                 <tr>
-                  <td className="ink" style={{ fontWeight: 700 }}>Total</td>
-                  <td className="right mono ink" style={{ fontWeight: 700 }}>{fmt(grossTx)}</td>
-                  <td className="right muted">100%</td>
+                  <td className="font-bold text-foreground!">Total</td>
+                  <td className="text-right font-mono text-xs font-bold text-foreground!">{fmt(grossTx)}</td>
+                  <td className="text-right text-muted!">100%</td>
                   {grossCcys.map((c) => (
-                    <td key={c} className="right mono ink" style={{ fontWeight: 700 }}>
+                    <td key={c} className="text-right font-mono text-xs font-bold text-foreground!">
                       {fmt(Math.round(sumBy(grossByPlatform, (r) => r.byCcy.get(c) ?? 0)))}
                     </td>
                   ))}
@@ -1090,25 +1097,25 @@ export function FinancieroView() {
           </>
         }
       >
-        <div className="proto-table-scroll" style={{ maxHeight: 480 }}>
-          <table>
+        <div className={`${TABLE_SCROLL} max-h-[480px]`}>
+          <table className="data-table">
             <thead>
               <tr>
                 <th rowSpan={2}>Mes</th>
-                <th colSpan={6} style={{ textAlign: 'center' }}>Transacciones (eventos)</th>
-                <th colSpan={3} style={{ textAlign: 'center', background: 'color-mix(in srgb, #10b981 12%, var(--p-thead))' }}>Suscriptores activos (únicos)</th>
-                <th rowSpan={2} className="right">Ingreso neto USD</th>
+                <th colSpan={6} className="text-center!">Transacciones (eventos)</th>
+                <th colSpan={3} className="bg-[var(--ok-soft)]! text-center!">Suscriptores activos (únicos)</th>
+                <th rowSpan={2} className="text-right!">Ingreso neto USD</th>
               </tr>
               <tr>
-                <th className="right" style={{ top: 37 }}>🟢 Nuevos</th>
-                <th className="right" style={{ top: 37 }}>🔵 Recurrentes</th>
-                <th className="right" style={{ top: 37 }}>🟡 Reactivados</th>
-                <th className="right" style={{ top: 37 }}>🔴 Bajas</th>
-                <th className="right" style={{ top: 37 }}>⚪️ Partido único</th>
-                <th className="right" style={{ top: 37 }}>Total</th>
-                <th className="right" style={{ top: 37 }}>📅 Mensuales</th>
-                <th className="right" style={{ top: 37 }}>🗓️ Anuales</th>
-                <th className="right" style={{ top: 37 }}>∑ Únicos</th>
+                <th className="top-[37px]! text-right!">🟢 Nuevos</th>
+                <th className="top-[37px]! text-right!">🔵 Recurrentes</th>
+                <th className="top-[37px]! text-right!">🟡 Reactivados</th>
+                <th className="top-[37px]! text-right!">🔴 Bajas</th>
+                <th className="top-[37px]! text-right!">⚪️ Partido único</th>
+                <th className="top-[37px]! text-right!">Total</th>
+                <th className="top-[37px]! text-right!">📅 Mensuales</th>
+                <th className="top-[37px]! text-right!">🗓️ Anuales</th>
+                <th className="top-[37px]! text-right!">∑ Únicos</th>
               </tr>
             </thead>
             <tbody>
@@ -1119,17 +1126,17 @@ export function FinancieroView() {
                 const nU = m.netUsd.get(x);
                 return (
                   <tr key={x}>
-                    <td className="mono ink" style={{ fontWeight: 600 }}>{x}{a?.partial ? ' ⏳' : ''}</td>
-                    <td className="right" style={{ color: '#059669', fontWeight: 600 }}>{fmt(b?.newSubscribers ?? 0)}</td>
-                    <td className="right">{fmt(b?.recurring ?? 0)}</td>
-                    <td className="right" style={{ color: '#d97706', fontWeight: 600 }}>{fmt(b?.reactivated ?? 0)}</td>
-                    <td className="right" style={{ color: '#dc2626', fontWeight: 600 }}>{fmt(b?.churned ?? 0)}</td>
-                    <td className="right">{fmt(b?.oneOff ?? 0)}</td>
-                    <td className="right"><b>{fmt(totalEv)}</b></td>
-                    <td className="right cell-blue">{a?.mensual ? fmt(a.mensual) : '—'}</td>
-                    <td className="right cell-amber">{a?.anual ? fmt(a.anual) : '—'}</td>
-                    <td className="right cell-green">{a?.total ? fmt(a.total) : '—'}</td>
-                    <td className="right mono ink" style={{ fontWeight: 700 }}>{nU && Math.round(nU) ? fmtUsdRound(nU) : '—'}</td>
+                    <td className="font-mono text-xs font-semibold text-foreground!">{x}{a?.partial ? ' ⏳' : ''}</td>
+                    <td className="text-right font-semibold text-emerald-700!">{fmt(b?.newSubscribers ?? 0)}</td>
+                    <td className="text-right">{fmt(b?.recurring ?? 0)}</td>
+                    <td className="text-right font-semibold text-amber-700!">{fmt(b?.reactivated ?? 0)}</td>
+                    <td className="text-right font-semibold text-red-700!">{fmt(b?.churned ?? 0)}</td>
+                    <td className="text-right">{fmt(b?.oneOff ?? 0)}</td>
+                    <td className="text-right"><b>{fmt(totalEv)}</b></td>
+                    <td className="bg-blue-50 text-right font-semibold text-blue-700!">{a?.mensual ? fmt(a.mensual) : '—'}</td>
+                    <td className="bg-amber-50 text-right font-semibold text-amber-700!">{a?.anual ? fmt(a.anual) : '—'}</td>
+                    <td className="bg-[var(--ok-soft)] text-right font-bold text-foreground!">{a?.total ? fmt(a.total) : '—'}</td>
+                    <td className="text-right font-mono text-xs font-bold text-foreground!">{nU && Math.round(nU) ? fmtUsdRound(nU) : '—'}</td>
                   </tr>
                 );
               })}
@@ -1139,51 +1146,52 @@ export function FinancieroView() {
       </Card>
 
       {/* ── Catálogo ── */}
-      <details className="proto-details" open>
-        <summary>
+      <details className="card group px-5 py-4" open>
+        <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-semibold text-foreground [&::-webkit-details-marker]:hidden">
+          <span aria-hidden className="text-xs text-muted transition-transform group-open:rotate-90">▸</span>
           Catálogo de precios inferido por plan, mercado y temporada
         </summary>
-        <div style={{ marginTop: 14 }}>
-          <div className="proto-note-box">
-            <span className="ico">⚠️</span>
+        <div className="mt-3.5">
+          <div className="mb-3.5 flex items-start gap-2.5 rounded-[var(--panel-radius)] border border-amber-200 bg-amber-50 px-4.5 py-3.5 text-[13px] text-amber-900">
+            <span aria-hidden className="shrink-0 text-lg">⚠️</span>
             <div>
               <b>Precios detectados directamente desde las transacciones.</b> Si ves varios precios en el mismo plan/temporada/mercado, puede ser por cambios de tarifa, descuentos, o errores de catálogo. Revisa los que no deberían estar.
             </div>
           </div>
           {catalog && (
             <>
-              <div className="proto-controls">
+              <div className={CONTROLS}>
                 <label>
                   Mercado
-                  <select value={cat.market} onChange={(e) => setCat({ ...cat, market: e.target.value })} style={{ minWidth: 200 }}>
+                  <select value={cat.market} onChange={(e) => setCat({ ...cat, market: e.target.value })} className={`${SELECT} min-w-[200px]`}>
                     <option value="ALL">Todos los mercados</option>
                     {catalog.markets.map((x) => <option key={x} value={x}>{MARKET_LABEL[x] ?? x}</option>)}
                   </select>
                 </label>
                 <label>
                   Temporada
-                  <select value={cat.season} onChange={(e) => setCat({ ...cat, season: e.target.value })}>
+                  <select className={SELECT} value={cat.season} onChange={(e) => setCat({ ...cat, season: e.target.value })}>
                     <option value="ALL">Todas las temporadas</option>
                     {catalog.seasons.map((x) => <option key={x} value={x}>{x}</option>)}
                   </select>
                 </label>
                 <label>
                   Plan
-                  <select value={cat.plan} onChange={(e) => setCat({ ...cat, plan: e.target.value })} style={{ minWidth: 200 }}>
+                  <select value={cat.plan} onChange={(e) => setCat({ ...cat, plan: e.target.value })} className={`${SELECT} min-w-[200px]`}>
                     <option value="ALL">Todos los planes</option>
                     {catalog.plans.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
                   </select>
                 </label>
                 <label>
                   Moneda
-                  <select value={cat.currency} onChange={(e) => setCat({ ...cat, currency: e.target.value })} style={{ minWidth: 140 }}>
+                  <select value={cat.currency} onChange={(e) => setCat({ ...cat, currency: e.target.value })} className={`${SELECT} min-w-[140px]`}>
                     <option value="ALL">Todas las monedas</option>
                     {catalog.currencies.map((x) => <option key={x} value={x}>{x}</option>)}
                   </select>
                 </label>
                 <label>
                   Precio
-                  <select value={catalog.prices.some((p) => `${p.currency}|${p.price}` === cat.price) ? cat.price : 'ALL'} onChange={(e) => setCat({ ...cat, price: e.target.value })} style={{ minWidth: 180 }}>
+                  <select value={catalog.prices.some((p) => `${p.currency}|${p.price}` === cat.price) ? cat.price : 'ALL'} onChange={(e) => setCat({ ...cat, price: e.target.value })} className={`${SELECT} min-w-[180px]`}>
                     <option value="ALL">Todos los precios</option>
                     {catalog.prices.map((p) => (
                       <option key={`${p.currency}|${p.price}`} value={`${p.currency}|${p.price}`}>
@@ -1193,27 +1201,27 @@ export function FinancieroView() {
                   </select>
                 </label>
               </div>
-              <div className="proto-table-scroll" style={{ maxHeight: 520 }}>
-                <table>
+              <div className={`${TABLE_SCROLL} max-h-[520px]`}>
+                <table className="data-table">
                   <thead>
                     <tr>
                       <th>Plan</th><th>Mercado</th><th>Moneda</th><th>Temporada</th>
-                      <th className="right">Precio</th><th className="right">Transacciones</th><th>Ranking</th>
+                      <th className="text-right!">Precio</th><th className="text-right!">Transacciones</th><th>Ranking</th>
                     </tr>
                   </thead>
                   <tbody>
                     {catalog.rows.length === 0 ? (
-                      <tr><td colSpan={7} style={{ textAlign: 'center', padding: 30 }} className="muted">Sin entradas para este filtro.</td></tr>
+                      <tr><td colSpan={7} className="py-7.5 text-center text-muted!">Sin entradas para este filtro.</td></tr>
                     ) : (
                       catalog.rows.map((r) => (
                         <tr key={`${r.planFamily}|${r.planFrequency}|${r.market}|${r.season}|${r.currency}|${r.price}`}>
-                          <td className="ink" style={{ fontWeight: 600 }}>{r.planFamily} · {r.planFrequency}</td>
-                          <td><span className="proto-tag-market">{r.market}</span></td>
+                          <td className="font-semibold text-foreground!">{r.planFamily} · {r.planFrequency}</td>
+                          <td><span className="rounded-md bg-n-100 px-2 py-0.5 text-[11px] font-semibold">{r.market}</span></td>
                           <td>{r.currency}</td>
                           <td>{r.season}</td>
-                          <td className="right mono">{r.price.toLocaleString('es', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                          <td className="right">{fmt(r.txCount)}</td>
-                          <td>{r.rank === 1 ? <span className="pill recurring" style={{ margin: 0 }}>★ principal</span> : <span className="muted">#{r.rank}</span>}</td>
+                          <td className="text-right font-mono text-xs">{r.price.toLocaleString('es', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                          <td className="text-right">{fmt(r.txCount)}</td>
+                          <td>{r.rank === 1 ? <span className="tag tag-info">★ principal</span> : <span className="text-muted">#{r.rank}</span>}</td>
                         </tr>
                       ))
                     )}
@@ -1257,7 +1265,7 @@ function SeasonTable({
   countryLabel: string;
 }) {
   const pickCls = (isPositive: boolean): 'up' | 'down' => (t.invert ? (isPositive ? 'down' : 'up') : isPositive ? 'up' : 'down');
-  const fmtPct = (cur: number, prev: number | null | undefined): { cls: string; txt: string } => {
+  const fmtPct = (cur: number, prev: number | null | undefined): { cls: 'up' | 'down' | 'na'; txt: string } => {
     if (prev === null || prev === undefined) return { cls: 'na', txt: '' };
     if (prev === 0) return cur === 0 ? { cls: 'na', txt: '—' } : { cls: pickCls(true), txt: '+∞' };
     const pct = ((cur - prev) / prev) * 100;
@@ -1266,13 +1274,13 @@ function SeasonTable({
   const cell = (v: number | null, prev: number | null | undefined) =>
     v === null ? (
       <>
-        <td className="none">—</td>
-        <td className="pct na" />
+        <td className="text-right text-muted!">—</td>
+        <td className={PCT.na} />
       </>
     ) : (
       <>
-        <td className="num">{t.fmtVal(v)}</td>
-        <td className={`pct ${fmtPct(v, prev).cls}`}>{fmtPct(v, prev).txt}</td>
+        <td className="text-right font-medium tabular-nums">{t.fmtVal(v)}</td>
+        <td className={PCT[fmtPct(v, prev).cls]}>{fmtPct(v, prev).txt}</td>
       </>
     );
 
@@ -1302,24 +1310,24 @@ function SeasonTable({
   ).out;
 
   return (
-    <table className="tbl-seasons">
+    <table className="data-table text-[12.5px] [&_td]:px-2.5! [&_td]:py-1.5! [&_td]:whitespace-nowrap [&_th]:px-2.5!">
       <thead>
         <tr>
-          <th className="country-cell">{countryLabel}</th>
-          <th className="metric-title" colSpan={t.seasonKeys.length * 2}>{t.title}</th>
+          <th className="bg-[var(--navy)]! tracking-[0.04em] text-white!">{countryLabel}</th>
+          <th className="bg-accent-soft! text-center! font-bold text-accent-strong!" colSpan={t.seasonKeys.length * 2}>{t.title}</th>
         </tr>
         <tr>
-          <th style={{ top: 33 }} />
+          <th className="top-[33px]!" />
           {t.seasonKeys.map((s) => (
             <SeasonCells key={s}>
-              <th className="season" style={{ top: 33 }}>{seasonLabel(s)}</th>
-              <th className="pcth" style={{ top: 33 }}>% Incremento</th>
+              <th className="top-[33px]! bg-sky-50! text-right! font-bold text-sky-900!">{seasonLabel(s)}</th>
+              <th className="top-[33px]! text-right! font-medium">% Incremento</th>
             </SeasonCells>
           ))}
         </tr>
       </thead>
       <tbody>
-        <tr className="summary"><td>Total</td>{totalCells}</tr>
+        <tr className="bg-n-50 font-bold [&_td]:text-foreground!"><td>Total</td>{totalCells}</tr>
         {SEASON_MONTH_ORDER.map((mo, idx) => (
           <tr key={mo}>
             <td>{MONTH_FULL_ES[mo]}</td>
@@ -1330,11 +1338,18 @@ function SeasonTable({
             })}
           </tr>
         ))}
-        <tr className="summary"><td>Media</td>{avgCells}</tr>
+        <tr className="bg-n-50 font-bold [&_td]:text-foreground!"><td>Media</td>{avgCells}</tr>
       </tbody>
     </table>
   );
 }
+
+// La celda de «% Incremento»: verde si mejora, rojo si empeora.
+const PCT: Record<'up' | 'down' | 'na', string> = {
+  up: 'text-right text-[11.5px] font-semibold tabular-nums text-[var(--ok)]!',
+  down: 'text-right text-[11.5px] font-semibold tabular-nums text-red-700!',
+  na: 'text-right text-[11.5px] tabular-nums text-muted!',
+};
 
 /** Un par de celdas con una sola key: React quiere una por hijo del array. */
 function SeasonCells({ children }: { children: React.ReactNode }) {

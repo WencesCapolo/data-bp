@@ -3,20 +3,20 @@ import useSWR from 'swr';
 import { fetcher } from '@/lib/client/fetcher';
 import { useFilters, useFilterQS } from '@/lib/client/filterStore';
 import { bucketTitles } from '@/lib/client/bucketTitle';
-import { KpiCard } from '@/components/ui/KpiCard';
-import { InfoHint } from '@/components/ui/InfoHint';
+import { KpiCard, KpiGrid } from '@/components/ui/KpiCard';
+import { Card } from '@/components/ui/Card';
+import { ACCESS, SERIES } from '@/lib/client/palette';
 import { LineChart } from '@/components/charts/LineChart';
 import { StackedAreaChart } from '@/components/charts/StackedAreaChart';
 import { TabSkeleton } from '@/components/ui/Skeleton';
 import { ErrorBox } from '@/components/ui/ErrorBox';
 import type { EvolutionDTO } from '@basket/core/dtos/EvolutionDTO';
 
-const ACCESS_COLORS = { real: '#10b981', voucher: '#fbbf24' };
 const SUB_COLORS = {
-  Free: '#94a3b8',
-  Mensual_Basico: '#4f8ef7',
-  Mensual_Total: '#22d3ee',
-  Anual_Total: '#a78bfa',
+  Free: SERIES[6],
+  Mensual_Basico: SERIES[0],
+  Mensual_Total: SERIES[1],
+  Anual_Total: SERIES[3],
 };
 
 export function EvolutionTab() {
@@ -27,7 +27,7 @@ export function EvolutionTab() {
   if (isLoading) return <TabSkeleton kpis={4} blocks={[{ kind: 'full', height: 320 }, { kind: 'full', height: 300 }, { kind: 'full', height: 240 }]} />;
   if (error) return <ErrorBox message={error.message} />;
   if (!data || data.series.length === 0) {
-    return <div className="no-data">Sin datos para el rango/filtros seleccionados</div>;
+    return <div className="card p-10 text-center text-sm text-muted">Sin datos para el rango/filtros seleccionados</div>;
   }
 
   const last = data.series[data.series.length - 1];
@@ -42,8 +42,8 @@ export function EvolutionTab() {
   );
 
   return (
-    <div>
-      <div className="kpi-grid">
+    <div className="flex flex-col gap-6">
+      <KpiGrid>
         <KpiCard
           label="Activos al final"
           value={last.allActive}
@@ -69,65 +69,56 @@ export function EvolutionTab() {
           sub={granularity}
           hint="Cantidad de puntos de la serie: uno por día, semana o mes con datos dentro del rango, según la granularidad elegida arriba."
         />
-      </div>
+      </KpiGrid>
 
-      <div className="chart-full">
-        <div className="chart-title">
-          Activos por tipo de acceso · {granularity}
-          <InfoHint text="Activos en cada punto según tipo de acceso: Real (pagó con dinero) y Voucher (monto cero). Antel no se dibuja pero sí suma al total indicado debajo. En semana o mes cada punto resume varios días." />
-        </div>
-        <div style={{ height: 300 }}>
-          <StackedAreaChart
-            height={300}
-            labels={labels}
-            tooltipTitles={tooltipTitles}
-            series={[
-              { label: 'Real', data: data.series.map((p) => p.realActive), color: ACCESS_COLORS.real },
-              { label: 'Voucher', data: data.series.map((p) => p.voucherActive), color: ACCESS_COLORS.voucher },
-            ]}
-          />
-        </div>
-        <div style={{ marginTop: 8, fontSize: 10, color: 'var(--text3)' }}>
+      <Card
+        title={`Activos por tipo de acceso · ${granularity}`}
+        hint="Activos en cada punto según tipo de acceso: Real (pagó con dinero) y Voucher (monto cero). Antel no se dibuja pero sí suma al total indicado debajo. En semana o mes cada punto resume varios días."
+      >
+        <StackedAreaChart
+          height={300}
+          labels={labels}
+          tooltipTitles={tooltipTitles}
+          series={[
+            { label: 'Real', data: data.series.map((p) => p.realActive), color: ACCESS.real },
+            { label: 'Voucher', data: data.series.map((p) => p.voucherActive), color: ACCESS.voucher },
+          ]}
+        />
+        <div className="mt-2 text-[11px] text-muted">
           Total activos (incluye Antel): {last.allActive.toLocaleString()}
         </div>
-      </div>
+      </Card>
 
-      <div className="chart-full">
-        <div className="chart-title">
-          Mix por subtipo · evolución
-          <InfoHint text="Activos en cada punto según plan: Free (período 0), Mensual Básico, Mensual Total y Anual Total. Los Pagos sin plan reconocible (Otros) quedan fuera, así que la suma puede no llegar al total." />
-        </div>
-        <div style={{ height: 280 }}>
-          <StackedAreaChart
-            height={280}
-            labels={labels}
-            tooltipTitles={tooltipTitles}
-            series={[
-              { label: 'Free', data: data.series.map((p) => p.freeActive), color: SUB_COLORS.Free },
-              { label: 'Mensual básico', data: data.series.map((p) => p.mensualBasicoActive), color: SUB_COLORS.Mensual_Basico },
-              { label: 'Mensual total', data: data.series.map((p) => p.mensualTotalActive), color: SUB_COLORS.Mensual_Total },
-              { label: 'Anual total', data: data.series.map((p) => p.anualTotalActive), color: SUB_COLORS.Anual_Total },
-            ]}
-          />
-        </div>
-      </div>
+      <Card
+        title="Mix por subtipo · evolución"
+        hint="Activos en cada punto según plan: Free (período 0), Mensual Básico, Mensual Total y Anual Total. Los Pagos sin plan reconocible (Otros) quedan fuera, así que la suma puede no llegar al total."
+      >
+        <StackedAreaChart
+          height={280}
+          labels={labels}
+          tooltipTitles={tooltipTitles}
+          series={[
+            { label: 'Free', data: data.series.map((p) => p.freeActive), color: SUB_COLORS.Free },
+            { label: 'Mensual básico', data: data.series.map((p) => p.mensualBasicoActive), color: SUB_COLORS.Mensual_Basico },
+            { label: 'Mensual total', data: data.series.map((p) => p.mensualTotalActive), color: SUB_COLORS.Mensual_Total },
+            { label: 'Anual total', data: data.series.map((p) => p.anualTotalActive), color: SUB_COLORS.Anual_Total },
+          ]}
+        />
+      </Card>
 
-      <div className="chart-full">
-        <div className="chart-title">
-          Total activos · línea
-          <InfoHint text="Suscriptores con suscripción vigente en cada punto, todos los tipo de acceso y planes incluidos. Cada suscriptor cuenta una sola vez aunque tenga varios Pagos vigentes." />
-        </div>
-        <div style={{ height: 220 }}>
-          <LineChart
-            height={220}
-            labels={labels}
-            tooltipTitles={tooltipTitles}
-            series={[
-              { label: 'Total activos', data: data.series.map((p) => p.allActive), color: '#06b6d4', fill: true },
-            ]}
-          />
-        </div>
-      </div>
+      <Card
+        title="Total activos · línea"
+        hint="Suscriptores con suscripción vigente en cada punto, todos los tipo de acceso y planes incluidos. Cada suscriptor cuenta una sola vez aunque tenga varios Pagos vigentes."
+      >
+        <LineChart
+          height={220}
+          labels={labels}
+          tooltipTitles={tooltipTitles}
+          series={[
+            { label: 'Total activos', data: data.series.map((p) => p.allActive), color: SERIES[1], fill: true },
+          ]}
+        />
+      </Card>
     </div>
   );
 }

@@ -123,7 +123,7 @@ export function LifecycleChart({
         },
       },
     }),
-    [labels, bars, lines, tooltipTitles, CHART_THEME, yMin, yMax, legend],
+    [labels, bars, lines, tooltipTitles, yMin, yMax, legend],
   );
   return <ChartCanvas config={config} height={height} />;
 }

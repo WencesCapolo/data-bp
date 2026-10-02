@@ -1,11 +1,5 @@
-/* `legacy` sits under Tailwind's utilities: whatever legacy.css still styles,
-   a utility on the same element wins. legacy.css shrinks as components move
-   to utilities; when it is empty, delete it and this layer. */
-@layer theme, base, legacy, components, utilities;
-
 @import 'tailwindcss';
 @import 'basket-tv-ui/estilos.css';
-@import './legacy.css' layer(legacy);
 
 /* Analytics' own styling sits below. General tokens (neutrals, accent, navy,
    radius, shadows, fonts) come from basket-tv-ui; the chart colours, which

@@ -19,23 +19,6 @@ export interface ContenidoFilterState {
 
 const SEASONS = [2021, 2022, 2023, 2024, 2025];
 
-const dateInput: React.CSSProperties = {
-  background: 'var(--bg3)',
-  border: '1px solid var(--border)',
-  color: 'var(--text2)',
-  borderRadius: 6,
-  fontSize: 12,
-  padding: '6px 9px',
-  colorScheme: 'dark',
-};
-const legend: React.CSSProperties = {
-  fontSize: 10,
-  color: 'var(--text3)',
-  textTransform: 'uppercase',
-  letterSpacing: '0.08em',
-  fontWeight: 600,
-};
-
 /** A typed date is clamped into [min, max]: the picker's own bounds only
  *  govern the calendar popup, not the keyboard. An empty value (mid-edit)
  *  stays as is. */
@@ -64,22 +47,22 @@ export function ContenidoFilters({
   const isAll = value.from === floor && value.to === ceiling;
 
   return (
-    <div className="filter-row" style={{ gap: 14 }}>
-      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-        <span style={legend}>Desde</span>
+    <div className="card flex flex-wrap items-center gap-3.5 p-3.5">
+      <span className="inline-flex items-center gap-1.5">
+        <span className="eyebrow">Desde</span>
         <input
           type="date"
-          style={dateInput}
+          className="input py-1 text-xs"
           value={value.from}
           min={floor}
           max={value.to}
           onChange={(e) => onChange({ ...value, from: clampDay(e.target.value, floor, value.to) })}
         />
-        <span style={{ fontSize: 11, color: 'var(--text3)' }}>→</span>
-        <span style={legend}>Hasta</span>
+        <span className="text-[11px] text-muted">→</span>
+        <span className="eyebrow">Hasta</span>
         <input
           type="date"
-          style={dateInput}
+          className="input py-1 text-xs"
           value={value.to}
           min={value.from}
           max={ceiling}
@@ -87,15 +70,17 @@ export function ContenidoFilters({
         />
       </span>
 
-      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <span style={legend}>Temporada</span>
-        <span className="date-pills">
+      <span className="inline-flex flex-wrap items-center gap-2">
+        <span className="eyebrow">Temporada</span>
+        <span className="flex flex-wrap gap-1.5">
           {SEASONS.map((y) => {
             const r = seasonRange(y);
             return (
               <button
                 key={y}
-                className={`date-pill ${activeSeason === y ? 'active' : ''}`}
+                type="button"
+                className="pill"
+                aria-pressed={activeSeason === y}
                 onClick={() => onChange({ ...value, from: r.from, to: r.to })}
               >
                 {r.label}
@@ -103,7 +88,9 @@ export function ContenidoFilters({
             );
           })}
           <button
-            className={`date-pill ${isAll ? 'active' : ''}`}
+            type="button"
+            className="pill"
+            aria-pressed={isAll}
             onClick={() => onChange({ ...value, from: floor, to: ceiling })}
           >
             Todo el histórico
@@ -111,10 +98,11 @@ export function ContenidoFilters({
         </span>
       </span>
 
-      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
+      <span className="ml-auto inline-flex items-center gap-2">
         {/* País del contenido, no del Subscriber: dónde se jugó el partido. */}
-        <span style={legend}>País del contenido</span>
+        <span className="eyebrow">País del contenido</span>
         <select
+          className="input text-xs"
           value={value.country}
           onChange={(e) => onChange({ ...value, country: e.target.value })}
         >

@@ -133,7 +133,7 @@ export function SyncControls() {
   return (
     <div className="flex items-center gap-2 sm:gap-3">
       <span
-        className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 font-mono text-xs ${
+        className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 font-mono text-xs max-sm:hidden ${
           inFlight
             ? 'border-[var(--accent-border)] bg-accent-soft text-accent-strong'
             : 'border-[var(--border)] bg-surface text-n-600'
@@ -169,9 +169,12 @@ export function SyncControls() {
         aria-haspopup="dialog"
         aria-expanded={modal !== 'none'}
         title={syncErr ?? 'Subir el Pagos Export y sincronizar'}
-        className={`btn-ghost ${syncErr ? 'border-[var(--accent-border)] text-accent-strong' : ''}`}
+        aria-label={inFlight ? 'Sincronizando' : 'Sync'}
+        className={`btn-ghost whitespace-nowrap ${syncErr ? 'border-[var(--accent-border)] text-accent-strong' : ''}`}
       >
-        {inFlight ? '…' : '↻ Sync'}
+        {/* On phones the freshness badge is hidden; its dot rides on the button. */}
+        <span aria-hidden className={`size-1.5 shrink-0 rounded-full sm:hidden ${dotClass}`} />
+        {inFlight ? '…' : <>↻<span className="max-sm:hidden"> Sync</span></>}
       </button>
       {/* To <body>: the header's backdrop-blur would trap a fixed overlay inside it. */}
       {modal === 'pagos' &&

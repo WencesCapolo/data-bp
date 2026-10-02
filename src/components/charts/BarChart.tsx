@@ -2,7 +2,7 @@
 import { useMemo } from 'react';
 import type { ChartConfiguration } from 'chart.js';
 import { ChartCanvas } from './ChartCanvas';
-import { CHART_THEME } from '@/lib/client/palette';
+import { CHART_THEME, SERIES } from '@/lib/client/palette';
 import { tooltipOpts } from './tooltip';
 
 interface Props {
@@ -17,7 +17,7 @@ interface Props {
 export function BarChart({
   labels,
   values,
-  color = '#06b6d4',
+  color = SERIES[1],
   height = 220,
   horizontal = false,
   tooltipTitles,

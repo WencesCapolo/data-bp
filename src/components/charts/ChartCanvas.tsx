@@ -36,7 +36,7 @@ export function ChartCanvas({ config, height = 220 }: Props) {
   // free to fill it. That is also why the box is `position: relative` — it is what
   // Chart.js's own responsive guidance asks for.
   return (
-    <div style={{ position: 'relative', height, width: '100%' }}>
+    <div className="relative w-full" style={{ height }}>
       <canvas ref={ref} />
     </div>
   );

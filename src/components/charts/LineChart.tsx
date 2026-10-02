@@ -2,7 +2,7 @@
 import { useMemo } from 'react';
 import type { ChartConfiguration } from 'chart.js';
 import { ChartCanvas } from './ChartCanvas';
-import { CHART_THEME } from '@/lib/client/palette';
+import { CHART_THEME, SERIES } from '@/lib/client/palette';
 import { tooltipOpts } from './tooltip';
 
 interface Props {
@@ -34,8 +34,8 @@ export function LineChart({ labels, series, height = 220, yFormat = 'number', to
         datasets: series.map((s) => ({
           label: s.label,
           data: s.data,
-          borderColor: s.color ?? '#06b6d4',
-          backgroundColor: s.fill ? hexAlpha(s.color ?? '#06b6d4', 0.12) : 'transparent',
+          borderColor: s.color ?? SERIES[1],
+          backgroundColor: s.fill ? hexAlpha(s.color ?? SERIES[1], 0.12) : 'transparent',
           fill: s.fill ?? false,
           tension: 0.3,
           pointRadius: 0,

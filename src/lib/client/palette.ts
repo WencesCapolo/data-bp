@@ -27,6 +27,9 @@ export const COUNTRY: Record<string, string> = {
 };
 export const OTHER = '#847b78';
 
+/** One colour per access type: paid, voucher ($0) and Antel. */
+export const ACCESS = { real: '#1f7a4d', voucher: '#d97706', antel: '#0891b2' } as const;
+
 /** Up / down / flat, for deltas painted on a canvas. */
 export const TREND = { up: '#1f7a4d', down: '#c0141b', flat: '#847b78' } as const;
 

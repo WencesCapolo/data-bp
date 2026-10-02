@@ -5,6 +5,7 @@ import { ChartCanvas } from '@/components/charts/ChartCanvas';
 import type { Bucket, BucketedSeries } from './buckets';
 import { bucketTitles } from '@/lib/client/bucketTitle';
 import { tooltipOpts } from '@/components/charts/tooltip';
+import { CHART_THEME, SERIES, TREND } from '@/lib/client/palette';
 
 const CHART_HEIGHT = 280;
 
@@ -22,8 +23,8 @@ export function TeamMovementChart({ series, bucket }: { series: BucketedSeries; 
             type: 'line',
             label: 'Suscripciones activas',
             data: series.active,
-            borderColor: '#06b6d4',
-            backgroundColor: 'rgba(6,182,212,.12)',
+            borderColor: SERIES[1],
+            backgroundColor: 'rgba(8,145,178,.12)',
             borderWidth: 2,
             pointRadius: 0,
             fill: true,
@@ -35,7 +36,7 @@ export function TeamMovementChart({ series, bucket }: { series: BucketedSeries; 
             type: 'bar',
             label: 'Altas',
             data: series.altas,
-            backgroundColor: '#10b981',
+            backgroundColor: TREND.up,
             borderRadius: 2,
             stack: 'mov',
             yAxisID: 'y',
@@ -45,7 +46,7 @@ export function TeamMovementChart({ series, bucket }: { series: BucketedSeries; 
             type: 'bar',
             label: 'Bajas',
             data: series.bajas.map((b) => -b),
-            backgroundColor: '#ef4444',
+            backgroundColor: TREND.down,
             borderRadius: 2,
             stack: 'mov',
             yAxisID: 'y',
@@ -77,7 +78,7 @@ export function TeamMovementChart({ series, bucket }: { series: BucketedSeries; 
           },
           y: {
             position: 'left',
-            grid: { color: '#1e2a42' },
+            grid: { color: CHART_THEME.grid },
             ticks: { font: { size: 10 }, callback: (v) => Math.abs(Number(v)) },
             title: { display: true, text: 'altas / bajas', font: { size: 9 } },
           },
@@ -85,8 +86,8 @@ export function TeamMovementChart({ series, bucket }: { series: BucketedSeries; 
             position: 'right',
             grid: { display: false },
             beginAtZero: true,
-            ticks: { font: { size: 10 }, color: '#06b6d4' },
-            title: { display: true, text: 'activas', color: '#06b6d4', font: { size: 9 } },
+            ticks: { font: { size: 10 }, color: SERIES[1] },
+            title: { display: true, text: 'activas', color: SERIES[1], font: { size: 9 } },
           },
         },
       },

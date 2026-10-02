@@ -1,5 +1,5 @@
 'use client';
-import { KpiCard } from '@/components/ui/KpiCard';
+import { KpiCard, KpiGrid } from '@/components/ui/KpiCard';
 import { KpiGridSkeleton } from '@/components/ui/Skeleton';
 import { useNacionalOverview } from '../hooks/usePartidosData';
 
@@ -14,7 +14,7 @@ export function PartidosNacionalKpis() {
     return <KpiGridSkeleton count={4} />;
   }
   return (
-    <div className="kpi-grid">
+    <KpiGrid>
       <KpiCard
         label="Total temporada"
         value={data.totalSeason}
@@ -40,6 +40,6 @@ export function PartidosNacionalKpis() {
         variant="blue"
         hint="Promedio simple de partidos por semana sobre todas las filas semanales que entran en el filtro, redondeado a un decimal. Las semanas sin fila no cuentan como cero."
       />
-    </div>
+    </KpiGrid>
   );
 }
