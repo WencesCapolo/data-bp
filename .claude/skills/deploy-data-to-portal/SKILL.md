@@ -30,7 +30,7 @@ policy, so follow it with `docker update --restart unless-stopped data-bp-postgr
 
 `npm` runs the app, **`pnpm` installs it.** The pm2 entry runs `/usr/bin/npm start`, and
 `npm run build` is right — but installs are not npm's. That box's `node_modules` is a
-pnpm store layout (`node_modules/.pnpm/…`, symlinks, owned by `wences` not root), so
+pnpm store layout (`node_modules/.pnpm/…`, symlinks; `.pnpm` is root-owned), so
 npm's arborist walks into a `Link` node it cannot resolve and dies with
 
 ```
@@ -40,12 +40,19 @@ npm error Cannot read properties of null (reading 'matches')
 `npm ci` fails too — `pnpm-lock.yaml`, no `package-lock.json`. The install that works is
 
 ```bash
-cd /srv/data-bp && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 \
-  corepack pnpm@10.20.0 install --frozen-lockfile --config.confirmModulesPurge=false
+cd /srv/data-bp && sudo -S -p '' env COREPACK_ENABLE_DOWNLOAD_PROMPT=0 CI=true \
+  corepack pnpm@10.20.0 install --frozen-lockfile --config.confirmModulesPurge=false <<<"$PW" \
+  > ~/deploy-install.log 2>&1; echo "INSTALL_EXIT=$?"
 ```
 
-**Unprivileged, not sudo** — the tree and the 1.1 GB store belong to `wences`, and root
-would use a different store and reify the whole tree instead of adding what changed.
+**As root, with sudo.** Since 2026-10-01 `node_modules/.pnpm` is root-owned and filled
+from root's store. An unprivileged install deletes the top-level links (their parent dir
+is `wences`-owned), then dies on the root-owned `.pnpm`, leaving `node_modules` with
+two entries and no `next`. The running server survives on what it already loaded, but
+the build fails with `Cannot find module '/srv/data-bp/node_modules/next/dist/bin/next'`
+and any restart takes the app down. That happened on 2026-10-05; a root install fixed
+it in 2s. Check `ls -ld node_modules/.pnpm` before installing and run as its owner.
+Gate the build on `INSTALL_EXIT=0` and read the log, not a `tail` of the pipe.
 Pin the version: bare `pnpm` on that box is corepack's latest, which needs Node ≥ 22.13
 for `node:sqlite` and the box is on Node 20, so it aborts with `ERR_UNKNOWN_BUILTIN_MODULE`.
 `--frozen-lockfile` is what keeps this incremental — it fails rather than drifting, so a
