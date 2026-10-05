@@ -150,7 +150,11 @@ function fold(acc: Map<string, Folded>, id: string, row: Record<string, string>)
     currency: '', capturedAt: null, reversed: null, subscriptionId: null,
   };
 
-  const amount = num(row.transaction_amount);
+  // `TRANSACTION_AMOUNT` is the list price. A coupon's discount sits in
+  // `OPERATION_TAGS`, signed against it, and the fee, taxes and net are all on
+  // what was actually paid: `amount + coupons + fee + taxes = net` held on all
+  // 471 coupon movements of 2026-09-29 → 10-03, refunds included.
+  const amount = num(row.transaction_amount) + couponTotal(row.operation_tags);
   const type = (row.transaction_type ?? '').trim();
   // The file's frame is the account's: a charge deducts the commission, a
   // reversal credits it back, a cancelled reversal deducts it again. Ours stores
@@ -248,38 +252,66 @@ function toExportRow(id: string, op: Folded): PaymentExportRow {
  * rejected: `METADATA` carries the `preapproval_id` that links a Pago to a
  * MercadoPago subscription — 205 of 332 rows had one — and a report shape that
  * depends on nobody ever re-ticking a checkbox is not a shape worth having.
+ *
+ * `OPERATION_TAGS` is worse: it is written **bare**, with no quotes around it at
+ * all, and it is empty on most rows. A Pago that used a coupon carries
+ * `…,[{"amount":"-101994.00","coupon_type":"coupon"}],…`, and every file from
+ * 2026-09-29 to 10-03 had at least one, so all five failed with `Invalid Opening
+ * Quote` until this learned the bare form. A bare blob starts with `[{` at a
+ * field boundary and ends with `}]` at one; it gets the same doubling plus the
+ * quotes it should have had.
  */
 export function repairJsonFields(text: string): string {
   let out = '';
   let i = 0;
   while (i < text.length) {
-    const start = text.indexOf('"[{', i);
-    if (start === -1) {
+    const blob = nextJsonBlob(text, i);
+    if (!blob) {
       out += text.slice(i);
       break;
     }
-    out += text.slice(i, start + 1);
-    let end = start + 1;
+    const open = blob.quoted ? blob.start + 1 : blob.start;
+    const terminator = blob.quoted ? '}]"' : '}]';
+    let end = open;
     for (;;) {
-      end = text.indexOf('}]"', end);
+      end = text.indexOf(terminator, end);
       if (end === -1) break;
-      const after = text[end + 3];
-      // The blob ends where the *field* ends. A `}]"` in the middle of the JSON
-      // is followed by something else and is not the terminator.
-      if (after === undefined || after === ',' || after === '\n' || after === '\r') break;
-      end += 3;
+      // The blob ends where the *field* ends. A terminator in the middle of the
+      // JSON is followed by something else and is not the end.
+      if (isFieldBoundary(text[end + terminator.length])) break;
+      end += terminator.length;
     }
     if (end === -1) {
       // Unterminated blob: hand the rest over untouched and let the parser
       // complain about the file rather than silently mangling it here.
-      out += text.slice(start + 1);
+      out += text.slice(i);
       break;
     }
-    out += text.slice(start + 1, end + 2).replace(/"/g, '""');
-    out += '"';
-    i = end + 3;
+    out += text.slice(i, blob.start);
+    out += `"${text.slice(open, end + 2).replace(/"/g, '""')}"`;
+    i = end + terminator.length;
   }
   return out;
+}
+
+/** The next JSON blob from `from`: quoted (`"[{`) or bare (`[{` opening a field). */
+function nextJsonBlob(text: string, from: number): { start: number; quoted: boolean } | null {
+  const quoted = text.indexOf('"[{', from);
+  let bare = text.indexOf('[{', from);
+  while (bare !== -1 && !(bare === 0 || isFieldStart(text[bare - 1]))) {
+    bare = text.indexOf('[{', bare + 2);
+  }
+  if (quoted === -1 && bare === -1) return null;
+  if (bare === -1 || (quoted !== -1 && quoted < bare)) return { start: quoted, quoted: true };
+  return { start: bare, quoted: false };
+}
+
+function isFieldStart(before: string): boolean {
+  return before === ',' || before === '\n' || before === '\r';
+}
+
+function isFieldBoundary(after: string | undefined): boolean {
+  return after === undefined || after === ',' || after === '\n' || after === '\r';
 }
 
 /** `[{"available_tries":3,"preapproval_id":"58ab…"}]` → `58ab…`. */
@@ -287,6 +319,14 @@ function preapprovalId(metadata: string | undefined): string | null {
   if (!metadata) return null;
   const m = /"preapproval_id"\s*:\s*"([a-z0-9]+)"/i.exec(metadata);
   return m ? m[1] : null;
+}
+
+/** `[{"amount":"-6499.50","coupon_type":"coupon"}]` → `-6499.5`; empty → 0. */
+function couponTotal(tags: string | undefined): number {
+  if (!tags?.trim()) return 0;
+  const parsed: unknown = JSON.parse(tags);
+  if (!Array.isArray(parsed)) return 0;
+  return parsed.reduce((sum: number, tag: { amount?: string }) => sum + num(tag.amount), 0);
 }
 
 function num(value: string | undefined): number {
