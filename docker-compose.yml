@@ -6,7 +6,7 @@ services:
       POSTGRES_USER: basket
       POSTGRES_PASSWORD: basket_dev
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"   # loopback-only, like docker-compose.prod.yml (basket#86)
     # Matches docker-compose.prod.yml. Postgres's parallel workers hand data
     # around through /dev/shm, and the container default of 64 MB is exhausted
     # by a dashboard request that fans out into ten scans of the Pagos view
