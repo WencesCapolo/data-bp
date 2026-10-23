@@ -2,7 +2,7 @@
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { BotonDeSalir, ChipDeUsuario, Marco, type EnlaceDeNavegacion } from 'basket-tv-ui';
+import { Marco, MenuDeUsuario, type EnlaceDeNavegacion } from 'basket-tv-ui';
 import type { Role } from '@/lib/dashboards';
 import { SyncControls } from './SyncControls';
 
@@ -58,8 +58,12 @@ export function MarcoDeAnalytics({
         <>
           {pathname !== '/' && <SyncControls />}
           {campana}
-          <ChipDeUsuario nombre={nombre} rol={NOMBRE_DEL_ROL[rol]} />
-          <BotonDeSalir href={logoutHref} />
+          <MenuDeUsuario
+            nombre={nombre}
+            rol={NOMBRE_DEL_ROL[rol]}
+            salirUrl={logoutHref}
+            lanzadorUrl={lanzadorUrl}
+          />
         </>
       }
     >
