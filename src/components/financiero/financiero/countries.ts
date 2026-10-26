@@ -71,10 +71,6 @@ const ES: Record<string, string> = {
   TZ: 'Tanzania', TN: 'Túnez', MK: 'Macedonia del Norte',
 };
 
-export function isoOf(name: string): string | undefined {
-  return ISO[name];
-}
-
 /** 🇦🇷 from "AR": two regional-indicator symbols. */
 export function flagOf(name: string): string {
   if (name === 'GLOBAL') return '🌐';

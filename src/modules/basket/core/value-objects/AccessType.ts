@@ -5,7 +5,3 @@ export function classifyAccessType(platform: number, amount: number): AccessType
   if (amount > 0) return 'real';
   return 'voucher';
 }
-
-export function isPaid(accessType: AccessType): boolean {
-  return accessType === 'real' || accessType === 'antel';
-}
