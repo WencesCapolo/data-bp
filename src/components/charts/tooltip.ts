@@ -15,8 +15,6 @@ export function tooltipBase(theme: ChartTheme = CHART_THEME) {
   };
 }
 
-export const TOOLTIP_BASE = tooltipBase();
-
 // `tooltipTitles` is aligned index-by-index with the chart's labels: the axis
 // keeps its short label, the tooltip shows the full dated one.
 export function tooltipOpts(

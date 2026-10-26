@@ -69,15 +69,6 @@ const customRangeRefine = (
   }
 };
 
-export const RangeQuerySchema = z
-  .object({
-    range: rangeKindSchema,
-    from: z.string().regex(ISO_DATE).optional(),
-    to: z.string().regex(ISO_DATE).optional(),
-  })
-  .superRefine(customRangeRefine)
-  .transform(toDateRange);
-
 export const OverviewQuerySchema = z
   .object({
     asOf: z.string().regex(ISO_DATE).optional(),

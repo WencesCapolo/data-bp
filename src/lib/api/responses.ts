@@ -42,10 +42,6 @@ export function unauthorized(): NextResponse {
   return NextResponse.json({ error: 'unauthorized' }, { status: 401, headers: NO_STORE });
 }
 
-export function notFound(message = 'not_found'): NextResponse {
-  return NextResponse.json({ error: message }, { status: 404, headers: NO_STORE });
-}
-
 export function serverError(err: unknown): NextResponse {
   const message = err instanceof Error ? err.message : String(err);
   const stack = err instanceof Error ? err.stack : undefined;

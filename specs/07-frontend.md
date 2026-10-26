@@ -62,8 +62,7 @@ src/components/tabs/
 ├── TeamsRow.tsx        sortable row + drill-down trend (SWR child fetch)
 ├── FinanceTab.tsx
 ├── RetentionTab.tsx
-├── DataQualityTab.tsx
-└── StubTab.tsx         placeholder for unfinished tabs (none current)
+└── DataQualityTab.tsx
 ```
 
 Each tab:

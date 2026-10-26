@@ -166,12 +166,6 @@ export async function deleteStagedFile(filePath: string): Promise<void> {
   await rm(filePath, { force: true }).catch(() => {});
 }
 
-/** Delete by handle. Unknown or malformed ids are a no-op. */
-export async function deleteStagedUpload(uploadId: string): Promise<void> {
-  const filePath = resolveStagedPath(uploadId);
-  if (filePath) await deleteStagedFile(filePath);
-}
-
 /**
  * Remove staged files left behind by Uploads that were previewed and never
  * confirmed. Called opportunistically at the start of an Upload.
