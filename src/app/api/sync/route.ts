@@ -8,6 +8,7 @@ import { composeSyncPartidos } from '@partidos/infrastructure/sync/composeSyncPa
 import { DrizzlePartidosSyncStateRepository } from '@partidos/infrastructure/db/repositories/DrizzlePartidosSyncStateRepository';
 import { getSessionUser } from '@/lib/auth/getSessionUser';
 import { internalBypass } from '@/lib/api/uploadRequest';
+import { trackServerEvent } from '@/lib/telemetry';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -127,6 +128,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   startedAt = Date.now();
   lastError = null;
   lastResult = {};
+  trackServerEvent('payments_sync_started', user?.id ?? null, {
+    row_total: body.rowTotal ?? null,
+    trigger: user ? 'analyst' : 'token',
+  });
 
   void start.run.then((outcome) => {
     if (outcome.ok) {

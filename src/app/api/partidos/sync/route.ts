@@ -4,6 +4,7 @@ import { unauthorized } from '@/lib/api/responses';
 import { composeSyncPartidos } from '@partidos/infrastructure/sync/composeSyncPartidos';
 import { DrizzlePartidosSyncStateRepository } from '@partidos/infrastructure/db/repositories/DrizzlePartidosSyncStateRepository';
 import type { PartidosSyncStateDTO } from '@partidos/core/dtos/PartidosSyncDTO';
+import { trackServerEvent } from '@/lib/telemetry';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -57,6 +58,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   try {
     const result = await promise;
+    trackServerEvent('partidos_synced', null, {
+      count_nacional: result.countNacional,
+      count_intl: result.countIntl,
+      duration_ms: result.durationMs,
+    });
     return NextResponse.json(result);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

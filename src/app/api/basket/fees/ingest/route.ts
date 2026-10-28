@@ -11,6 +11,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { feeUploadIntake } from '@basket/infrastructure/upload/FeeUploadIntake';
 import { actorName, authorizeUpload, unauthorized } from '@/lib/api/uploadRequest';
+import { trackServerEvent } from '@/lib/telemetry';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -41,7 +42,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     actor: actorName(actor),
     fallbackFilename: parsed.data.filename,
   });
-  return outcome.ok
-    ? NextResponse.json(outcome.body)
-    : NextResponse.json(outcome.rejection, { status: outcome.status });
+  if (!outcome.ok) return NextResponse.json(outcome.rejection, { status: outcome.status });
+  trackServerEvent('fees_ingested', actor.kind === 'analyst' ? actor.user.id : null, { source_id: parsed.data.source });
+  return NextResponse.json(outcome.body);
 }
