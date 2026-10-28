@@ -14,7 +14,7 @@ Everything is a no-op until the telemetry service and the env below exist: the S
 - `src/types/bpt.d.ts`: the `window.bpt` types, copied from basket-telemetry `src/sdk/sdk.d.ts`.
 - Browser source maps are **not** emitted yet (`productionBrowserSourceMaps` is still off), so browser stacks arrive minified.
 
-**From the server** (`src/lib/telemetry.ts`): `reportServerError(err, context)` and `trackServerEvent(name, userId, props)` queue items and POST them in one batch per second to `TELEMETRY_INGEST_URL` (`v: 1`, `events`, `errors`; SPEC §6.2), with a 1.5 s timeout. It never throws and nothing awaits it. `src/instrumentation.ts` `onRequestError` reports every error Next catches in pages, route handlers and the proxy, with `{ method, route, routeType }`.
+**From the server** (`src/lib/telemetry.ts`): `reportServerError(err, context)` and `trackServerEvent(name, userId, props)` queue items and POST them in one batch per second to `TELEMETRY_INGEST_URL` (`v: 1`, `events`, `errors`; SPEC §6.2), with a 1.5 s timeout. It never throws and nothing awaits it. Error messages are scrubbed before they leave (`scrubMessage`): it cuts DB errors at `params:` and masks emails, quoted values, JSON objects and numbers, amounts included, so no payment data reaches the ingest; the stack keeps only its frames. `src/instrumentation.ts` `onRequestError` reports every error Next catches in pages, route handlers and the proxy, with `{ method, route, routeType }`.
 
 ## Business events
 

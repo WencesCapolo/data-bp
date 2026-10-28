@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createTelemetry } from './telemetry';
+import { createTelemetry, scrubMessage } from './telemetry';
 
 type Env = { url?: string; token?: string };
 
@@ -102,5 +102,29 @@ describe('server telemetry reporter', () => {
     expect(signal?.aborted).toBe(false);
     await vi.advanceTimersByTimeAsync(1_500);
     expect(signal?.aborted).toBe(true);
+  });
+
+  it('scrubs amounts, emails, quoted values and query params from errors', async () => {
+    const { t, fetchSpy } = setup({ token: 'test-token' });
+    const db = new Error(
+      'Failed query: insert into "basket_payment_fees" ("email", "amount") values ($1, $2)\nparams: ana.fake@example.test,123456.78',
+    );
+    db.name = 'DrizzleQueryError';
+    t.reportServerError(db);
+    t.reportServerError(new Error(`Fee mismatch for ana.fake@example.test: $1,234.56 vs 98765 ${JSON.stringify({ name: 'Socio Sintético' })}`));
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    const sent = (fetchSpy.mock.calls[0] as [string, RequestInit])[1].body as string;
+    for (const leak of ['ana.fake', '123456', '1,234', '98765', 'Sintético', 'basket_payment_fees']) expect(sent).not.toContain(leak);
+    const [query, mismatch] = sentBody(fetchSpy).errors;
+    expect(query.message).toBe('Failed query: insert into "…" ("…", "…") values ($1, $2)');
+    expect(query.stack.split('\n')[0]).toBe(`DrizzleQueryError: ${query.message}`);
+    expect(query.stack).toMatch(/\n\s+at /);
+    expect(mismatch.message).toBe('Fee mismatch for …@… # vs # {…}');
+  });
+
+  it('keeps the shape of messages without data', () => {
+    expect(scrubMessage('Unexpected token < in JSON at position 0')).toBe('Unexpected token < in JSON at position #');
+    expect(scrubMessage('relation does not exist')).toBe('relation does not exist');
   });
 });

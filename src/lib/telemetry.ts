@@ -20,6 +20,34 @@ const BATCH_MS = 1_000;
 const TIMEOUT_MS = 1_500;
 const MAX_QUEUED = 200;
 
+/**
+ * An error message without data: a DB error (`DrizzleQueryError`) carries the
+ * query params (amounts, fees, emails, names) and others quote values, an email
+ * or a JSON. Cut at `params:` and mask emails, quoted strings, objects and
+ * numbers (money too); the shape of the error is what groups it. Mirrors cashflow-bp's
+ * `mensajeSinDatos`.
+ */
+export function scrubMessage(message: string): string {
+  return message
+    .split(/\bparams:/)[0]!
+    .replace(/[^\s@"'<>()]+@[^\s@"'<>()]+/g, '…@…')
+    .replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g, '"…"')
+    .replace(/\{[^{}]*\}/g, '{…}')
+    // `$` before a number is a SQL placeholder (`$1`) unless it looks like money.
+    .replace(/\$(?=\d[\d.,]*[.,]\d|\d{4})\d[\d.,]*/g, '#')
+    .replace(/(?<![\w$])-?\d[\d.,]*/g, '#')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 500);
+}
+
+/** The stack with the scrubbed message in place of the original (its first line repeats it), frames as they are. */
+function scrubStack(stack: string | undefined, type: string, message: string): string | null {
+  if (!stack) return null;
+  const frames = stack.split('\n').filter((line) => /^\s+at /.test(line));
+  return [`${type}: ${message}`, ...frames].join('\n');
+}
+
 export interface TelemetryDeps {
   env: () => { url?: string; token?: string };
   fetch: typeof fetch;
@@ -73,7 +101,9 @@ export function createTelemetry(deps: TelemetryDeps) {
     reportServerError(err: unknown, context: Record<string, unknown> = {}, userId: string | null = null): void {
       enqueue(() => {
         const e = err instanceof Error ? err : new Error(String(err));
-        errors.push({ ts: deps.now(), source: 'server', type: e.name || 'Error', message: e.message, stack: e.stack ?? null, userId, context });
+        const type = e.name || 'Error';
+        const message = scrubMessage(e.message);
+        errors.push({ ts: deps.now(), source: 'server', type, message, stack: scrubStack(e.stack, type, message), userId, context });
       });
     },
     trackServerEvent(name: string, userId: string | null, props: Props = {}): void {
