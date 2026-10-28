@@ -76,6 +76,8 @@ export function SyncControls() {
         undefined,
         { revalidate: true },
       );
+      // Reacting to the in-flight -> done transition of the polled sync is the point of this effect.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       if (data?.lastError) setSyncErr(data.lastError);
       const counts = uploadCounts(data?.lastResult);
       if (counts) setUploadResult(counts);
@@ -117,6 +119,8 @@ export function SyncControls() {
     .map((s) => s.lastSync)
     .sort()
     .at(-1);
+  // Wall-clock age on purpose; SWR polling re-renders it at least every minute.
+  // eslint-disable-next-line react-hooks/purity
   const ageH = latest ? (Date.now() - new Date(latest).getTime()) / 3_600_000 : Infinity;
   const inFlight = data?.inFlight ?? false;
   const dotClass = inFlight
