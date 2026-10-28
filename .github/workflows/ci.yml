@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # package.json has no packageManager field; the lockfile is v9 (pnpm 10).
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      # Node 24 is the runtime the app is documented against (specs/03-data-sources.md).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      # Unit tests only (vitest, src/**/*.test.ts); they need no database.
+      - run: pnpm test
+      # There is no typecheck script: `next build` runs the TypeScript check.
+      - run: pnpm build
+        env:
+          # The type check in `next build` exceeds Node's default heap.
+          NODE_OPTIONS: --max-old-space-size=6144
+          # Dummy, non-secret values. `next build` imports the route modules
+          # while collecting page data, and the DB clients and the auth env
+          # check (src/lib/env.ts) throw if these are unset. Nothing connects
+          # to them during the build.
+          DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/ci
+          AUTH_DATABASE_URL: postgresql://ci:ci@127.0.0.1:5433/ci
+          BETTER_AUTH_SECRET: ci-dummy-secret-not-a-real-value
+          NEXT_PUBLIC_PORTAL_URL: http://localhost:3000
