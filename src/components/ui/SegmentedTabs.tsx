@@ -22,7 +22,10 @@ export function SegmentedTabs<K extends string>({
           role="tab"
           aria-selected={value === t.key}
           className="segment"
-          onClick={() => onChange(t.key)}
+          onClick={() => {
+            if (t.key !== value) window.bpt?.track('tab_switched', { tab: t.key });
+            onChange(t.key);
+          }}
         >
           {t.icon && <span aria-hidden>{t.icon}</span>}
           {t.label}

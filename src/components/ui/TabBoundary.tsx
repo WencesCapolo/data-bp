@@ -14,6 +14,7 @@ export class TabBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error) {
     console.error('Tab render error:', error);
+    window.bpt?.captureError(error, { boundary: 'tab' });
   }
 
   render() {
