@@ -36,8 +36,8 @@ async function main() {
         const sample = rows.slice(0, 12);
         console.log(JSON.stringify(sample, null, 2));
       }
-    } catch (e: any) {
-      console.log('ERROR:', e?.message ?? e);
+    } catch (e) {
+      console.log('ERROR:', (e as { message?: unknown } | null)?.message ?? e);
     }
   }
 }
