@@ -1,7 +1,7 @@
 'use client';
 import { Component, type ReactNode } from 'react';
 import { ErrorBox } from './ErrorBox';
-import { logError } from '@/lib/logError';
+import { logError } from '@shared/lib/logError';
 
 type Props = { children: ReactNode };
 type State = { error: Error | null };

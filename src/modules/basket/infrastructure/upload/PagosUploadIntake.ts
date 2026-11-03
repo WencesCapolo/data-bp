@@ -20,6 +20,8 @@ import type { PaymentUploadRow, UploadResultDTO } from '@basket/core/dtos/Paymen
 import { DrizzlePaymentUploadRepository } from '@basket/infrastructure/db/repositories/DrizzlePaymentUploadRepository';
 import { composeRunSync } from '@basket/infrastructure/sync/composeRunSync';
 import { streamCsvFile } from '@shared/lib/csvStream';
+import { isMissingTable } from '@shared/db/pgErrors';
+import { reportUnexpected } from '@/lib/reportError';
 import {
   deleteStagedFile,
   readStagedHead,
@@ -207,7 +209,11 @@ export class PagosUploadIntake {
         windowTo: input.windowTo,
         error: outcome.ok ? null : outcome.error,
       })
-      .catch((err) => console.error('payment upload provenance not recorded:', (err as Error).message));
+      .catch((err) => {
+        if (!isMissingTable(err)) {
+          reportUnexpected('pagos-upload', err, { routeType: 'adapter', route: 'pagos-upload', step: 'provenance' });
+        }
+      });
 
     return outcome;
   }

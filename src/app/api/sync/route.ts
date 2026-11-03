@@ -10,6 +10,7 @@ import { getSessionUser } from '@/lib/auth/getSessionUser';
 import { internalBypass } from '@/lib/api/uploadRequest';
 import { trackServerEvent } from '@/lib/telemetry';
 import { reportFailedSteps, reportJobFailure } from '@/lib/reportError';
+import { scrubErrorFields, scrubMessage } from '@shared/lib/scrub';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -65,7 +66,8 @@ export async function GET(): Promise<NextResponse> {
     sources,
     inFlight: pagosUploadIntake().running || partidosInFlight !== null,
     startedAt: startedAt ? new Date(startedAt).toISOString() : null,
-    lastError: lastError ?? partidos.lastError ?? null,
+    // Rows stored before the partidos sync scrubbed its error are scrubbed here.
+    lastError: lastError ?? (partidos.lastError ? scrubMessage(partidos.lastError) : null),
     lastResult,
   });
 }
@@ -136,10 +138,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   void start.run.then((outcome) => {
     if (outcome.ok) {
-      lastResult = { ...lastResult, basket: outcome.result, upload: { uploadId: body.uploadId, ...outcome.upload } };
+      // GET answers lastResult and lastError: every error string in them is scrubbed.
+      lastResult = { ...lastResult, basket: scrubErrorFields(outcome.result), upload: { uploadId: body.uploadId, ...outcome.upload } };
       reportFailedSteps('payments-sync', outcome.result.failedSteps);
     } else {
-      lastError = `basket: ${outcome.error}`;
+      lastError = `basket: ${scrubMessage(outcome.error)}`;
       reportJobFailure('payments-sync', outcome.cause);
     }
   });
@@ -147,10 +150,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const partidosP = composeSyncPartidos()
     .execute()
     .then((r) => {
-      lastResult = { ...lastResult, partidos: r };
+      lastResult = { ...lastResult, partidos: scrubErrorFields(r) };
     })
     .catch((err) => {
-      const msg = `partidos: ${err instanceof Error ? err.message : String(err)}`;
+      const msg = `partidos: ${scrubMessage(err instanceof Error ? err.message : String(err))}`;
       lastError = lastError ? `${lastError} | ${msg}` : msg;
       reportJobFailure('partidos-sync', err);
     })

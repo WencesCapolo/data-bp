@@ -3,9 +3,7 @@
 // no-op without TELEMETRY_TOKEN (dev, tests, CI); it never throws and nothing
 // waits on it, so a slow or absent telemetry service can't touch a response.
 
-import { scrubMessage } from './scrub';
-
-export { scrubMessage };
+import { scrubMessage, scrubStack } from '@shared/lib/scrub';
 
 type Props = Record<string, string | number | boolean | null>;
 type ServerEvent = { name: string; ts: number; userId: string | null; props: Props };
@@ -30,13 +28,6 @@ const MAX_QUEUED = 200;
  * id as `userId` when there is one. Small, non-personal values only.
  */
 export type ErrorContext = { userId?: string | null } & Record<string, unknown>;
-
-/** The stack with the scrubbed message in place of the original (its first line repeats it), frames as they are. */
-function scrubStack(stack: string | undefined, type: string, message: string): string | null {
-  if (!stack) return null;
-  const frames = stack.split('\n').filter((line) => /^\s+at /.test(line));
-  return [`${type}: ${message}`, ...frames].join('\n');
-}
 
 export interface TelemetryDeps {
   env: () => { url?: string; token?: string };

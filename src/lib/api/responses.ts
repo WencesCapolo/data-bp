@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import type { NextRequest } from 'next/server';
 import type { ZodError } from 'zod';
 import { reportUnexpected } from '@/lib/reportError';
+import { scrubMessage, scrubStack } from '@shared/lib/scrub';
 
 const NO_STORE = { 'cache-control': 'no-store' };
 
@@ -54,11 +55,14 @@ export interface ServerErrorContext {
 /**
  * The 500 for an unexpected error: a generic body, one scrubbed log line and one
  * report to basket-telemetry (catching it here means `onRequestError` never sees
- * it). The stack is answered only outside production, for local debugging.
+ * it). Outside production it also answers the stack, scrubbed, for local debugging.
  */
 export function serverError(err: unknown, ctx: ServerErrorContext): NextResponse {
   reportUnexpected('api', err, { method: ctx.method, route: ctx.route, routeType: ctx.routeType ?? 'route', status: 500 });
-  const stack = process.env.NODE_ENV !== 'production' && err instanceof Error ? err.stack : undefined;
+  const stack =
+    process.env.NODE_ENV !== 'production' && err instanceof Error
+      ? scrubStack(err.stack, err.name || 'Error', scrubMessage(err.message))
+      : null;
   return NextResponse.json(
     { error: 'internal_error', ...(stack ? { stack } : {}) },
     { status: 500, headers: NO_STORE },

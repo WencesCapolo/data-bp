@@ -1,4 +1,4 @@
-import { logError, type LogExtra } from './logError';
+import { logError, type LogExtra } from '@shared/lib/logError';
 import { reportServerError, type ErrorContext } from './telemetry';
 
 /** The background jobs, as basket-telemetry groups them (`context.route` with `routeType: 'job'`). */

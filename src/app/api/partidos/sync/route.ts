@@ -5,6 +5,7 @@ import { composeSyncPartidos } from '@partidos/infrastructure/sync/composeSyncPa
 import { DrizzlePartidosSyncStateRepository } from '@partidos/infrastructure/db/repositories/DrizzlePartidosSyncStateRepository';
 import type { PartidosSyncStateDTO } from '@partidos/core/dtos/PartidosSyncDTO';
 import { trackServerEvent } from '@/lib/telemetry';
+import { scrubMessage } from '@shared/lib/scrub';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -19,7 +20,8 @@ export async function GET(): Promise<NextResponse> {
     lastSyncAt: state.lastSyncAt ? state.lastSyncAt.toISOString() : null,
     lastCountNacional: state.lastCountNacional,
     lastCountIntl: state.lastCountIntl,
-    lastError: state.lastError,
+    // Rows stored before the sync scrubbed its error are scrubbed here.
+    lastError: state.lastError ? scrubMessage(state.lastError) : null,
     lastDurationMs: state.lastDurationMs,
   };
   return NextResponse.json({

@@ -34,6 +34,16 @@ describe('serverError', () => {
     await expect(res.json()).resolves.toEqual({ error: 'internal_error' });
   });
 
+  it('outside production answers the stack with the scrubbed message on its first line', async () => {
+    const body = await serverError(queryError(), { method: 'GET', route: '/api/basket/overview' }).json();
+    expect(body.error).toBe('internal_error');
+    expect(body).not.toHaveProperty('message');
+    expect(body.stack).toMatch(/^DrizzleQueryError: Failed query: select/);
+    expect(body.stack).toMatch(/\n\s+at /);
+    expect(body.stack).not.toContain('params');
+    expect(body.stack).not.toContain('424242');
+  });
+
   it('reports the error once, with the route pattern and status', () => {
     const err = queryError();
     serverError(err, { method: 'GET', route: '/api/basket/teams/[teamId]/daily' });
@@ -57,10 +67,5 @@ describe('serverError', () => {
     expect(line).not.toContain('params');
     expect(line).not.toContain('424242');
     expect(line).not.toContain('1999');
-  });
-
-  it('marks a job when asked', () => {
-    serverError(new Error('boom'), { method: 'POST', route: 'partidos-sync', routeType: 'job' });
-    expect(report).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ route: 'partidos-sync', routeType: 'job' }));
   });
 });

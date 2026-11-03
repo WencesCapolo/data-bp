@@ -13,6 +13,7 @@ import {
   type SyncStep,
   type SyncStepFailure,
 } from './SyncStep';
+import { scrubMessage } from '@shared/lib/scrub';
 
 export type { SheetSpec, FixtureSheetSpec, DataSheetSpec } from './syncSteps';
 export type { SyncScope } from './buildSyncSteps';
@@ -52,7 +53,7 @@ export class RunSyncUseCase {
           try {
             fold(await step.run(ctx));
           } catch (err) {
-            console.error(`sync step ${step.name} failed, aborting:`, message(err));
+            // The caller logs and reports what propagates.
             throw err;
           }
           break;
@@ -61,9 +62,8 @@ export class RunSyncUseCase {
           try {
             fold(await step.run(ctx));
           } catch (err) {
-            const error = message(err);
-            console.error(`sync step ${step.name} failed:`, error);
-            failedSteps.push({ step: step.name, error });
+            // Logged and reported by the caller from failedSteps (reportFailedSteps).
+            failedSteps.push({ step: step.name, error: message(err) });
           }
           break;
 
@@ -72,10 +72,7 @@ export class RunSyncUseCase {
             try {
               fold(await step.runItem(item, ctx));
             } catch (err) {
-              const error = message(err);
-              const name = step.itemName(item);
-              console.error(`${step.name} ${name} failed:`, error);
-              failedSteps.push({ step: step.name, item: name, error });
+              failedSteps.push({ step: step.name, item: step.itemName(item), error: message(err) });
               fold(step.failedItem(item));
             }
           }
@@ -94,6 +91,7 @@ export class RunSyncUseCase {
   }
 }
 
+/** Scrubbed: failedSteps is stored as the Sync's result, which the sync endpoints answer. */
 function message(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
+  return scrubMessage(err instanceof Error ? err.message : String(err));
 }

@@ -6,6 +6,8 @@
 // totals check and the view refresh are decided once.
 
 import { statSync } from 'node:fs';
+import { isMissingTable } from '@shared/db/pgErrors';
+import { reportUnexpected } from '@/lib/reportError';
 import {
   feeExportSource,
   type FeeExportSourceSpec,
@@ -252,7 +254,11 @@ export class FeeUploadIntake {
         windowTo: result.to,
         error: check ? `${check.error}: ${check.message}` : null,
       })
-      .catch((err) => console.error('fee upload provenance not recorded:', (err as Error).message));
+      .catch((err) => {
+        if (!isMissingTable(err)) {
+          reportUnexpected('fee-upload', err, { routeType: 'adapter', route: 'fee-upload', step: 'provenance' });
+        }
+      });
 
     let viewRefreshMs: number | null = null;
     if (input.refreshView) {
@@ -265,7 +271,7 @@ export class FeeUploadIntake {
           viewRefreshMs += (await this.deps.matViews.refresh(view, true)).durationMs;
         }
       } catch (err) {
-        console.error('gateway net views not refreshed:', (err as Error).message);
+        reportUnexpected('fee-upload', err, { routeType: 'adapter', route: 'fee-upload', step: 'refresh-views' });
       }
     }
 

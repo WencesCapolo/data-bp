@@ -14,16 +14,16 @@ Everything is a no-op until the telemetry service and the env below exist: the S
 - `src/types/bpt.d.ts`: the `window.bpt` types, copied from basket-telemetry `src/sdk/sdk.d.ts`.
 - Browser source maps are emitted (`productionBrowserSourceMaps`) so basket-telemetry resolves browser stacks; nginx denies `*.map` to the public.
 
-**From the server** (`src/lib/telemetry.ts`): `reportServerError(err, context)`, `trackServerEvent(name, userId, props)` and `flush()`. They queue items and POST them in one batch per second to `TELEMETRY_INGEST_URL` (`v: 1`, `events`, `errors`; SPEC §6.2), with a 1.5 s timeout. It never throws and nothing awaits it. `context` holds the method, the route pattern or job name, `routeType`, `status` and a `step`; an Analyst's Better Auth id goes in it as `userId` and is sent as the error's `userId`, not as context. Error messages are scrubbed before they leave (`scrubMessage`, `src/lib/scrub.ts`): it cuts DB errors at `params:` and masks emails, quoted values, JSON objects and numbers, amounts included, so no payment data reaches the ingest; the stack keeps only its frames.
+**From the server** (`src/lib/telemetry.ts`): `reportServerError(err, context)`, `trackServerEvent(name, userId, props)` and `flush()`. They queue items and POST them in one batch per second to `TELEMETRY_INGEST_URL` (`v: 1`, `events`, `errors`; SPEC §6.2), with a 1.5 s timeout. It never throws and nothing awaits it. `context` holds the method, the route pattern or job name, `routeType`, `status` and a `step`; an Analyst's Better Auth id goes in it as `userId` and is sent as the error's `userId`, not as context. Error messages are scrubbed before they leave (`scrubMessage`, `src/shared/lib/scrub.ts`): it cuts DB errors at `params:` and masks emails, quoted values, JSON objects and numbers, amounts included, so no payment data reaches the ingest; the stack keeps only its frames.
 
 `src/instrumentation.ts`:
 
 - `onRequestError` reports every error Next catches in pages, route handlers and the proxy, with `{ method, route, routeType }`.
-- `register()` (Node runtime only) loads `src/lib/telemetry-shutdown.ts`, which calls `flush()` on `SIGTERM`/`SIGINT` so a restart does not drop the last second of the queue.
+- `register()` (Node runtime only) loads `src/lib/telemetry-shutdown.ts`, which calls `flush()` on `SIGTERM`/`SIGINT` so a restart does not drop the last second of the queue. Best effort: under `next start`, Next's own handler closes the server and exits, possibly before the request completes.
 
 ### Errors caught before Next sees them
 
-A handler that catches an error itself answers on its own, so `onRequestError` never runs. Those sites report through `reportUnexpected(tag, err, context)` (`src/lib/reportError.ts`): one log line through `logError` and one report. `logError(tag, err, extra?)` (`src/lib/logError.ts`) prints `[tag] Type: scrubbed message {extra}`, never the error object; client code (`TabBoundary`) uses it to log only.
+A handler that catches an error itself answers on its own, so `onRequestError` never runs. Those sites report through `reportUnexpected(tag, err, context)` (`src/lib/reportError.ts`): one log line through `logError` and one report. `logError(tag, err, extra?)` (`src/shared/lib/logError.ts`) prints `[tag] Type: scrubbed message {extra}`, never the error object; client code (`TabBoundary`) and core use cases (`syncSteps.ts`, for the FX sources and inbox files a step survives) use it to log only. Nothing in `src/` calls `console.error` directly.
 
 | where | `context` |
 |---|---|
@@ -34,10 +34,15 @@ A handler that catches an error itself answers on its own, so `onRequestError` n
 | `SyncScheduler` (the cron started from `src/app/layout.tsx`) | `{ routeType: 'job', route: 'sync-scheduler', step? }` |
 | `DrizzleSyncRunRepository.record` (a sync run not logged) | `{ routeType: 'adapter', route: 'sync-run-log', step: 'record' }` |
 | `DrizzleUploadLookups` (the Upload preview's lookups; still answer `null`) | `{ routeType: 'adapter', route: 'upload-lookups', step }` |
-| the export inbox, a file that could not be moved to `done/` | `{ routeType: 'job', route: 'export-inbox', step: 'mark-done' }` |
+| the export inbox, a provenance row not written or a file that could not be moved to `done/` | `{ routeType: 'job', route: 'export-inbox', step: 'provenance' \| 'mark-done' }` |
+| `PagosUploadIntake` / `FeeUploadIntake`: a provenance row not written, the gateway net views not refreshed | `{ routeType: 'adapter', route: 'pagos-upload' \| 'fee-upload', step: 'provenance' \| 'refresh-views' }` |
+| `composeRunSync`: Sheets tabs that could not be listed | `{ routeType: 'job', route: 'sync-discovery', step: 'grilla-tabs' \| 'data-tabs' }` |
+| `composeGatewayFeeSync`: a MercadoPago window over the 1000-row cap | `{ routeType: 'job', route: 'gateway-fee-sync', step: 'mercadopago-window', from, to, total }` |
 | `src/app/actions/access-requests.ts` and the bell (`SolicitudesDeAcceso.tsx`) | `{ routeType: 'action' \| 'render', route: 'access-requests', step, userId? }` |
 
-A step the sync survives (`RunSyncResult.failedSteps`) is reported as a `SyncStepError` with its `step`; the item (a sheet, a gateway) stays in the sync log. A table that predates its migration (`42P01`, `src/shared/db/pgErrors.ts`) is expected and not reported.
+A step the sync survives (`RunSyncResult.failedSteps`) is reported as a `SyncStepError` with its `step`; the item (a sheet, a gateway) stays in the sync log. `RunSyncUseCase` no longer logs step failures itself: the caller does, once, through `reportFailedSteps`.
+
+The sync state the endpoints answer (`lastError`, `lastResult` of `GET /api/sync`, `/api/basket/sync` and `/api/partidos/sync`) holds scrubbed text only: `scrubMessage` where `lastError` and `failedSteps[].error` are set, and `scrubErrorFields` over a stored result, which scrubs every nested `error` string (gateways, FX sources, inbox files). A table that predates its migration (`42P01`, `src/shared/db/pgErrors.ts`) is expected and not reported.
 
 ## Business events
 

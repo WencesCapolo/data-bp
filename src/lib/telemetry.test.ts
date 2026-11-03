@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createTelemetry, scrubMessage } from './telemetry';
+import { scrubMessage } from '@shared/lib/scrub';
+import { createTelemetry } from './telemetry';
 
 type Env = { url?: string; token?: string };
 
