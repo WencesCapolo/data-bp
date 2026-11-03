@@ -74,7 +74,7 @@ async function main() {
         totals.tax += f.taxTotal;
         totals.net += f.netTotal;
         console.log(
-          `  ✓ ${f.filename} rows=${f.rows.toLocaleString()} upserted=${f.upserted.toLocaleString()} ` +
+          `  ✓ ${f.filename} rows=${f.rows.toLocaleString()} upserted=${f.upserted.toLocaleString()} movements=${f.movements.toLocaleString()} ` +
             `window=${f.windowFrom?.toISOString().slice(0, 10) ?? '-'}→${f.windowTo?.toISOString().slice(0, 10) ?? '-'} ` +
             `gross=${ars(f.grossTotal)} fee=${ars(f.feeTotal)} (${pct(f.feeTotal, f.grossTotal)}) tax=${ars(f.taxTotal)} net=${ars(f.netTotal)}`,
         );
@@ -115,7 +115,7 @@ async function main() {
     totals.net += result.netTotal;
 
     console.log(
-      `  rows=${result.rows.toLocaleString()} upserted=${result.upserted.toLocaleString()} ` +
+      `  rows=${result.rows.toLocaleString()} upserted=${result.upserted.toLocaleString()} movements=${result.movements.toLocaleString()} ` +
         `window=${result.from?.toISOString().slice(0, 10) ?? '-'}→${result.to?.toISOString().slice(0, 10) ?? '-'} ` +
         `(${Math.round(result.durationMs / 1000)}s)\n` +
         `  gross=${ars(result.grossTotal)} fee=${ars(result.feeTotal)} (${pct(result.feeTotal, result.grossTotal)}) ` +

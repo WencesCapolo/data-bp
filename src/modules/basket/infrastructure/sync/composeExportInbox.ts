@@ -5,6 +5,7 @@
 // with no MercadoPago SFTP account still runs the whole sync.
 
 import { DrizzleGatewayFeeRepository } from '@basket/infrastructure/db/repositories/DrizzleGatewayFeeRepository';
+import { DrizzleGatewayMovementRepository } from '@basket/infrastructure/db/repositories/DrizzleGatewayMovementRepository';
 import { DrizzlePaymentUploadRepository } from '@basket/infrastructure/db/repositories/DrizzlePaymentUploadRepository';
 import { IngestPaymentExportUseCase } from '@basket/core/use-cases/sync/IngestPaymentExportUseCase';
 import { IngestExportInboxUseCase } from '@basket/core/use-cases/sync/IngestExportInboxUseCase';
@@ -27,7 +28,10 @@ export function composeExportInboxIngest(
 export function composeExportInboxIngestFor(dir: string, uploadedBy: string): IngestExportInboxUseCase {
   return new IngestExportInboxUseCase({
     inbox: new FsExportInbox(dir),
-    ingest: new IngestPaymentExportUseCase(new DrizzleGatewayFeeRepository()),
+    ingest: new IngestPaymentExportUseCase(
+      new DrizzleGatewayFeeRepository(),
+      new DrizzleGatewayMovementRepository(),
+    ),
     uploads: new DrizzlePaymentUploadRepository(),
     resolve: async (file) => {
       const r = await resolveExportSource(file.path, file.name);
