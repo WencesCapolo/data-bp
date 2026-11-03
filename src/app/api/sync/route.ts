@@ -9,6 +9,7 @@ import { DrizzlePartidosSyncStateRepository } from '@partidos/infrastructure/db/
 import { getSessionUser } from '@/lib/auth/getSessionUser';
 import { internalBypass } from '@/lib/api/uploadRequest';
 import { trackServerEvent } from '@/lib/telemetry';
+import { reportFailedSteps, reportJobFailure } from '@/lib/reportError';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -136,8 +137,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   void start.run.then((outcome) => {
     if (outcome.ok) {
       lastResult = { ...lastResult, basket: outcome.result, upload: { uploadId: body.uploadId, ...outcome.upload } };
+      reportFailedSteps('payments-sync', outcome.result.failedSteps);
     } else {
       lastError = `basket: ${outcome.error}`;
+      reportJobFailure('payments-sync', outcome.cause);
     }
   });
 
@@ -149,6 +152,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     .catch((err) => {
       const msg = `partidos: ${err instanceof Error ? err.message : String(err)}`;
       lastError = lastError ? `${lastError} | ${msg}` : msg;
+      reportJobFailure('partidos-sync', err);
     })
     .finally(() => {
       partidosInFlight = null;

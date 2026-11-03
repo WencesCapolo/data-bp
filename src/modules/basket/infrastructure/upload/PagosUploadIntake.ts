@@ -55,7 +55,7 @@ export interface PagosIngestInput extends PagosExportFacts {
 
 export type PagosIngestOutcome =
   | { ok: true; result: RunSyncResult; upload: Omit<UploadResultDTO, 'uploadId'> }
-  | { ok: false; error: string };
+  | { ok: false; error: string; /** The error itself, for the caller to report. */ cause: unknown };
 
 export interface PagosConfirmInput {
   uploadId: string;
@@ -190,7 +190,7 @@ export class PagosUploadIntake {
         },
       };
     } catch (err) {
-      outcome = { ok: false, error: err instanceof Error ? err.message : String(err) };
+      outcome = { ok: false, error: err instanceof Error ? err.message : String(err), cause: err };
     }
 
     // Provenance must not be what breaks the run — the mirror is already written

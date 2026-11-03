@@ -13,6 +13,6 @@ export async function GET(req: NextRequest) {
     const dto = await new GetMetaUseCase(composeRepo()).execute();
     return okCached(req, dto, { maxAge: 60, staleWhileRevalidate: 120 });
   } catch (err) {
-    return serverError(err);
+    return serverError(err, { method: 'GET', route: '/api/basket/meta' });
   }
 }

@@ -6,6 +6,7 @@ import { authDb } from '@shared/db/auth-client';
 import { ANALYTICS_APP } from '@/lib/auth/acceso-policy';
 import { readSession } from '@/lib/auth/reads';
 import { authEnv } from '@/lib/env';
+import { reportUnexpected } from '@/lib/reportError';
 import { canDecide, canGrantRole } from '@/lib/access-requests/grant-rule';
 import { appUrlFromPortal, sendAccessInviteEmail } from '@/lib/access-requests/invite';
 import {
@@ -83,7 +84,12 @@ export async function approveAccessRequestAction(formData: FormData): Promise<De
         appUrl: appUrlFromPortal(authEnv.portalUrl, ANALYTICS_APP),
       });
     } catch (error) {
-      console.error('[access-requests] invite email failed', error);
+      reportUnexpected('access-requests', error, {
+        routeType: 'action',
+        route: 'access-requests',
+        step: 'invite-email',
+        userId: actor.userId,
+      });
       emailNotice = ' No pudimos enviarle el correo de aviso.';
     }
 
@@ -94,7 +100,7 @@ export async function approveAccessRequestAction(formData: FormData): Promise<De
       revalidatePath('/', 'layout');
       return { intent: 'error', notice: error.message };
     }
-    console.error('[access-requests] approval failed', error);
+    reportUnexpected('access-requests', error, { routeType: 'action', route: 'access-requests', step: 'approve' });
     return FAILED;
   }
 }
@@ -114,7 +120,7 @@ export async function rejectAccessRequestAction(formData: FormData): Promise<Dec
       revalidatePath('/', 'layout');
       return { intent: 'error', notice: error.message };
     }
-    console.error('[access-requests] rejection failed', error);
+    reportUnexpected('access-requests', error, { routeType: 'action', route: 'access-requests', step: 'reject' });
     return FAILED;
   }
 }

@@ -16,6 +16,6 @@ export async function GET(req: NextRequest) {
     const dto = await new GetContenidoUseCase(composeRepo()).execute(parsed.data);
     return ok(dto);
   } catch (err) {
-    return serverError(err);
+    return serverError(err, { method: 'GET', route: '/api/financiero/contenido' });
   }
 }

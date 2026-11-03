@@ -22,6 +22,6 @@ export async function GET(req: NextRequest) {
     );
     return ok(dto);
   } catch (err) {
-    return serverError(err);
+    return serverError(err, { method: 'GET', route: '/api/basket/overview/lifecycle' });
   }
 }

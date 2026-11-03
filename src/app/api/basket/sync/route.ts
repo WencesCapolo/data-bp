@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { composeRunSync } from '@basket/infrastructure/sync/composeRunSync';
 import { runLoggedSync } from '@basket/infrastructure/sync/runLoggedSync';
+import { reportFailedSteps, reportJobFailure } from '@/lib/reportError';
 import { DrizzleSyncStateRepository } from '@basket/infrastructure/db/repositories/DrizzleSyncStateRepository';
 
 export const dynamic = 'force-dynamic';
@@ -51,9 +52,11 @@ export async function POST(req: NextRequest) {
   promise
     .then((result) => {
       lastResult = result;
+      reportFailedSteps('basket-sync', result.failedSteps);
     })
     .catch((err) => {
       lastError = err instanceof Error ? err.message : String(err);
+      reportJobFailure('basket-sync', err);
     })
     .finally(() => {
       inFlight = null;

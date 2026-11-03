@@ -1,15 +1,10 @@
 import { db, type Db } from '@shared/db/client';
+import { isMissingTable } from '@shared/db/pgErrors';
+import { reportUnexpected } from '@/lib/reportError';
 import { basketSyncRuns } from '../schema';
 import type { RunSyncResult } from '@basket/core/use-cases/sync/RunSyncUseCase';
 
 export type SyncTrigger = 'cron' | 'token';
-
-/** Postgres `undefined_table` — migration 0018 has not been applied yet. */
-const UNDEFINED_TABLE = '42P01';
-
-function isMissingTable(err: unknown): boolean {
-  return typeof err === 'object' && err !== null && (err as { code?: string }).code === UNDEFINED_TABLE;
-}
 
 export class DrizzleSyncRunRepository {
   constructor(private readonly database: Db = db) {}
@@ -47,7 +42,10 @@ export class DrizzleSyncRunRepository {
         error: entry.error,
       });
     } catch (err) {
-      if (!isMissingTable(err)) console.error('sync run not logged:', (err as Error).message);
+      // A missing table means migration 0018 has not been applied yet.
+      if (!isMissingTable(err)) {
+        reportUnexpected('sync-runs', err, { routeType: 'adapter', route: 'sync-run-log', step: 'record' });
+      }
     }
   }
 }

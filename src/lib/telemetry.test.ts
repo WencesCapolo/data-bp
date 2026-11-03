@@ -65,6 +65,26 @@ describe('server telemetry reporter', () => {
     expect(sentBody(fetchSpy).errors[0]).toMatchObject({ type: 'Error', message: 'plain string' });
   });
 
+  it('takes userId from the context and sends the rest as context', async () => {
+    const { t, fetchSpy } = setup({ token: 'test-token' });
+    t.reportServerError(new Error('boom'), { routeType: 'action', route: 'access-requests', userId: 'user-test-1' });
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(sentBody(fetchSpy).errors[0]).toMatchObject({
+      userId: 'user-test-1',
+      context: { routeType: 'action', route: 'access-requests' },
+    });
+    expect(sentBody(fetchSpy).errors[0].context).not.toHaveProperty('userId');
+  });
+
+  it('flush() sends what is queued right away, once', async () => {
+    const { t, fetchSpy } = setup({ token: 'test-token' });
+    t.reportServerError(new Error('boom'));
+    await t.flush();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
   it('batches everything queued within 1 s into one request', async () => {
     const { t, fetchSpy } = setup({ token: 'test-token' });
     t.trackServerEvent('tab_a', null);

@@ -12,6 +12,6 @@ export async function GET() {
     const dto = await new GetPartidosIntlMetaUseCase(composePartidosIntlRepo()).execute();
     return ok(dto);
   } catch (err) {
-    return serverError(err);
+    return serverError(err, { method: 'GET', route: '/api/partidos/intl/meta' });
   }
 }

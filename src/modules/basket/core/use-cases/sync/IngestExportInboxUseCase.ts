@@ -60,6 +60,9 @@ export interface IngestExportInboxDeps {
   uploadedBy: string;
   /** Days of `done/` to keep. 0 keeps everything. */
   retentionDays?: number;
+  /** Told about a failure the run survives but nobody expected (a file that
+   *  could not be moved), so the caller can log and report it. */
+  onUnexpectedError?: (err: unknown, step: string) => void;
 }
 
 /**
@@ -111,7 +114,7 @@ export class IngestExportInboxUseCase {
         result.files.push(blank(file.name, 'skipped', null));
         // Already ingested and still in the inbox means a previous run was
         // interrupted between the write and the move. Finish the move.
-        await inbox.markDone(file).catch(() => {});
+        await inbox.markDone(file).catch((err) => this.deps.onUnexpectedError?.(err, 'mark-done'));
         continue;
       }
       if (before === 'rejected') {
