@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { basename } from 'node:path';
 import { parse } from 'csv-parse/sync';
+import type { GatewayMovementProps } from '@basket/core/entities/GatewayMovement';
 import type {
   IPaymentExportSource,
   PaymentExportRow,
@@ -71,13 +72,7 @@ export class MercadoPagoAllTransactionsExport implements IPaymentExportSource {
    * narrower window, which it offers.
    */
   async *stream(): AsyncGenerator<PaymentExportRow> {
-    const raw = await readFile(this.filePath, 'utf8');
-    const rows = parse(repairJsonFields(raw), {
-      bom: true,
-      skip_empty_lines: true,
-      columns: (header: string[]) => header.map((h) => h.trim().toLowerCase()),
-    }) as Record<string, string>[];
-
+    const rows = await this.readRows();
     const folded = new Map<string, Folded>();
     for (const row of rows) {
       const id = (row.source_id ?? '').trim();
@@ -90,6 +85,49 @@ export class MercadoPagoAllTransactionsExport implements IPaymentExportSource {
 
     for (const [id, op] of folded) yield toExportRow(id, op);
   }
+
+  /**
+   * Every row as the movement it is, unfolded. Account adjustments included:
+   * the fee mirror drops them because they are not Pagos, but a commission
+   * invoice leaves the account all the same.
+   */
+  async *movements(): AsyncGenerator<GatewayMovementProps> {
+    for (const row of await this.readRows()) {
+      const id = (row.source_id ?? '').trim();
+      if (!id) continue;
+      yield toMovement(id, row);
+    }
+  }
+
+  private async readRows(): Promise<Record<string, string>[]> {
+    const raw = await readFile(this.filePath, 'utf8');
+    return parse(repairJsonFields(raw), {
+      bom: true,
+      skip_empty_lines: true,
+      columns: (header: string[]) => header.map((h) => h.trim().toLowerCase()),
+    }) as Record<string, string>[];
+  }
+}
+
+function toMovement(id: string, row: Record<string, string>): GatewayMovementProps {
+  const type = (row.transaction_type ?? '').trim().toUpperCase() || 'ADJUSTMENT';
+  const occurred = (row.transaction_date ?? '').trim();
+  const net = round2(num(row.settlement_net_amount));
+  return {
+    platform: MP_PLATFORM,
+    // The report has no movement id. Operation, type, instant and amount name a
+    // movement the same way in every daily file that repeats it.
+    movementId: `${id}:${type}:${occurred}:${net.toFixed(2)}`,
+    platformPaymentId: id,
+    type,
+    currency:
+      [row.settlement_currency, row.transaction_currency]
+        .map((c) => (c ?? '').trim().toUpperCase())
+        .find(Boolean) ?? 'ARS',
+    netAmount: net,
+    occurredAt: parseDate(row.transaction_date),
+    availableAt: parseDate(row.money_release_date),
+  };
 }
 
 interface Folded {

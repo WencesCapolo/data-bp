@@ -387,6 +387,22 @@ export const basketGatewayPayouts = pgTable('basket_gateway_payouts', {
   arrivalDateIdx: index('basket_gateway_payouts_arrival_date_idx').on(table.arrivalDate),
 }));
 
+// Balance movements of a Provider account, dated by release (migration 0023).
+export const basketGatewayMovements = pgTable('basket_gateway_movements', {
+  platform: smallint('platform').notNull(),
+  movementId: text('movement_id').notNull(),
+  platformPaymentId: text('platform_payment_id'),
+  type: text('type').notNull(),
+  currency: varchar('currency', { length: 10 }).notNull(),
+  netAmount: numeric('net_amount', { precision: 14, scale: 2 }).notNull(),
+  occurredAt: timestamp('occurred_at', { withTimezone: true }),
+  availableAt: timestamp('available_at', { withTimezone: true }),
+  syncedAt: timestamp('synced_at', { withTimezone: true }).notNull().default(sql`NOW()`),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.platform, table.movementId] }),
+  availableAtIdx: index('basket_gateway_movements_available_at_idx').on(table.availableAt),
+}));
+
 // One row per (day, pair, source). `rate` is quote units per one base unit —
 // (USD, ARS, 'blue') is ARS per USD, (UYU, USD, 'stripe') is USD per UYU — so
 // the direction is read off the key and never inferred from the magnitude.

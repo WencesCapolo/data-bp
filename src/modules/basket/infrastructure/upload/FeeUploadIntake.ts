@@ -25,6 +25,7 @@ import {
 } from '@basket/core/use-cases/upload/InspectFeeExportUseCase';
 import type { StagedExportFacts } from '@basket/core/use-cases/upload/InspectPagosExportUseCase';
 import { DrizzleGatewayFeeRepository } from '@basket/infrastructure/db/repositories/DrizzleGatewayFeeRepository';
+import { DrizzleGatewayMovementRepository } from '@basket/infrastructure/db/repositories/DrizzleGatewayMovementRepository';
 import { DrizzleMaterializedViewRepository } from '@basket/infrastructure/db/repositories/DrizzleMaterializedViewRepository';
 import { DrizzlePaymentUploadRepository } from '@basket/infrastructure/db/repositories/DrizzlePaymentUploadRepository';
 import { createExportSource, readExportHeader } from '@basket/infrastructure/exports/resolveExportSource';
@@ -286,7 +287,10 @@ let instance: FeeUploadIntake | null = null;
 export function feeUploadIntake(): FeeUploadIntake {
   instance ??= new FeeUploadIntake({
     inspect: new InspectFeeExportUseCase(new DrizzleFeeUploadLookups()),
-    ingest: new IngestPaymentExportUseCase(new DrizzleGatewayFeeRepository()),
+    ingest: new IngestPaymentExportUseCase(
+      new DrizzleGatewayFeeRepository(),
+      new DrizzleGatewayMovementRepository(),
+    ),
     uploads: new DrizzlePaymentUploadRepository(),
     matViews: new DrizzleMaterializedViewRepository(),
   });

@@ -1,3 +1,5 @@
+import type { GatewayMovementProps } from '@basket/core/entities/GatewayMovement';
+
 /**
  * One row of a Provider's Export, already named the way the domain names things
  * rather than the way the Export's Spanish-with-English-parentheses header does.
@@ -52,4 +54,7 @@ export interface IPaymentExportSource {
   /** What produced the rows, for the provenance record: a filename, or the API. */
   readonly origin: string;
   stream(): AsyncGenerator<PaymentExportRow, void, unknown>;
+  /** The account's balance movements, one per row of the Export. Only an Export
+   *  that dates the release of money offers them. */
+  movements?(): AsyncGenerator<GatewayMovementProps, void, unknown>;
 }

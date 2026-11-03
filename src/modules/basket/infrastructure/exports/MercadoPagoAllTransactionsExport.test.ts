@@ -2,6 +2,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import type { GatewayMovementProps } from '@basket/core/entities/GatewayMovement';
 import type { PaymentExportRow } from '@basket/core/ports/IPaymentExportSource';
 import {
   MercadoPagoAllTransactionsExport,
@@ -85,5 +86,76 @@ describe('MercadoPagoAllTransactionsExport', () => {
     const [op] = await readAll(`${HEADER}\n${charge}\n${refund}\n`);
 
     expect(op).toMatchObject({ grossAmount: 6499.5, refundedAmount: 6499.5, netAmount: 0, status: 'refunded' });
+  });
+});
+
+describe('MercadoPagoAllTransactionsExport movements', () => {
+  // The real header leads with the three dates: when it happened, when MP
+  // settled it, and when the money becomes available in the account.
+  const HEADER_WITH_DATES =
+    'TRANSACTION_DATE,SETTLEMENT_DATE,MONEY_RELEASE_DATE,SOURCE_ID,TRANSACTION_TYPE,' +
+    'TRANSACTION_AMOUNT,TRANSACTION_CURRENCY,FEE_AMOUNT,METADATA,TAXES_AMOUNT,' +
+    'TAXES_DISAGGREGATED,OPERATION_TAGS,SETTLEMENT_NET_AMOUNT';
+  const settlement =
+    '2026-10-01T10:00:00.000-03:00,2026-10-01T10:00:05.000-03:00,2026-10-15T10:00:05.000-03:00,' +
+    `7001,SETTLEMENT,1000.00,ARS,-60.00,${META_SUB},-40.00,${TAXES},,900.00`;
+  const refund =
+    '2026-10-20T09:00:00.000-03:00,2026-10-20T09:00:01.000-03:00,2026-10-20T09:00:01.000-03:00,' +
+    `7001,REFUND,-1000.00,ARS,60.00,${META_SUB},40.00,${TAXES},,-900.00`;
+  // The monthly commission invoice: no type, no amount, only a debit.
+  const adjustment =
+    '2026-10-31T23:00:00.000-03:00,2026-10-31T23:00:00.000-03:00,2026-10-31T23:00:00.000-03:00,' +
+    '9001,,0.00,ARS,-1500.00,"[{}]",0.00,"[{}]",,-1500.00';
+  const unreleased =
+    '2026-10-02T10:00:00.000-03:00,,,7002,SETTLEMENT,500.00,ARS,-30.00,"[{}]",0.00,"[{}]",,470.00';
+
+  async function movementsOf(csv: string): Promise<GatewayMovementProps[]> {
+    const path = join(mkdtempSync(join(tmpdir(), 'allreport-')), 'ALLReport.csv');
+    writeFileSync(path, csv);
+    const out: GatewayMovementProps[] = [];
+    for await (const m of new MercadoPagoAllTransactionsExport(path).movements()) out.push(m);
+    return out;
+  }
+
+  it('yields one movement per row, not one per operation', async () => {
+    const out = await movementsOf(`${HEADER_WITH_DATES}\n${settlement}\n${refund}\n`);
+
+    expect(out).toHaveLength(2);
+    expect(out.map((m) => m.platformPaymentId)).toEqual(['7001', '7001']);
+  });
+
+  it('keeps the account frame: money in is positive, money out negative', async () => {
+    const [charge, back] = await movementsOf(`${HEADER_WITH_DATES}\n${settlement}\n${refund}\n`);
+
+    expect(charge).toMatchObject({ type: 'SETTLEMENT', netAmount: 900, currency: 'ARS' });
+    expect(back).toMatchObject({ type: 'REFUND', netAmount: -900 });
+  });
+
+  it('dates each movement by when its money is released, not by when it was charged', async () => {
+    const [charge] = await movementsOf(`${HEADER_WITH_DATES}\n${settlement}\n`);
+
+    expect(charge.occurredAt?.toISOString()).toBe('2026-10-01T13:00:00.000Z');
+    expect(charge.availableAt?.toISOString()).toBe('2026-10-15T13:00:05.000Z');
+  });
+
+  it('keeps the account adjustments the fee mirror leaves out, because they move cash', async () => {
+    const [m] = await movementsOf(`${HEADER_WITH_DATES}\n${adjustment}\n`);
+
+    expect(m).toMatchObject({ type: 'ADJUSTMENT', netAmount: -1500, platformPaymentId: '9001' });
+  });
+
+  it('leaves the release date empty when MP has not scheduled one', async () => {
+    const [m] = await movementsOf(`${HEADER_WITH_DATES}\n${unreleased}\n`);
+
+    expect(m.availableAt).toBeNull();
+  });
+
+  it('names a movement the same way in every file that carries it', async () => {
+    const [a] = await movementsOf(`${HEADER_WITH_DATES}\n${settlement}\n`);
+    const [b] = await movementsOf(`${HEADER_WITH_DATES}\n${unreleased}\n${settlement}\n`).then((ms) => ms.slice(1));
+    const all = await movementsOf(`${HEADER_WITH_DATES}\n${settlement}\n${refund}\n${adjustment}\n`);
+
+    expect(a.movementId).toBe(b.movementId);
+    expect(new Set(all.map((m) => m.movementId)).size).toBe(3);
   });
 });

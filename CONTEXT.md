@@ -53,6 +53,13 @@ The external service that took the money — MercadoPago, Stripe, PayPal, Antel 
 or the marker for access granted without one (Manual, Voucher).
 _Avoid_: platform (ambiguous with Platform), gateway, processor
 
+**Balance Movement**:
+One movement of money inside a Provider account — a settlement, a refund, a
+chargeback, a commission invoice — signed as the account saw it and dated by when
+the money is released. Answers "when was the money ours to spend", where a Pago's
+fee row answers "what did we earn".
+_Avoid_: transaction, ledger entry, settlement (one kind of movement, not all)
+
 **Tier**:
 Which product a Subscription is for: Mensual Básico, Mensual Total, Anual Total,
 or Free. Derived, never stated directly by an Export.

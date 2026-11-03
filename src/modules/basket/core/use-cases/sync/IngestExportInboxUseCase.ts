@@ -25,6 +25,8 @@ export interface InboxFileResult {
   error: string | null;
   rows: number;
   upserted: number;
+  /** Balance movements stored from the file, dated by release. */
+  movements: number;
   grossTotal: number;
   feeTotal: number;
   taxTotal: number;
@@ -206,6 +208,7 @@ export class IngestExportInboxUseCase {
         error,
         rows: r.rows,
         upserted: r.upserted,
+        movements: r.movements,
         grossTotal: round2(r.grossTotal),
         feeTotal: round2(r.feeTotal),
         taxTotal: round2(r.taxTotal),
@@ -251,7 +254,7 @@ function blank(
 ): InboxFileResult {
   return {
     filename, outcome, error,
-    rows: 0, upserted: 0, grossTotal: 0, feeTotal: 0, taxTotal: 0, netTotal: 0,
+    rows: 0, upserted: 0, movements: 0, grossTotal: 0, feeTotal: 0, taxTotal: 0, netTotal: 0,
     windowFrom: null, windowTo: null, durationMs,
   };
 }

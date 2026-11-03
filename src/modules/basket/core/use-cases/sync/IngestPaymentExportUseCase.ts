@@ -1,5 +1,7 @@
 import type { GatewayFeeProps } from '@basket/core/entities/GatewayFee';
+import type { GatewayMovementProps } from '@basket/core/entities/GatewayMovement';
 import type { IGatewayFeeRepository } from '@basket/core/ports/IGatewayFeeRepository';
+import type { IGatewayMirrorRepository } from '@basket/core/ports/IGatewayMirror';
 import type { IPaymentExportSource } from '@basket/core/ports/IPaymentExportSource';
 
 const UPSERT_FLUSH_SIZE = 500;
@@ -24,6 +26,9 @@ export interface PaymentExportIngestResult {
    *  carries approved payments, which is a silence rather than a measurement —
    *  see docs/handoff/mercadopago-sftp-all-transactions.md. */
   refundedTotal: number;
+  /** Balance movements stored, dated by release. Zero for an Export that cannot
+   *  date one (the Cobros Export). */
+  movements: number;
   from: Date | null;
   to: Date | null;
   durationMs: number;
@@ -44,7 +49,10 @@ export interface PaymentExportIngestResult {
  * arithmetic mistake this codebase keeps having to un-make.
  */
 export class IngestPaymentExportUseCase {
-  constructor(private readonly fees: IGatewayFeeRepository) {}
+  constructor(
+    private readonly fees: IGatewayFeeRepository,
+    private readonly movements: IGatewayMirrorRepository<GatewayMovementProps>,
+  ) {}
 
   async execute(source: IPaymentExportSource): Promise<PaymentExportIngestResult> {
     const startedAt = Date.now();
@@ -106,6 +114,7 @@ export class IngestPaymentExportUseCase {
       if (buffer.length >= UPSERT_FLUSH_SIZE) await flush();
     }
     await flush();
+    const movements = await this.ingestMovements(source);
 
     return {
       slug: source.slug,
@@ -120,10 +129,25 @@ export class IngestPaymentExportUseCase {
       feeTotal: round2(tally.feeTotal),
       netTotal: round2(tally.netTotal),
       refundedTotal: round2(tally.refundedTotal),
+      movements,
       from: Number.isFinite(tally.minMs) ? new Date(tally.minMs) : null,
       to: tally.maxMs > 0 ? new Date(tally.maxMs) : null,
       durationMs: Date.now() - startedAt,
     };
+  }
+
+  private async ingestMovements(source: IPaymentExportSource): Promise<number> {
+    if (!source.movements) return 0;
+    let stored = 0;
+    let buffer: GatewayMovementProps[] = [];
+    for await (const movement of source.movements()) {
+      buffer.push(movement);
+      if (buffer.length >= UPSERT_FLUSH_SIZE) {
+        stored += await this.movements.upsertMany(buffer);
+        buffer = [];
+      }
+    }
+    return stored + (await this.movements.upsertMany(buffer));
   }
 }
 
