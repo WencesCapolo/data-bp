@@ -1,4 +1,4 @@
-import { flush } from './telemetry';
+import { telemetry } from './telemetry';
 
 const REGISTERED = Symbol.for('analytics.telemetryShutdown');
 
@@ -14,6 +14,6 @@ export function flushTelemetryOnShutdown(): void {
   g[REGISTERED] = true;
 
   for (const signal of ['SIGTERM', 'SIGINT'] as const) {
-    process.once(signal, () => void flush());
+    process.once(signal, () => void telemetry.flush());
   }
 }

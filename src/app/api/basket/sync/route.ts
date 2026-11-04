@@ -1,8 +1,8 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { composeRunSync } from '@basket/infrastructure/sync/composeRunSync';
+import { scrubMessage } from 'basket-tv-telemetry';
+import { withRequestLog } from 'basket-tv-telemetry/next';
 import { runLoggedSync } from '@basket/infrastructure/sync/runLoggedSync';
-import { reportFailedSteps, reportJobFailure } from '@/lib/reportError';
-import { scrubErrorFields, scrubMessage } from '@shared/lib/scrub';
+import { scrubErrorFields } from '@/lib/telemetry';
 import { DrizzleSyncStateRepository } from '@basket/infrastructure/db/repositories/DrizzleSyncStateRepository';
 
 export const dynamic = 'force-dynamic';
@@ -13,7 +13,7 @@ let startedAt: number | null = null;
 let lastError: string | null = null;
 let lastResult: unknown = null;
 
-export async function GET() {
+export const GET = withRequestLog('/api/basket/sync', async () => {
   const repo = new DrizzleSyncStateRepository();
   const rows = await repo.findAll();
   return NextResponse.json({
@@ -27,9 +27,9 @@ export async function GET() {
     lastError,
     lastResult,
   });
-}
+});
 
-export async function POST(req: NextRequest) {
+export const POST = withRequestLog('/api/basket/sync', async (req: NextRequest) => {
   const expected = process.env.SYNC_TOKEN;
   if (expected) {
     const got = req.headers.get('x-sync-token');
@@ -45,20 +45,18 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const useCase = await composeRunSync();
   startedAt = Date.now();
   lastError = null;
-  const promise = runLoggedSync(useCase, 'token', 'x-sync-token');
+  // Its own job line, with this request's id; this request's line ends at the 202.
+  const promise = runLoggedSync('token', 'x-sync-token');
   inFlight = promise;
   promise
     .then((result) => {
       // GET answers both: every error string in them is scrubbed.
       lastResult = scrubErrorFields(result);
-      reportFailedSteps('basket-sync', result.failedSteps);
     })
     .catch((err) => {
       lastError = scrubMessage(err instanceof Error ? err.message : String(err));
-      reportJobFailure('basket-sync', err);
     })
     .finally(() => {
       inFlight = null;
@@ -68,4 +66,4 @@ export async function POST(req: NextRequest) {
     { status: 'started', startedAt: new Date(startedAt).toISOString() },
     { status: 202 },
   );
-}
+});

@@ -2,8 +2,9 @@ import { NextResponse } from 'next/server';
 import { createHash } from 'node:crypto';
 import type { NextRequest } from 'next/server';
 import type { ZodError } from 'zod';
-import { reportUnexpected } from '@/lib/reportError';
-import { scrubMessage, scrubStack } from '@shared/lib/scrub';
+import { scrubStack } from 'basket-tv-telemetry';
+import { addFields } from 'basket-tv-telemetry/log';
+import { reportCaughtError } from '@/lib/telemetry';
 
 const NO_STORE = { 'cache-control': 'no-store' };
 
@@ -31,6 +32,7 @@ export function okCached<T>(
 }
 
 export function badRequest(err: ZodError): NextResponse {
+  addFields({ reason: 'invalid_query' });
   return NextResponse.json(
     { error: 'invalid_query', issues: err.issues },
     { status: 400, headers: NO_STORE },
@@ -41,28 +43,19 @@ export function badRequest(err: ZodError): NextResponse {
 // portal login page. The proxy only checks cookie presence, so this is the
 // gate that actually reads the session and the analytics Acceso.
 export function unauthorized(): NextResponse {
+  addFields({ reason: 'unauthorized' });
   return NextResponse.json({ error: 'unauthorized' }, { status: 401, headers: NO_STORE });
 }
 
-export interface ServerErrorContext {
-  method: string;
-  /** The route pattern (`/api/basket/teams/[teamId]/daily`), never the URL; or a job name. */
-  route: string;
-  /** `route` unless the handler runs a background job (`job`). */
-  routeType?: 'route' | 'job';
-}
-
 /**
- * The 500 for an unexpected error: a generic body, one scrubbed log line and one
- * report to basket-telemetry (catching it here means `onRequestError` never sees
- * it). Outside production it also answers the stack, scrubbed, for local debugging.
+ * The 500 for an unexpected error: a generic body, the error on the request's
+ * line and one report to basket-telemetry (catching it here means
+ * `onRequestError` never sees it). Outside production it also answers the
+ * stack, scrubbed, for local debugging.
  */
-export function serverError(err: unknown, ctx: ServerErrorContext): NextResponse {
-  reportUnexpected('api', err, { method: ctx.method, route: ctx.route, routeType: ctx.routeType ?? 'route', status: 500 });
-  const stack =
-    process.env.NODE_ENV !== 'production' && err instanceof Error
-      ? scrubStack(err.stack, err.name || 'Error', scrubMessage(err.message))
-      : null;
+export function serverError(err: unknown): NextResponse {
+  reportCaughtError(err, { route_type: 'route', status: 500 });
+  const stack = process.env.NODE_ENV !== 'production' && err instanceof Error ? scrubStack(err) : null;
   return NextResponse.json(
     { error: 'internal_error', ...(stack ? { stack } : {}) },
     { status: 500, headers: NO_STORE },

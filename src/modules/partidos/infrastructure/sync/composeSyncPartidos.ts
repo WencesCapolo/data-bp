@@ -3,6 +3,8 @@ import { DrizzlePartidosIntlRepository } from '@partidos/infrastructure/db/repos
 import { DrizzlePartidosSyncStateRepository } from '@partidos/infrastructure/db/repositories/DrizzlePartidosSyncStateRepository';
 import { GooglePartidosSheetsFetcher } from '@partidos/infrastructure/sheets/GooglePartidosSheetsFetcher';
 import { SyncPartidosUseCase } from '@partidos/core/use-cases/sync/SyncPartidosUseCase';
+import type { PartidosSyncResultDTO } from '@partidos/core/dtos/PartidosSyncDTO';
+import { recordJobStep, runJob, type JobTrigger } from '@/lib/telemetry';
 
 export function composeSyncPartidos(): SyncPartidosUseCase {
   const spreadsheetId =
@@ -30,5 +32,15 @@ export function composeSyncPartidos(): SyncPartidosUseCase {
       process.env.GOOGLE_SHEETS_TAB_PARTIDOS_INTL ??
       process.env.SHEET_TAB_NAME_INTL ??
       'Ligas Internacionales',
+  });
+}
+
+/** One partidos sync and its `kind: "job"` line, the two sheets as its steps. */
+export function runPartidosSync(trigger: JobTrigger): Promise<PartidosSyncResultDTO> {
+  return runJob('partidos_sync', trigger, async () => {
+    const result = await composeSyncPartidos().execute();
+    recordJobStep({ name: 'nacional', ok: true, rows: result.countNacional });
+    recordJobStep({ name: 'intl', ok: true, rows: result.countIntl });
+    return result;
   });
 }

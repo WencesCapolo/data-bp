@@ -19,6 +19,7 @@ import { GET } from './route';
 const session = vi.mocked(readSession);
 const acceso = vi.mocked(readAnalyticsAcceso);
 const req = () => new NextRequest('https://analytics.basket-app.com/api/financiero/economia?range=all');
+const ctx = { params: Promise.resolve({}) };
 
 beforeEach(() => {
   session.mockReset();
@@ -28,7 +29,7 @@ beforeEach(() => {
 describe('GET /api/financiero/economia', () => {
   it('answers 401 JSON, not a redirect, without a session', async () => {
     session.mockResolvedValue(null);
-    const res = await GET(req());
+    const res = await GET(req(), ctx);
     expect(res.status).toBe(401);
     await expect(res.json()).resolves.toEqual({ error: 'unauthorized' });
   });
@@ -36,12 +37,12 @@ describe('GET /api/financiero/economia', () => {
   it('answers 401 for a portal session without analytics Acceso', async () => {
     session.mockResolvedValue({ id: 'u1', email: 'x@basquetpass.tv', name: 'X', image: null });
     acceso.mockResolvedValue(null);
-    expect((await GET(req())).status).toBe(401);
+    expect((await GET(req(), ctx)).status).toBe(401);
   });
 
   it('serves a lectura Analyst', async () => {
     session.mockResolvedValue({ id: 'u1', email: 'x@basquetpass.tv', name: 'X', image: null });
     acceso.mockResolvedValue({ role: 'read' });
-    expect((await GET(req())).status).toBe(200);
+    expect((await GET(req(), ctx)).status).toBe(200);
   });
 });

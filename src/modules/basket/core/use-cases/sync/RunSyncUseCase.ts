@@ -12,8 +12,10 @@ import {
   type SyncRunContext,
   type SyncStep,
   type SyncStepFailure,
+  type SyncStepOutcome,
+  hasFailedPart,
+  rowsOf,
 } from './SyncStep';
-import { scrubMessage } from '@shared/lib/scrub';
 
 export type { SheetSpec, FixtureSheetSpec, DataSheetSpec } from './syncSteps';
 export type { SyncScope } from './buildSyncSteps';
@@ -22,8 +24,9 @@ export interface RunSyncResult extends SyncContribution {
   startedAt: string;
   finishedAt: string;
   durationMs: number;
-  /** Never-fatal steps and per-item entries that threw. A fatal failure is a
-   *  throw out of `execute`, not an entry here — `runLoggedSync` depends on that. */
+  /** Never-fatal steps and per-item entries that threw, with the error's message
+   *  as it was (the caller scrubs what it stores or answers). A fatal failure is
+   *  a throw out of `execute`, not an entry here — `runLoggedSync` depends on that. */
   failedSteps: SyncStepFailure[];
 }
 
@@ -37,46 +40,53 @@ export class RunSyncUseCase {
     return this.steps.map((s) => s.name);
   }
 
-  async execute(): Promise<RunSyncResult> {
+  /** `onStep` hears each step as it ends, the fatal one included, before its error propagates. */
+  async execute(onStep: (outcome: SyncStepOutcome) => void = () => {}): Promise<RunSyncResult> {
     const startedAt = new Date();
     const ctx: SyncRunContext = { runAt: startedAt };
     let acc = emptyContribution();
     const failedSteps: SyncStepFailure[] = [];
 
-    const fold = (part: StepContribution) => {
-      acc = foldContribution(acc, part);
-    };
-
     for (const step of this.steps) {
-      switch (step.policy) {
-        case 'fatal':
-          try {
-            fold(await step.run(ctx));
-          } catch (err) {
+      let part = emptyContribution();
+      const errors: unknown[] = [];
+      const fold = (p: StepContribution) => {
+        acc = foldContribution(acc, p);
+        part = foldContribution(part, p);
+      };
+      try {
+        switch (step.policy) {
+          case 'fatal':
             // The caller logs and reports what propagates.
-            throw err;
-          }
-          break;
-
-        case 'never-fatal':
-          try {
             fold(await step.run(ctx));
-          } catch (err) {
-            // Logged and reported by the caller from failedSteps (reportFailedSteps).
-            failedSteps.push({ step: step.name, error: message(err) });
-          }
-          break;
+            break;
 
-        case 'per-item':
-          for (const item of step.items) {
+          case 'never-fatal':
             try {
-              fold(await step.runItem(item, ctx));
+              fold(await step.run(ctx));
             } catch (err) {
-              failedSteps.push({ step: step.name, item: step.itemName(item), error: message(err) });
-              fold(step.failedItem(item));
+              errors.push(err);
+              failedSteps.push({ step: step.name, error: message(err) });
             }
-          }
-          break;
+            break;
+
+          case 'per-item':
+            for (const item of step.items) {
+              try {
+                fold(await step.runItem(item, ctx));
+              } catch (err) {
+                errors.push(err);
+                failedSteps.push({ step: step.name, item: step.itemName(item), error: message(err) });
+                fold(step.failedItem(item));
+              }
+            }
+            break;
+        }
+      } catch (err) {
+        errors.push(err);
+        throw err;
+      } finally {
+        onStep({ name: step.name, ok: errors.length === 0 && !hasFailedPart(part), rows: rowsOf(part), errors });
       }
     }
 
@@ -91,7 +101,6 @@ export class RunSyncUseCase {
   }
 }
 
-/** Scrubbed: failedSteps is stored as the Sync's result, which the sync endpoints answer. */
 function message(err: unknown): string {
-  return scrubMessage(err instanceof Error ? err.message : String(err));
+  return err instanceof Error ? err.message : String(err);
 }

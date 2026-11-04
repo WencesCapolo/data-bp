@@ -7,7 +7,7 @@
 import { inArray, sql } from 'drizzle-orm';
 import { db, type Db } from '@shared/db/client';
 import { isMissingTable } from '@shared/db/pgErrors';
-import { reportUnexpected } from '@/lib/reportError';
+import { reportCaughtError } from '@/lib/telemetry';
 import type { IFeeUploadLookups, IPagosUploadLookups } from '@basket/core/ports/IUploadLookups';
 import { basketPriceTiers, basketUsers } from '../db/schema';
 
@@ -19,7 +19,7 @@ const ID_QUERY_CHUNK = 20_000;
 
 /** `null` for the preview; a report unless the table simply does not exist yet. */
 function couldNotAsk(err: unknown, step: string): null {
-  if (!isMissingTable(err)) reportUnexpected('upload-lookups', err, { routeType: 'adapter', route: 'upload-lookups', step });
+  if (!isMissingTable(err)) reportCaughtError(err, { route_type: 'adapter', route: 'upload-lookups', step });
   return null;
 }
 

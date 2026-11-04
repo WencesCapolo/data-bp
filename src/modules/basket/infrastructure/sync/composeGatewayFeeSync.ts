@@ -1,4 +1,4 @@
-import { reportUnexpected } from '@/lib/reportError';
+import { countGatewayRetry, reportCaughtError } from '@/lib/telemetry';
 import { DrizzleGatewayFeeRepository } from '@basket/infrastructure/db/repositories/DrizzleGatewayFeeRepository';
 import { DrizzleSyncStateRepository } from '@basket/infrastructure/db/repositories/DrizzleSyncStateRepository';
 import { StripeFeeFetcher } from '@basket/infrastructure/gateways/StripeFeeFetcher';
@@ -72,17 +72,7 @@ export function composeGatewayFeeSync(
   const payoutFetchers: GatewayWindowSource<GatewayPayoutProps>[] = [];
   const skipped: { slug: string; missing: string }[] = [];
 
-  const logRetry = (slug: string) => (info: {
-    attempt: number;
-    status: number | null;
-    waitMs: number;
-    reason: string;
-  }) => {
-    console.warn(
-      `[${slug}] retry ${info.attempt} after ${info.waitMs}ms ` +
-        `(status=${info.status ?? 'transport'}): ${info.reason.slice(0, 120)}`,
-    );
-  };
+  const countRetry = (slug: string) => () => countGatewayRetry(slug);
 
   if (!wanted || wanted.has('stripe')) {
     // Two names because the deployed environment holds the restricted key under
@@ -92,7 +82,7 @@ export function composeGatewayFeeSync(
     const key = process.env.STRIPE_SECRET_KEY ?? process.env.STRIPE_SERVICE_KEY;
     const stripe = {
       apiVersion: process.env.STRIPE_API_VERSION,
-      onRetry: logRetry('stripe'),
+      onRetry: countRetry('stripe'),
     };
     if (key) {
       fetchers.push(new StripeFeeFetcher({ secretKey: key, ...stripe }));
@@ -110,7 +100,7 @@ export function composeGatewayFeeSync(
     if (token) {
       fetchers.push(new MercadoPagoFeeFetcher({
         accessToken: token,
-        onRetry: logRetry('mercadopago'),
+        onRetry: countRetry('mercadopago'),
         onWindowOverflow: (window, total) => {
           // The message is scrubbed (numbers masked), so the window and the count
           // travel as context: dates and a count, nothing personal.
@@ -118,8 +108,8 @@ export function composeGatewayFeeSync(
             'MercadoPago cannot return past 1000 payments and the window cannot be split further, rows were lost',
           );
           err.name = 'WindowOverflowError';
-          reportUnexpected('mercadopago', err, {
-            routeType: 'job',
+          reportCaughtError(err, {
+            route_type: 'job',
             route: 'gateway-fee-sync',
             step: 'mercadopago-window',
             from: window.from.toISOString(),
@@ -130,7 +120,7 @@ export function composeGatewayFeeSync(
       }));
       subFetchers.push(new MercadoPagoSubscriptionFetcher({
         accessToken: token,
-        onRetry: logRetry('mercadopago'),
+        onRetry: countRetry('mercadopago'),
       }));
     } else {
       skipped.push({ slug: 'mercadopago', missing: 'MP_ACCESS_TOKEN' });
@@ -195,24 +185,10 @@ export function composeGatewayFeeSync(
 export function composeFxRateSync(): SyncFxRatesUseCase {
   return new SyncFxRatesUseCase(
     [
-      new DolarApiBlueFetcher({
-        onRetry: (info) => {
-          console.warn(
-            `[fx:blue] retry ${info.attempt} after ${info.waitMs}ms ` +
-              `(status=${info.status ?? 'transport'}): ${info.reason.slice(0, 120)}`,
-          );
-        },
-      }),
+      new DolarApiBlueFetcher({ onRetry: () => countGatewayRetry('fx_blue') }),
       // EUR→USD crossed through ARS off the same host. Not a fallback for the
       // blue: a different pair, a different source, its own rows.
-      new ArgentinaDatosEurUsdFetcher({
-        onRetry: (info) => {
-          console.warn(
-            `[fx:eur] retry ${info.attempt} after ${info.waitMs}ms ` +
-              `(status=${info.status ?? 'transport'}): ${info.reason.slice(0, 120)}`,
-          );
-        },
-      }),
+      new ArgentinaDatosEurUsdFetcher({ onRetry: () => countGatewayRetry('fx_eur') }),
     ],
     new DrizzleFxRateRepository(),
     new DrizzleSyncStateRepository(),

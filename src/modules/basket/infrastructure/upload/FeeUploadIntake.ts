@@ -7,7 +7,7 @@
 
 import { statSync } from 'node:fs';
 import { isMissingTable } from '@shared/db/pgErrors';
-import { reportUnexpected } from '@/lib/reportError';
+import { reportCaughtError } from '@/lib/telemetry';
 import {
   feeExportSource,
   type FeeExportSourceSpec,
@@ -256,7 +256,7 @@ export class FeeUploadIntake {
       })
       .catch((err) => {
         if (!isMissingTable(err)) {
-          reportUnexpected('fee-upload', err, { routeType: 'adapter', route: 'fee-upload', step: 'provenance' });
+          reportCaughtError(err, { route_type: 'adapter', route: 'fee-upload', step: 'provenance' });
         }
       });
 
@@ -271,7 +271,7 @@ export class FeeUploadIntake {
           viewRefreshMs += (await this.deps.matViews.refresh(view, true)).durationMs;
         }
       } catch (err) {
-        reportUnexpected('fee-upload', err, { routeType: 'adapter', route: 'fee-upload', step: 'refresh-views' });
+        reportCaughtError(err, { route_type: 'adapter', route: 'fee-upload', step: 'refresh-views' });
       }
     }
 

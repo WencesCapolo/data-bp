@@ -1,11 +1,12 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { getSessionUser } from '@/lib/auth/getSessionUser';
 import { serverError, unauthorized } from '@/lib/api/responses';
-import { composeSyncPartidos } from '@partidos/infrastructure/sync/composeSyncPartidos';
+import { runPartidosSync } from '@partidos/infrastructure/sync/composeSyncPartidos';
 import { DrizzlePartidosSyncStateRepository } from '@partidos/infrastructure/db/repositories/DrizzlePartidosSyncStateRepository';
 import type { PartidosSyncStateDTO } from '@partidos/core/dtos/PartidosSyncDTO';
-import { trackServerEvent } from '@/lib/telemetry';
-import { scrubMessage } from '@shared/lib/scrub';
+import { scrubMessage } from 'basket-tv-telemetry';
+import { telemetry } from '@/lib/telemetry';
+import { withRequestLog } from 'basket-tv-telemetry/next';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -13,7 +14,7 @@ export const runtime = 'nodejs';
 let inFlight: Promise<unknown> | null = null;
 let startedAt: number | null = null;
 
-export async function GET(): Promise<NextResponse> {
+export const GET = withRequestLog('/api/partidos/sync', async (): Promise<NextResponse> => {
   if (!(await getSessionUser())) return unauthorized();
   const state = await new DrizzlePartidosSyncStateRepository().get();
   const dto: PartidosSyncStateDTO = {
@@ -29,9 +30,9 @@ export async function GET(): Promise<NextResponse> {
     inFlight: inFlight !== null,
     startedAt: startedAt ? new Date(startedAt).toISOString() : null,
   });
-}
+});
 
-export async function POST(req: NextRequest): Promise<NextResponse> {
+export const POST = withRequestLog('/api/partidos/sync', async (req: NextRequest): Promise<NextResponse> => {
   const expected = process.env.SYNC_TOKEN;
   if (expected) {
     const got = req.headers.get('x-sync-token');
@@ -50,9 +51,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const useCase = composeSyncPartidos();
   startedAt = Date.now();
-  const promise = useCase.execute();
+  // Its own job line, with this request's id, like the syncs that outlive their request.
+  const promise = runPartidosSync('token');
   inFlight = promise;
   // The rejection is handled by the await below; this branch only clears the flag.
   promise
@@ -63,14 +64,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   try {
     const result = await promise;
-    trackServerEvent('partidos_synced', null, {
+    telemetry.trackServerEvent('partidos_synced', null, {
       count_nacional: result.countNacional,
       count_intl: result.countIntl,
       duration_ms: result.durationMs,
     });
     return NextResponse.json(result);
   } catch (err) {
-    // The use case already stored the message as the sync state's lastError.
-    return serverError(err, { method: 'POST', route: 'partidos-sync', routeType: 'job' });
+    // The use case stored the message as the sync state's lastError; the job reported it.
+    return serverError(err);
   }
-}
+});

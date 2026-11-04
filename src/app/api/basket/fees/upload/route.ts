@@ -5,11 +5,13 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { feeUploadIntake } from '@basket/infrastructure/upload/FeeUploadIntake';
 import { authorizeUpload, receiveUpload, unauthorized } from '@/lib/api/uploadRequest';
+import { addFields } from 'basket-tv-telemetry/log';
+import { withRequestLog } from 'basket-tv-telemetry/next';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export async function POST(req: NextRequest): Promise<NextResponse> {
+export const POST = withRequestLog('/api/basket/fees/upload', async (req: NextRequest): Promise<NextResponse> => {
   if (!(await authorizeUpload(req))) return unauthorized();
 
   const received = await receiveUpload(req);
@@ -21,7 +23,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     received.file.name || 'export',
     sourceId,
   );
+  addFields(
+    inspection.ok
+      ? { upload_id: inspection.preview.uploadId, source_id: inspection.preview.source, row_total: inspection.preview.rows }
+      : { upload_id: received.staged.uploadId, reason: inspection.rejection.error },
+  );
   return inspection.ok
     ? NextResponse.json(inspection.preview)
     : NextResponse.json(inspection.rejection, { status: 400 });
-}
+});

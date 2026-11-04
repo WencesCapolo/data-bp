@@ -1,4 +1,5 @@
 import { eq } from 'drizzle-orm';
+import { scrubMessage } from 'basket-tv-telemetry';
 import { db, type Db } from '@shared/db/client';
 import type {
   IPartidosSyncStateRepository,
@@ -36,7 +37,9 @@ export class DrizzlePartidosSyncStateRepository implements IPartidosSyncStateRep
     };
   }
 
+  /** The error is stored scrubbed: GET /api/sync and /api/partidos/sync answer it. */
   async update(state: PartidosSyncState): Promise<void> {
+    const lastError = state.lastError === null ? null : scrubMessage(state.lastError);
     await this.database
       .insert(partidosSyncState)
       .values({
@@ -44,7 +47,7 @@ export class DrizzlePartidosSyncStateRepository implements IPartidosSyncStateRep
         lastSyncAt: state.lastSyncAt,
         lastCountNacional: state.lastCountNacional,
         lastCountIntl: state.lastCountIntl,
-        lastError: state.lastError,
+        lastError,
         lastDurationMs: state.lastDurationMs,
       })
       .onConflictDoUpdate({
@@ -53,7 +56,7 @@ export class DrizzlePartidosSyncStateRepository implements IPartidosSyncStateRep
           lastSyncAt: state.lastSyncAt,
           lastCountNacional: state.lastCountNacional,
           lastCountIntl: state.lastCountIntl,
-          lastError: state.lastError,
+          lastError,
           lastDurationMs: state.lastDurationMs,
         },
       });

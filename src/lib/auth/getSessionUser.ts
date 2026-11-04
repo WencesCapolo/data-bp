@@ -1,5 +1,6 @@
 import { cache } from 'react';
 import { headers } from 'next/headers';
+import { addFields } from 'basket-tv-telemetry/log';
 import { authEnv } from '@/lib/env';
 import { resolveSessionUser, type Resolution, type SessionUser } from './acceso-policy';
 import { readAnalyticsAcceso, readSession } from './reads';
@@ -22,8 +23,11 @@ export const resolveRequestUser = cache(async (): Promise<Resolution> => {
 });
 
 // For API routes: null when there is no session or no Acceso (they answer 401).
-// Pages use requireSession, which redirects instead.
+// Pages use requireSession, which redirects instead. The user goes on the
+// request's log line.
 export async function getSessionUser(): Promise<SessionUser | null> {
   const r = await resolveRequestUser();
-  return r.kind === 'allow' ? r.user : null;
+  if (r.kind !== 'allow') return null;
+  addFields({ user_id: r.user.id, role: r.user.role });
+  return r.user;
 }

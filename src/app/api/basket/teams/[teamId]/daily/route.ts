@@ -4,11 +4,12 @@ import { composeRepo } from '@/lib/api/composeRepo';
 import { badRequest, ok, serverError, unauthorized } from '@/lib/api/responses';
 import { TeamDailyQuerySchema, TeamIdSchema, parseSearchParams } from '@/lib/api/zodSchemas';
 import { GetTeamsUseCase } from '@basket/core/use-cases/queries/GetTeamsUseCase';
+import { withRequestLog } from 'basket-tv-telemetry/next';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-export async function GET(req: NextRequest, { params }: { params: Promise<{ teamId: string }> }) {
+export const GET = withRequestLog('/api/basket/teams/[teamId]/daily', async (req: NextRequest, { params }: { params: Promise<{ teamId: string }> }) => {
   if (!(await getSessionUser())) return unauthorized();
   const { teamId } = await params;
   const id = TeamIdSchema.safeParse(teamId);
@@ -23,6 +24,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ team
     );
     return ok(dto);
   } catch (err) {
-    return serverError(err, { method: 'GET', route: '/api/basket/teams/[teamId]/daily' });
+    return serverError(err);
   }
-}
+});
