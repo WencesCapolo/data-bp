@@ -1,8 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
-vi.mock('@/lib/telemetry', () => ({ reportServerError: vi.fn() }));
-vi.mock('@basket/infrastructure/sync/composeRunSync', () => ({ composeRunSync: vi.fn(async () => ({})) }));
 vi.mock('@basket/infrastructure/sync/runLoggedSync', () => ({ runLoggedSync: vi.fn() }));
 vi.mock('@basket/infrastructure/db/repositories/DrizzleSyncStateRepository', () => ({
   DrizzleSyncStateRepository: class {
@@ -10,42 +8,48 @@ vi.mock('@basket/infrastructure/db/repositories/DrizzleSyncStateRepository', () 
   },
 }));
 
-import { reportServerError } from '@/lib/telemetry';
 import { runLoggedSync } from '@basket/infrastructure/sync/runLoggedSync';
 import { GET, POST } from './route';
 
-const report = vi.mocked(reportServerError);
 const run = vi.mocked(runLoggedSync);
+const ctx = { params: Promise.resolve({}) };
 const post = () => new NextRequest('http://localhost/api/basket/sync', { method: 'POST' });
+const get = () => GET(new NextRequest('http://localhost/api/basket/sync'), ctx);
 
 describe('POST /api/basket/sync', () => {
+  let lines: Record<string, unknown>[];
+
   beforeEach(() => {
-    report.mockReset();
     run.mockReset();
-    vi.spyOn(console, 'error').mockImplementation(() => {});
+    lines = [];
+    vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+      lines.push(JSON.parse(String(chunk)));
+      return true;
+    });
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it('writes one request line with its status and duration, and starts the run under its request id', async () => {
+    run.mockResolvedValue({ failedSteps: [] } as never);
+
+    const res = await POST(post(), ctx);
+
+    expect(res.status).toBe(202);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({ kind: 'request', method: 'POST', route: '/api/basket/sync', status: 202, outcome: 'ok' });
+    expect(lines[0]!.duration_ms).toEqual(expect.any(Number));
+    expect(run).toHaveBeenCalledWith('token', 'x-sync-token');
+    await vi.waitFor(async () => expect((await (await get()).json()).inFlight).toBe(false));
   });
 
-  it('reports a failing sync once, as a job', async () => {
-    const err = new Error('connection terminated');
-    run.mockRejectedValue(err);
+  it('answers a failed run as lastError, scrubbed', async () => {
+    run.mockRejectedValue(new Error('duplicate key value for someone@example.com'));
 
-    expect((await POST(post())).status).toBe(202);
-    await vi.waitFor(async () => expect((await (await GET()).json()).inFlight).toBe(false));
+    await POST(post(), ctx);
+    await vi.waitFor(async () => expect((await (await get()).json()).inFlight).toBe(false));
 
-    expect(report).toHaveBeenCalledTimes(1);
-    expect(report).toHaveBeenCalledWith(err, { routeType: 'job', route: 'basket-sync' });
-    expect((await (await GET()).json()).lastError).toBe('connection terminated');
-  });
-
-  it('reports each step the sync survived without, by step', async () => {
-    run.mockResolvedValue({ failedSteps: [{ step: 'fx', error: 'timeout after 30000ms' }] } as never);
-
-    await POST(post());
-    await vi.waitFor(async () => expect((await (await GET()).json()).inFlight).toBe(false));
-
-    expect(report).toHaveBeenCalledTimes(1);
-    const [reported, context] = report.mock.calls[0]!;
-    expect((reported as Error).name).toBe('SyncStepError');
-    expect(context).toEqual({ routeType: 'job', route: 'basket-sync', step: 'fx' });
+    const { lastError } = await (await get()).json();
+    expect(lastError).toMatch(/^duplicate key value for/);
+    expect(lastError).not.toContain('example.com');
   });
 });

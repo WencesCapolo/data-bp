@@ -2,16 +2,17 @@ import { getSessionUser } from '@/lib/auth/getSessionUser';
 import { composeRepo } from '@/lib/api/composeRepo';
 import { ok, serverError, unauthorized } from '@/lib/api/responses';
 import { GetDataQualityUseCase } from '@basket/core/use-cases/queries/GetDataQualityUseCase';
+import { withRequestLog } from 'basket-tv-telemetry/next';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-export async function GET() {
+export const GET = withRequestLog('/api/basket/data-quality', async () => {
   if (!(await getSessionUser())) return unauthorized();
   try {
     const dto = await new GetDataQualityUseCase(composeRepo()).execute();
     return ok(dto);
   } catch (err) {
-    return serverError(err, { method: 'GET', route: '/api/basket/data-quality' });
+    return serverError(err);
   }
-}
+});

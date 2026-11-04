@@ -5,11 +5,12 @@ import { parseSearchParams } from '@/lib/api/zodSchemas';
 import { NacionalFiltersSchema } from '@/lib/api/partidosSchemas';
 import { composePartidosNacionalRepo } from '@/lib/api/composePartidosRepo';
 import { GetPartidosNacionalWeeklyUseCase } from '@partidos/core/use-cases/queries/GetPartidosNacionalWeeklyUseCase';
+import { withRequestLog } from 'basket-tv-telemetry/next';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-export async function GET(req: NextRequest) {
+export const GET = withRequestLog('/api/partidos/weekly', async (req: NextRequest) => {
   if (!(await getSessionUser())) return unauthorized();
   const parsed = NacionalFiltersSchema.safeParse(parseSearchParams(req));
   if (!parsed.success) return badRequest(parsed.error);
@@ -18,6 +19,6 @@ export async function GET(req: NextRequest) {
       .execute(parsed.data);
     return ok(dto);
   } catch (err) {
-    return serverError(err, { method: 'GET', route: '/api/partidos/weekly' });
+    return serverError(err);
   }
-}
+});

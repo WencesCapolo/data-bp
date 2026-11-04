@@ -4,6 +4,7 @@ import { composeRepo } from '@/lib/api/composeRepo';
 import { badRequest, ok, serverError, unauthorized } from '@/lib/api/responses';
 import { LifecycleQuerySchema, parseSearchParams } from '@/lib/api/zodSchemas';
 import { GetLifecycleUseCase } from '@basket/core/use-cases/queries/GetLifecycleUseCase';
+import { withRequestLog } from 'basket-tv-telemetry/next';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -11,7 +12,7 @@ export const runtime = 'nodejs';
 // Split out of /overview on purpose: that route is all mat-view reads, this one
 // runs a live window pass over every payment (~2s). Sharing a route would gate
 // the whole tab on the slowest block.
-export async function GET(req: NextRequest) {
+export const GET = withRequestLog('/api/basket/overview/lifecycle', async (req: NextRequest) => {
   if (!(await getSessionUser())) return unauthorized();
   const parsed = LifecycleQuerySchema.safeParse(parseSearchParams(req));
   if (!parsed.success) return badRequest(parsed.error);
@@ -22,6 +23,6 @@ export async function GET(req: NextRequest) {
     );
     return ok(dto);
   } catch (err) {
-    return serverError(err, { method: 'GET', route: '/api/basket/overview/lifecycle' });
+    return serverError(err);
   }
-}
+});

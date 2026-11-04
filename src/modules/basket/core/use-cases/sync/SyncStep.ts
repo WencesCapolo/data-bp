@@ -128,6 +128,51 @@ export interface SyncStepFailure {
   error: string;
 }
 
+/** What one step did, for whoever watches a run: rows written, and every error it threw (one per failed item). */
+export interface SyncStepOutcome {
+  name: string;
+  /** No throw, and no gateway, FX source or inbox file that failed inside it. */
+  ok: boolean;
+  rows: number;
+  errors: unknown[];
+}
+
+const sum = <T>(xs: readonly T[] | undefined, rows: (x: T) => number) =>
+  (xs ?? []).reduce((n, x) => n + Math.max(0, rows(x)), 0);
+
+/** Rows a step wrote: counts, inserts and upserts. A failed item's `-1` counts as none. */
+export function rowsOf(p: StepContribution): number {
+  return (
+    (p.syncedUsers ?? 0) +
+    (p.syncedPayments ?? 0) +
+    (p.syncedTeams ?? 0) +
+    (p.syncedTournaments ?? 0) +
+    (p.syncedContent ?? 0) +
+    (p.correctedAmounts ?? 0) +
+    sum(p.syncedSheets, (s) => s.inserted) +
+    sum(p.syncedFixtures, (s) => s.inserted) +
+    sum(p.syncedDataMasters, (d) => d.teams + d.cambios + d.dias) +
+    sum(p.gatewayFees, (g) => g.upserted) +
+    sum(p.gatewaySubscriptions, (g) => g.upserted) +
+    sum(p.gatewayMirrors, (g) => g.upserted) +
+    sum(p.fxRates, (r) => r.upserted) +
+    sum(p.exportInbox?.files, (f) => f.upserted)
+  );
+}
+
+/** A step can return normally with parts of it failed: a gateway, an FX source, an inbox file. */
+export function hasFailedPart(p: StepContribution): boolean {
+  const failed = (xs: readonly { error?: string | null }[] | undefined) => (xs ?? []).some((x) => Boolean(x.error));
+  return (
+    failed(p.gatewayFees) ||
+    failed(p.gatewaySubscriptions) ||
+    failed(p.gatewayMirrors) ||
+    failed(p.fxRates) ||
+    Boolean(p.exportInbox?.error) ||
+    (p.exportInbox?.files ?? []).some((f) => f.outcome === 'failed' || f.outcome === 'rejected')
+  );
+}
+
 /**
  * Names must be unique, and every `after` that names a step present in the list
  * must name one that comes earlier. An `after` naming an absent step is fine —

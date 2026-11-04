@@ -5,11 +5,12 @@ import { parseSearchParams } from '@/lib/api/zodSchemas';
 import { IntlFiltersSchema } from '@/lib/api/partidosSchemas';
 import { composePartidosIntlRepo } from '@/lib/api/composePartidosRepo';
 import { GetPartidosIntlChannelsUseCase } from '@partidos/core/use-cases/queries/GetPartidosIntlChannelsUseCase';
+import { withRequestLog } from 'basket-tv-telemetry/next';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-export async function GET(req: NextRequest) {
+export const GET = withRequestLog('/api/partidos/intl/channels', async (req: NextRequest) => {
   if (!(await getSessionUser())) return unauthorized();
   const parsed = IntlFiltersSchema.safeParse(parseSearchParams(req));
   if (!parsed.success) return badRequest(parsed.error);
@@ -18,6 +19,6 @@ export async function GET(req: NextRequest) {
       .execute(parsed.data);
     return ok(dto);
   } catch (err) {
-    return serverError(err, { method: 'GET', route: '/api/partidos/intl/channels' });
+    return serverError(err);
   }
-}
+});

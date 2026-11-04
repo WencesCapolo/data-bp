@@ -6,7 +6,7 @@ import { authDb } from '@shared/db/auth-client';
 import { ANALYTICS_APP } from '@/lib/auth/acceso-policy';
 import { readSession } from '@/lib/auth/reads';
 import { authEnv } from '@/lib/env';
-import { reportUnexpected } from '@/lib/reportError';
+import { reportCaughtError } from '@/lib/telemetry';
 import { canDecide, canGrantRole } from '@/lib/access-requests/grant-rule';
 import { appUrlFromPortal, sendAccessInviteEmail } from '@/lib/access-requests/invite';
 import {
@@ -84,8 +84,8 @@ export async function approveAccessRequestAction(formData: FormData): Promise<De
         appUrl: appUrlFromPortal(authEnv.portalUrl, ANALYTICS_APP),
       });
     } catch (error) {
-      reportUnexpected('access-requests', error, {
-        routeType: 'action',
+      reportCaughtError(error, {
+        route_type: 'action',
         route: 'access-requests',
         step: 'invite-email',
         userId: actor.userId,
@@ -100,7 +100,7 @@ export async function approveAccessRequestAction(formData: FormData): Promise<De
       revalidatePath('/', 'layout');
       return { intent: 'error', notice: error.message };
     }
-    reportUnexpected('access-requests', error, { routeType: 'action', route: 'access-requests', step: 'approve' });
+    reportCaughtError(error, { route_type: 'action', route: 'access-requests', step: 'approve' });
     return FAILED;
   }
 }
@@ -120,7 +120,7 @@ export async function rejectAccessRequestAction(formData: FormData): Promise<Dec
       revalidatePath('/', 'layout');
       return { intent: 'error', notice: error.message };
     }
-    reportUnexpected('access-requests', error, { routeType: 'action', route: 'access-requests', step: 'reject' });
+    reportCaughtError(error, { route_type: 'action', route: 'access-requests', step: 'reject' });
     return FAILED;
   }
 }

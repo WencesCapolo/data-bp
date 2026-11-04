@@ -21,7 +21,7 @@ import { DrizzlePaymentUploadRepository } from '@basket/infrastructure/db/reposi
 import { composeRunSync } from '@basket/infrastructure/sync/composeRunSync';
 import { streamCsvFile } from '@shared/lib/csvStream';
 import { isMissingTable } from '@shared/db/pgErrors';
-import { reportUnexpected } from '@/lib/reportError';
+import { recordJobStep, reportCaughtError, runJob } from '@/lib/telemetry';
 import {
   deleteStagedFile,
   readStagedHead,
@@ -62,6 +62,7 @@ export type PagosIngestOutcome =
 export interface PagosConfirmInput {
   uploadId: string;
   actor: string;
+  trigger: 'analyst' | 'token';
   /** Echoed from the browser; used only when the server's own memory of the
    *  preview was lost to a restart. */
   fallback?: Partial<Pick<PagosExportFacts, 'filename' | 'rowTotal'>> & {
@@ -163,7 +164,19 @@ export class PagosUploadIntake {
       windowTo: toDate(measured?.windowTo ?? fallback.windowTo),
     };
 
-    const run = this.ingestFile({ path, actor: input.actor, ...facts }).finally(async () => {
+    // The run outlives the request: its own job line, sharing the request's id.
+    const job = () =>
+      runJob(
+        'payments_sync',
+        input.trigger,
+        async () => {
+          const outcome = await this.ingestFile({ path, actor: input.actor, ...facts });
+          if (!outcome.ok) reportCaughtError(outcome.cause, { route_type: 'job' });
+          return outcome;
+        },
+        { upload_id: input.uploadId, row_total: facts.rowTotal },
+      );
+    const run = job().finally(async () => {
       this.inFlight = null;
       await deleteStagedFile(path);
     });
@@ -181,7 +194,7 @@ export class PagosUploadIntake {
     let outcome: PagosIngestOutcome;
     try {
       const sync = await this.deps.composeUploadSync(input.path);
-      const result = await sync.execute();
+      const result = await sync.execute(recordJobStep);
       outcome = {
         ok: true,
         result,
@@ -211,7 +224,7 @@ export class PagosUploadIntake {
       })
       .catch((err) => {
         if (!isMissingTable(err)) {
-          reportUnexpected('pagos-upload', err, { routeType: 'adapter', route: 'pagos-upload', step: 'provenance' });
+          reportCaughtError(err, { route_type: 'adapter', route: 'pagos-upload', step: 'provenance' });
         }
       });
 

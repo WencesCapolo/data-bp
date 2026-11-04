@@ -22,7 +22,6 @@ import type { GatewayCustomerProps } from '@basket/core/entities/GatewayCustomer
 import type { GatewayDisputeProps } from '@basket/core/entities/GatewayDispute';
 import type { GatewayPayoutProps } from '@basket/core/entities/GatewayPayout';
 import type { PaymentUploadRow } from '@basket/core/dtos/PaymentUploadDTO';
-import { logError } from '@shared/lib/logError';
 import { LoadUsersFromCsvUseCase } from './LoadUsersFromCsvUseCase';
 import { LoadPaymentsFromCsvUseCase } from './LoadPaymentsFromCsvUseCase';
 import { LoadTournamentsFromCsvUseCase } from './LoadTournamentsFromCsvUseCase';
@@ -415,13 +414,7 @@ export function fxRatesStep(d: { useCase: SyncFxRatesUseCase }): NeverFatalStep 
     name: STEP.fxRates,
     policy: 'never-fatal',
     after: [STEP.fees],
-    async run() {
-      const fxRates = await d.useCase.execute();
-      for (const r of fxRates) {
-        if (r.error) logError('sync', r.error, { step: STEP.fxRates, source: r.source });
-      }
-      return { fxRates };
-    },
+    run: async () => ({ fxRates: await d.useCase.execute() }),
   };
 }
 
@@ -431,18 +424,7 @@ export function exportInboxStep(d: { useCase: IngestExportInboxUseCase }): Never
   return {
     name: STEP.exportInbox,
     policy: 'never-fatal',
-    async run() {
-      const exportInbox = await d.useCase.execute();
-      if (exportInbox.error) logError('sync', exportInbox.error, { step: STEP.exportInbox });
-      for (const f of exportInbox.files) {
-        if (f.outcome === 'ingested') {
-          console.log(`inbox ${f.filename}: ${f.rows} rows, ${f.upserted} upserted`);
-        } else if (f.outcome !== 'skipped') {
-          logError('sync', f.error ?? f.outcome, { step: STEP.exportInbox, file: f.filename, outcome: f.outcome });
-        }
-      }
-      return { exportInbox };
-    },
+    run: async () => ({ exportInbox: await d.useCase.execute() }),
   };
 }
 
@@ -457,11 +439,7 @@ export function reconcileStep(d: { repo: IPaymentRepository }): NeverFatalStep {
     name: STEP.reconcile,
     policy: 'never-fatal',
     after: [STEP.payments, STEP.fees, STEP.exportInbox],
-    async run() {
-      const r = await new ReconcilePaymentAmountsUseCase(d.repo).execute();
-      if (r.corrected > 0) console.log(`realigned ${r.corrected} Pago amounts to the gateway`);
-      return { correctedAmounts: r.corrected };
-    },
+    run: async () => ({ correctedAmounts: (await new ReconcilePaymentAmountsUseCase(d.repo).execute()).corrected }),
   };
 }
 

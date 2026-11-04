@@ -11,7 +11,9 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { feeUploadIntake } from '@basket/infrastructure/upload/FeeUploadIntake';
 import { actorName, authorizeUpload, unauthorized } from '@/lib/api/uploadRequest';
-import { trackServerEvent } from '@/lib/telemetry';
+import { telemetry } from '@/lib/telemetry';
+import { addFields } from 'basket-tv-telemetry/log';
+import { withRequestLog } from 'basket-tv-telemetry/next';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -24,7 +26,7 @@ const BodySchema = z.object({
   filename: z.string().min(1).max(400).optional(),
 });
 
-export async function POST(req: NextRequest): Promise<NextResponse> {
+export const POST = withRequestLog('/api/basket/fees/ingest', async (req: NextRequest): Promise<NextResponse> => {
   const actor = await authorizeUpload(req);
   if (!actor) return unauthorized();
 
@@ -36,6 +38,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
+  addFields({ upload_id: parsed.data.uploadId, source_id: parsed.data.source });
   const outcome = await feeUploadIntake().confirm({
     uploadId: parsed.data.uploadId,
     sourceId: parsed.data.source,
@@ -43,6 +46,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     fallbackFilename: parsed.data.filename,
   });
   if (!outcome.ok) return NextResponse.json(outcome.rejection, { status: outcome.status });
-  trackServerEvent('fees_ingested', actor.kind === 'analyst' ? actor.user.id : null, { source_id: parsed.data.source });
+  telemetry.trackServerEvent('fees_ingested', actor.kind === 'analyst' ? actor.user.id : null, { source_id: parsed.data.source });
   return NextResponse.json(outcome.body);
-}
+});

@@ -4,11 +4,12 @@ import { composeRepo } from '@/lib/api/composeRepo';
 import { badRequest, ok, serverError, unauthorized } from '@/lib/api/responses';
 import { RetentionQuerySchema, parseSearchParams } from '@/lib/api/zodSchemas';
 import { GetRetentionUseCase } from '@basket/core/use-cases/queries/GetRetentionUseCase';
+import { withRequestLog } from 'basket-tv-telemetry/next';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-export async function GET(req: NextRequest) {
+export const GET = withRequestLog('/api/basket/retention', async (req: NextRequest) => {
   if (!(await getSessionUser())) return unauthorized();
   const parsed = RetentionQuerySchema.safeParse(parseSearchParams(req));
   if (!parsed.success) return badRequest(parsed.error);
@@ -20,6 +21,6 @@ export async function GET(req: NextRequest) {
     );
     return ok(dto);
   } catch (err) {
-    return serverError(err, { method: 'GET', route: '/api/basket/retention' });
+    return serverError(err);
   }
-}
+});

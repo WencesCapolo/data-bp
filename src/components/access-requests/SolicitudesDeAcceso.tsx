@@ -3,7 +3,7 @@ import { authDb } from '@shared/db/auth-client';
 import { approveAccessRequestAction, rejectAccessRequestAction } from '@/app/actions/access-requests';
 import { ANALYTICS_APP } from '@/lib/auth/acceso-policy';
 import { canDecide, grantableRoles } from '@/lib/access-requests/grant-rule';
-import { reportUnexpected } from '@/lib/reportError';
+import { reportCaughtError } from '@/lib/telemetry';
 import { listPendingAccessRequests, readAppRoles, readDecider } from '@/lib/access-requests/requests';
 import { SolicitudesBell } from './SolicitudesBell';
 
@@ -33,7 +33,7 @@ async function loadBell(userId: string): Promise<SolicitudPendiente[] | null> {
       roles: offered,
     }));
   } catch (error) {
-    reportUnexpected('access-requests', error, { routeType: 'render', route: 'access-requests', step: 'load-bell', userId });
+    reportCaughtError(error, { route_type: 'render', route: 'access-requests', step: 'load-bell', userId });
     return null;
   }
 }

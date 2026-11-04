@@ -11,7 +11,7 @@ import { IngestPaymentExportUseCase } from '@basket/core/use-cases/sync/IngestPa
 import { IngestExportInboxUseCase } from '@basket/core/use-cases/sync/IngestExportInboxUseCase';
 import { FsExportInbox } from '@basket/infrastructure/exports/FsExportInbox';
 import { isResolved, resolveExportSource } from '@basket/infrastructure/exports/resolveExportSource';
-import { reportUnexpected } from '@/lib/reportError';
+import { reportCaughtError } from '@/lib/telemetry';
 
 /** Days of `done/` kept. Monthly Exports are ~2 MB, so this is about the fuse on
  *  an unbounded directory, not about disk pressure today. */
@@ -41,6 +41,6 @@ export function composeExportInboxIngestFor(dir: string, uploadedBy: string): In
     uploadedBy,
     retentionDays: Number(process.env.MP_SFTP_DONE_RETENTION_DAYS ?? DEFAULT_RETENTION_DAYS),
     onUnexpectedError: (err, step) =>
-      reportUnexpected('export-inbox', err, { routeType: 'job', route: 'export-inbox', step }),
+      reportCaughtError(err, { route_type: 'job', route: 'export-inbox', step }),
   });
 }

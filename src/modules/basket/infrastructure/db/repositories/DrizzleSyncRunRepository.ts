@@ -1,6 +1,6 @@
 import { db, type Db } from '@shared/db/client';
 import { isMissingTable } from '@shared/db/pgErrors';
-import { reportUnexpected } from '@/lib/reportError';
+import { reportCaughtError } from '@/lib/telemetry';
 import { basketSyncRuns } from '../schema';
 import type { RunSyncResult } from '@basket/core/use-cases/sync/RunSyncUseCase';
 
@@ -44,7 +44,7 @@ export class DrizzleSyncRunRepository {
     } catch (err) {
       // A missing table means migration 0018 has not been applied yet.
       if (!isMissingTable(err)) {
-        reportUnexpected('sync-runs', err, { routeType: 'adapter', route: 'sync-run-log', step: 'record' });
+        reportCaughtError(err, { route_type: 'adapter', route: 'sync-run-log', step: 'record' });
       }
     }
   }

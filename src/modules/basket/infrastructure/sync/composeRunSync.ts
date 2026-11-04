@@ -30,7 +30,8 @@ import { buildSyncSteps, type SyncScope, type SyncSources } from '@basket/core/u
 import { composeFxRateSync, composeGatewayFeeSync } from '@basket/infrastructure/sync/composeGatewayFeeSync';
 import { composeExportInboxIngest } from '@basket/infrastructure/sync/composeExportInbox';
 import { streamCsvFile } from '@shared/lib/csvStream';
-import { reportUnexpected } from '@/lib/reportError';
+import { addFields } from 'basket-tv-telemetry/log';
+import { reportCaughtError } from '@/lib/telemetry';
 import type { PaymentUploadRow } from '@basket/core/dtos/PaymentUploadDTO';
 
 export interface ComposeRunSyncOptions {
@@ -237,7 +238,7 @@ async function composeSheets(): Promise<SyncSources['sheets']> {
         });
       }
     } catch (err) {
-      reportUnexpected('sync', err, { routeType: 'job', route: 'sync-discovery', step: 'grilla-tabs' });
+      reportCaughtError(err, { route_type: 'job', route: 'sync-discovery', step: 'grilla-tabs' });
     }
   }
 
@@ -259,7 +260,7 @@ async function composeSheets(): Promise<SyncSources['sheets']> {
       const dataTab = tabs.find((t) => /^data$/i.test(t));
       if (dataTab) dataSheetSpecs.push({ workbookLabel: label, spreadsheetId: id, tab: dataTab });
     } catch (err) {
-      reportUnexpected('sync', err, { routeType: 'job', route: 'sync-discovery', step: 'data-tabs' });
+      reportCaughtError(err, { route_type: 'job', route: 'sync-discovery', step: 'data-tabs' });
     }
   }
 
@@ -281,9 +282,7 @@ async function composeSheets(): Promise<SyncSources['sheets']> {
 function composeGateways(): SyncSources['gateways'] {
   if (process.env.SYNC_GATEWAYS_ENABLED === 'false') return undefined;
   const g = composeGatewayFeeSync();
-  for (const s of g.skipped) {
-    console.warn(`[sync] gateway ${s.slug} skipped: ${s.missing} not set`);
-  }
+  if (g.skipped.length) addFields({ skipped_gateways: g.skipped.map((s) => s.slug).join(',') });
   return {
     fees: g.slugs.length
       ? {

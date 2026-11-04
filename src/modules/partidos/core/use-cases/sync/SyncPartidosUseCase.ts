@@ -5,7 +5,6 @@ import type { IPartidosSheetsFetcher } from '@partidos/core/ports/IPartidosSheet
 import type { PartidosSyncResultDTO } from '@partidos/core/dtos/PartidosSyncDTO';
 import { parseRows } from '@partidos/lib/parser';
 import { parseIntlRows } from '@partidos/lib/parser/indexIntl';
-import { scrubMessage } from '@shared/lib/scrub';
 
 export interface SyncPartidosDeps {
   nacionalRepo: IPartidosNacionalRepository;
@@ -55,8 +54,7 @@ export class SyncPartidosUseCase {
       };
     } catch (err) {
       const finishedAt = new Date();
-      // Scrubbed: the sync state is answered by GET /api/sync and /api/partidos/sync.
-      const message = scrubMessage(err instanceof Error ? err.message : String(err));
+      const message = err instanceof Error ? err.message : String(err);
       await this.deps.syncState.update({
         lastSyncAt: finishedAt,
         lastCountNacional: 0,

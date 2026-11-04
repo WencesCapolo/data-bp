@@ -4,13 +4,14 @@ import type { RunSyncResult } from '@basket/core/use-cases/sync/RunSyncUseCase';
 import type { UploadResultDTO } from '@basket/core/dtos/PaymentUploadDTO';
 import { DrizzleSyncStateRepository } from '@basket/infrastructure/db/repositories/DrizzleSyncStateRepository';
 import { pagosUploadIntake } from '@basket/infrastructure/upload/PagosUploadIntake';
-import { composeSyncPartidos } from '@partidos/infrastructure/sync/composeSyncPartidos';
+import { runPartidosSync } from '@partidos/infrastructure/sync/composeSyncPartidos';
 import { DrizzlePartidosSyncStateRepository } from '@partidos/infrastructure/db/repositories/DrizzlePartidosSyncStateRepository';
 import { getSessionUser } from '@/lib/auth/getSessionUser';
 import { internalBypass } from '@/lib/api/uploadRequest';
-import { trackServerEvent } from '@/lib/telemetry';
-import { reportFailedSteps, reportJobFailure } from '@/lib/reportError';
-import { scrubErrorFields, scrubMessage } from '@shared/lib/scrub';
+import { scrubMessage } from 'basket-tv-telemetry';
+import { addFields } from 'basket-tv-telemetry/log';
+import { scrubErrorFields, telemetry } from '@/lib/telemetry';
+import { withRequestLog } from 'basket-tv-telemetry/next';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -34,7 +35,7 @@ function tokenMatches(req: NextRequest): boolean {
   return Boolean(expected) && req.headers.get('x-sync-token') === expected;
 }
 
-export async function GET(): Promise<NextResponse> {
+export const GET = withRequestLog('/api/sync', async (): Promise<NextResponse> => {
   const basketRepo = new DrizzleSyncStateRepository();
   const partidosRepo = new DrizzlePartidosSyncStateRepository();
   const [basketSources, partidos] = await Promise.all([
@@ -70,9 +71,9 @@ export async function GET(): Promise<NextResponse> {
     lastError: lastError ?? (partidos.lastError ? scrubMessage(partidos.lastError) : null),
     lastResult,
   });
-}
+});
 
-export async function POST(req: NextRequest): Promise<NextResponse> {
+export const POST = withRequestLog('/api/sync', async (req: NextRequest): Promise<NextResponse> => {
   // Either an Analyst with an analytics Acceso (any Nivel, per docs/adr/0004) or the
   // automation token. The token path stays so schedulers keep working.
   const byToken = tokenMatches(req) || internalBypass(req);
@@ -94,6 +95,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
   const body = parsed.data;
+  addFields({ upload_id: body.uploadId, row_total: body.rowTotal });
   const intake = pagosUploadIntake();
 
   if (intake.running || partidosInFlight) {
@@ -108,9 +110,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   // Pagos only: every other source is the cron's job, and an Analyst should
   // not wait on Stripe to see an Upload land.
+  const trigger = user ? 'analyst' : 'token';
+  // Each sync below writes its own job line with this request's id.
   const start = await intake.confirm({
     uploadId: body.uploadId,
     actor: user?.email ?? 'automation:x-sync-token',
+    trigger,
     fallback: {
       filename: body.filename,
       rowTotal: body.rowTotal,
@@ -131,31 +136,27 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   startedAt = Date.now();
   lastError = null;
   lastResult = {};
-  trackServerEvent('payments_sync_started', user?.id ?? null, {
+  telemetry.trackServerEvent('payments_sync_started', user?.id ?? null, {
     row_total: body.rowTotal ?? null,
-    trigger: user ? 'analyst' : 'token',
+    trigger,
   });
 
   void start.run.then((outcome) => {
     if (outcome.ok) {
       // GET answers lastResult and lastError: every error string in them is scrubbed.
       lastResult = { ...lastResult, basket: scrubErrorFields(outcome.result), upload: { uploadId: body.uploadId, ...outcome.upload } };
-      reportFailedSteps('payments-sync', outcome.result.failedSteps);
     } else {
       lastError = `basket: ${scrubMessage(outcome.error)}`;
-      reportJobFailure('payments-sync', outcome.cause);
     }
   });
 
-  const partidosP = composeSyncPartidos()
-    .execute()
+  const partidosP = runPartidosSync(trigger)
     .then((r) => {
       lastResult = { ...lastResult, partidos: scrubErrorFields(r) };
     })
     .catch((err) => {
       const msg = `partidos: ${scrubMessage(err instanceof Error ? err.message : String(err))}`;
       lastError = lastError ? `${lastError} | ${msg}` : msg;
-      reportJobFailure('partidos-sync', err);
     })
     .finally(() => {
       partidosInFlight = null;
@@ -166,4 +167,4 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     { status: 'started', startedAt: new Date(startedAt).toISOString() },
     { status: 202 },
   );
-}
+});

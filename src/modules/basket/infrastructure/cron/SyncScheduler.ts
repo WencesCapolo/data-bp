@@ -1,8 +1,7 @@
 import cron, { type ScheduledTask } from 'node-cron';
-import { composeRunSync } from '@basket/infrastructure/sync/composeRunSync';
+import { scrubMessage } from 'basket-tv-telemetry';
+import { emit } from 'basket-tv-telemetry/log';
 import { runLoggedSync } from '@basket/infrastructure/sync/runLoggedSync';
-import { reportFailedSteps, reportJobFailure } from '@/lib/reportError';
-import { scrubMessage } from '@shared/lib/scrub';
 
 const GLOBAL_KEY = Symbol.for('basket.syncScheduler');
 
@@ -40,12 +39,9 @@ export function startSyncScheduler(): void {
     state.running = true;
     state.lastError = null;
     try {
-      const useCase = await composeRunSync();
-      const result = await runLoggedSync(useCase, 'cron', 'SyncScheduler');
-      reportFailedSteps('sync-scheduler', result.failedSteps);
+      await runLoggedSync('cron', 'SyncScheduler');
     } catch (err) {
       state.lastError = scrubMessage(err instanceof Error ? err.message : String(err));
-      reportJobFailure('sync-scheduler', err);
     } finally {
       state.lastRunAt = new Date();
       state.running = false;
@@ -53,5 +49,5 @@ export function startSyncScheduler(): void {
   });
 
   g[GLOBAL_KEY] = state;
-  console.log(`[SyncScheduler] started (cron="${expr}")`);
+  emit({ ts: new Date().toISOString(), level: 'info', kind: 'start', route: 'sync_scheduler', cron: expr });
 }
