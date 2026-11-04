@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { createHash } from 'node:crypto';
 import type { NextRequest } from 'next/server';
 import type { ZodError } from 'zod';
+import { reportUnexpected } from '@/lib/reportError';
+import { scrubMessage, scrubStack } from '@shared/lib/scrub';
 
 const NO_STORE = { 'cache-control': 'no-store' };
 
@@ -42,12 +44,27 @@ export function unauthorized(): NextResponse {
   return NextResponse.json({ error: 'unauthorized' }, { status: 401, headers: NO_STORE });
 }
 
-export function serverError(err: unknown): NextResponse {
-  const message = err instanceof Error ? err.message : String(err);
-  const stack = err instanceof Error ? err.stack : undefined;
-  console.error('[api] server error:', err);
+export interface ServerErrorContext {
+  method: string;
+  /** The route pattern (`/api/basket/teams/[teamId]/daily`), never the URL; or a job name. */
+  route: string;
+  /** `route` unless the handler runs a background job (`job`). */
+  routeType?: 'route' | 'job';
+}
+
+/**
+ * The 500 for an unexpected error: a generic body, one scrubbed log line and one
+ * report to basket-telemetry (catching it here means `onRequestError` never sees
+ * it). Outside production it also answers the stack, scrubbed, for local debugging.
+ */
+export function serverError(err: unknown, ctx: ServerErrorContext): NextResponse {
+  reportUnexpected('api', err, { method: ctx.method, route: ctx.route, routeType: ctx.routeType ?? 'route', status: 500 });
+  const stack =
+    process.env.NODE_ENV !== 'production' && err instanceof Error
+      ? scrubStack(err.stack, err.name || 'Error', scrubMessage(err.message))
+      : null;
   return NextResponse.json(
-    { error: 'internal_error', message, stack: process.env.NODE_ENV !== 'production' ? stack : undefined },
+    { error: 'internal_error', ...(stack ? { stack } : {}) },
     { status: 500, headers: NO_STORE },
   );
 }

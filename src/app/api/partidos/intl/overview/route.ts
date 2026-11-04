@@ -18,6 +18,6 @@ export async function GET(req: NextRequest) {
       .execute(parsed.data);
     return ok(dto);
   } catch (err) {
-    return serverError(err);
+    return serverError(err, { method: 'GET', route: '/api/partidos/intl/overview' });
   }
 }

@@ -17,6 +17,6 @@ export async function GET(req: NextRequest) {
     const dto = await new GetOverviewUseCase(composeRepo()).execute(asOf, parsed.data.range, parsed.data.filters);
     return ok(dto);
   } catch (err) {
-    return serverError(err);
+    return serverError(err, { method: 'GET', route: '/api/basket/overview' });
   }
 }

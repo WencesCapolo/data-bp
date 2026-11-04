@@ -30,6 +30,7 @@ import { buildSyncSteps, type SyncScope, type SyncSources } from '@basket/core/u
 import { composeFxRateSync, composeGatewayFeeSync } from '@basket/infrastructure/sync/composeGatewayFeeSync';
 import { composeExportInboxIngest } from '@basket/infrastructure/sync/composeExportInbox';
 import { streamCsvFile } from '@shared/lib/csvStream';
+import { reportUnexpected } from '@/lib/reportError';
 import type { PaymentUploadRow } from '@basket/core/dtos/PaymentUploadDTO';
 
 export interface ComposeRunSyncOptions {
@@ -236,7 +237,7 @@ async function composeSheets(): Promise<SyncSources['sheets']> {
         });
       }
     } catch (err) {
-      console.error('grilla listTabs failed:', (err as Error).message);
+      reportUnexpected('sync', err, { routeType: 'job', route: 'sync-discovery', step: 'grilla-tabs' });
     }
   }
 
@@ -258,7 +259,7 @@ async function composeSheets(): Promise<SyncSources['sheets']> {
       const dataTab = tabs.find((t) => /^data$/i.test(t));
       if (dataTab) dataSheetSpecs.push({ workbookLabel: label, spreadsheetId: id, tab: dataTab });
     } catch (err) {
-      console.error(`data discover ${label} failed:`, (err as Error).message);
+      reportUnexpected('sync', err, { routeType: 'job', route: 'sync-discovery', step: 'data-tabs' });
     }
   }
 

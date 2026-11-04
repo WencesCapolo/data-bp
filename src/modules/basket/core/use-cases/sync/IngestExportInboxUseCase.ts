@@ -60,6 +60,10 @@ export interface IngestExportInboxDeps {
   uploadedBy: string;
   /** Days of `done/` to keep. 0 keeps everything. */
   retentionDays?: number;
+  /** Told about a failure the run survives but nobody expected (a provenance
+   *  row not written, a file that could not be moved), so the caller can log
+   *  and report it. */
+  onUnexpectedError?: (err: unknown, step: string) => void;
 }
 
 /**
@@ -111,7 +115,7 @@ export class IngestExportInboxUseCase {
         result.files.push(blank(file.name, 'skipped', null));
         // Already ingested and still in the inbox means a previous run was
         // interrupted between the write and the move. Finish the move.
-        await inbox.markDone(file).catch(() => {});
+        await inbox.markDone(file).catch((err) => this.deps.onUnexpectedError?.(err, 'mark-done'));
         continue;
       }
       if (before === 'rejected') {
@@ -150,7 +154,7 @@ export class IngestExportInboxUseCase {
           byteSize: file.byteSize,
           ...entry,
         })
-        .catch((err) => console.error(`provenance for ${file.name} failed:`, (err as Error).message));
+        .catch((err) => this.deps.onUnexpectedError?.(err, 'provenance'));
     };
 
     let resolved;
@@ -198,9 +202,7 @@ export class IngestExportInboxUseCase {
         windowTo: r.to,
         error,
       });
-      await inbox.markDone(file).catch((err) => {
-        console.error(`could not move ${file.name} to done/:`, (err as Error).message);
-      });
+      await inbox.markDone(file).catch((err) => this.deps.onUnexpectedError?.(err, 'mark-done'));
 
       return {
         filename: file.name,

@@ -1,10 +1,13 @@
 // The mirror's answers to the preview's questions. Every method answers `null`
-// on any failure — a table that predates its migration, a connection that went
-// away — because the preview is advisory and must never claim every row would
-// be skipped when it simply could not ask.
+// when it could not ask — a table that predates its migration, a connection that
+// went away — because the preview is advisory and must never claim every row
+// would be skipped when it simply could not ask. Anything but a missing table is
+// unexpected, so it is also logged and reported.
 
 import { inArray, sql } from 'drizzle-orm';
 import { db, type Db } from '@shared/db/client';
+import { isMissingTable } from '@shared/db/pgErrors';
+import { reportUnexpected } from '@/lib/reportError';
 import type { IFeeUploadLookups, IPagosUploadLookups } from '@basket/core/ports/IUploadLookups';
 import { basketPriceTiers, basketUsers } from '../db/schema';
 
@@ -13,6 +16,12 @@ const MONTHLY_RECURRENT = 30;
 
 /** How many distinct Subscriber ids to ask about per statement. */
 const ID_QUERY_CHUNK = 20_000;
+
+/** `null` for the preview; a report unless the table simply does not exist yet. */
+function couldNotAsk(err: unknown, step: string): null {
+  if (!isMissingTable(err)) reportUnexpected('upload-lookups', err, { routeType: 'adapter', route: 'upload-lookups', step });
+  return null;
+}
 
 export class DrizzlePagosUploadLookups implements IPagosUploadLookups {
   constructor(private readonly database: Db = db) {}
@@ -29,8 +38,8 @@ export class DrizzlePagosUploadLookups implements IPagosUploadLookups {
         for (const row of rows) known.add(row.id);
       }
       return known;
-    } catch {
-      return null;
+    } catch (err) {
+      return couldNotAsk(err, 'known-subscriber-ids');
     }
   }
 
@@ -44,8 +53,8 @@ export class DrizzlePagosUploadLookups implements IPagosUploadLookups {
           .filter((r) => Number(r.recurrent) === MONTHLY_RECURRENT)
           .map((r) => r.currency.trim().toLowerCase()),
       );
-    } catch {
-      return null;
+    } catch (err) {
+      return couldNotAsk(err, 'monthly-tier-currencies');
     }
   }
 }
@@ -83,8 +92,8 @@ export class DrizzleFeeUploadLookups implements IFeeUploadLookups {
         WHERE t.platform = ${platform}
       `);
       return new Set((rows as unknown as { id: string }[]).map((r) => r.id));
-    } catch {
-      return null;
+    } catch (err) {
+      return couldNotAsk(err, table === 'basket_payments' ? 'existing-pago-ids' : 'existing-fee-ids');
     }
   }
 }

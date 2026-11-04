@@ -23,6 +23,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ team
     );
     return ok(dto);
   } catch (err) {
-    return serverError(err);
+    return serverError(err, { method: 'GET', route: '/api/basket/teams/[teamId]/daily' });
   }
 }

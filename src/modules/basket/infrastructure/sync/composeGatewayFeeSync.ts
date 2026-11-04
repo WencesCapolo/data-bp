@@ -1,3 +1,4 @@
+import { reportUnexpected } from '@/lib/reportError';
 import { DrizzleGatewayFeeRepository } from '@basket/infrastructure/db/repositories/DrizzleGatewayFeeRepository';
 import { DrizzleSyncStateRepository } from '@basket/infrastructure/db/repositories/DrizzleSyncStateRepository';
 import { StripeFeeFetcher } from '@basket/infrastructure/gateways/StripeFeeFetcher';
@@ -111,11 +112,20 @@ export function composeGatewayFeeSync(
         accessToken: token,
         onRetry: logRetry('mercadopago'),
         onWindowOverflow: (window, total) => {
-          console.error(
-            `[mercadopago] ${total} payments inside ${window.from.toISOString()}` +
-              `→${window.to.toISOString()}; MercadoPago cannot return past 1000 ` +
-              `and the window cannot be split further — rows were LOST`,
+          // The message is scrubbed (numbers masked), so the window and the count
+          // travel as context: dates and a count, nothing personal.
+          const err = new Error(
+            'MercadoPago cannot return past 1000 payments and the window cannot be split further, rows were lost',
           );
+          err.name = 'WindowOverflowError';
+          reportUnexpected('mercadopago', err, {
+            routeType: 'job',
+            route: 'gateway-fee-sync',
+            step: 'mercadopago-window',
+            from: window.from.toISOString(),
+            to: window.to.toISOString(),
+            total,
+          });
         },
       }));
       subFetchers.push(new MercadoPagoSubscriptionFetcher({

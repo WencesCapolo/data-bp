@@ -20,6 +20,8 @@ import type { PaymentUploadRow, UploadResultDTO } from '@basket/core/dtos/Paymen
 import { DrizzlePaymentUploadRepository } from '@basket/infrastructure/db/repositories/DrizzlePaymentUploadRepository';
 import { composeRunSync } from '@basket/infrastructure/sync/composeRunSync';
 import { streamCsvFile } from '@shared/lib/csvStream';
+import { isMissingTable } from '@shared/db/pgErrors';
+import { reportUnexpected } from '@/lib/reportError';
 import {
   deleteStagedFile,
   readStagedHead,
@@ -55,7 +57,7 @@ export interface PagosIngestInput extends PagosExportFacts {
 
 export type PagosIngestOutcome =
   | { ok: true; result: RunSyncResult; upload: Omit<UploadResultDTO, 'uploadId'> }
-  | { ok: false; error: string };
+  | { ok: false; error: string; /** The error itself, for the caller to report. */ cause: unknown };
 
 export interface PagosConfirmInput {
   uploadId: string;
@@ -190,7 +192,7 @@ export class PagosUploadIntake {
         },
       };
     } catch (err) {
-      outcome = { ok: false, error: err instanceof Error ? err.message : String(err) };
+      outcome = { ok: false, error: err instanceof Error ? err.message : String(err), cause: err };
     }
 
     // Provenance must not be what breaks the run — the mirror is already written
@@ -207,7 +209,11 @@ export class PagosUploadIntake {
         windowTo: input.windowTo,
         error: outcome.ok ? null : outcome.error,
       })
-      .catch((err) => console.error('payment upload provenance not recorded:', (err as Error).message));
+      .catch((err) => {
+        if (!isMissingTable(err)) {
+          reportUnexpected('pagos-upload', err, { routeType: 'adapter', route: 'pagos-upload', step: 'provenance' });
+        }
+      });
 
     return outcome;
   }

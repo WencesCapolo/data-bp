@@ -1,10 +1,11 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { getSessionUser } from '@/lib/auth/getSessionUser';
-import { unauthorized } from '@/lib/api/responses';
+import { serverError, unauthorized } from '@/lib/api/responses';
 import { composeSyncPartidos } from '@partidos/infrastructure/sync/composeSyncPartidos';
 import { DrizzlePartidosSyncStateRepository } from '@partidos/infrastructure/db/repositories/DrizzlePartidosSyncStateRepository';
 import type { PartidosSyncStateDTO } from '@partidos/core/dtos/PartidosSyncDTO';
 import { trackServerEvent } from '@/lib/telemetry';
+import { scrubMessage } from '@shared/lib/scrub';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -19,7 +20,8 @@ export async function GET(): Promise<NextResponse> {
     lastSyncAt: state.lastSyncAt ? state.lastSyncAt.toISOString() : null,
     lastCountNacional: state.lastCountNacional,
     lastCountIntl: state.lastCountIntl,
-    lastError: state.lastError,
+    // Rows stored before the sync scrubbed its error are scrubbed here.
+    lastError: state.lastError ? scrubMessage(state.lastError) : null,
     lastDurationMs: state.lastDurationMs,
   };
   return NextResponse.json({
@@ -52,9 +54,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   startedAt = Date.now();
   const promise = useCase.execute();
   inFlight = promise;
-  promise.finally(() => {
-    inFlight = null;
-  });
+  // The rejection is handled by the await below; this branch only clears the flag.
+  promise
+    .finally(() => {
+      inFlight = null;
+    })
+    .catch(() => {});
 
   try {
     const result = await promise;
@@ -65,7 +70,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     });
     return NextResponse.json(result);
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ error: message }, { status: 500 });
+    // The use case already stored the message as the sync state's lastError.
+    return serverError(err, { method: 'POST', route: 'partidos-sync', routeType: 'job' });
   }
 }

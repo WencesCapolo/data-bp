@@ -12,6 +12,6 @@ export async function GET() {
     const dto = await new GetDataQualityUseCase(composeRepo()).execute();
     return ok(dto);
   } catch (err) {
-    return serverError(err);
+    return serverError(err, { method: 'GET', route: '/api/basket/data-quality' });
   }
 }
