@@ -6,9 +6,6 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     include: ['src/**/*.test.ts'],
-    // basket-tv-telemetry/next imports `next/headers`, which Node's ESM resolver
-    // cannot find without an extension; Vite's resolver can.
-    server: { deps: { inline: ['basket-tv-telemetry'] } },
   },
   resolve: {
     alias: {

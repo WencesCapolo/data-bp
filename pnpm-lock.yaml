@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       basket-tv-telemetry:
-        specifier: git+https://github.com/WencesCapolo/basket-tv-telemetry.git#v0.1.0
-        version: https://codeload.github.com/WencesCapolo/basket-tv-telemetry/tar.gz/6b7294eeaa142da3660eba31605e57ca322e27aa(next@16.2.6(@babel/core@7.29.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4))
+        specifier: git+https://github.com/WencesCapolo/basket-tv-telemetry.git#v0.1.1
+        version: https://codeload.github.com/WencesCapolo/basket-tv-telemetry/tar.gz/d861557bd086f6e3af0aa7b0031d00a6291af38c(next@16.2.6(@babel/core@7.29.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4))
       basket-tv-ui:
         specifier: github:WencesCapolo/basket-tv-ui#v0.2.2
         version: https://codeload.github.com/WencesCapolo/basket-tv-ui/tar.gz/56d9593adf00e3523baf83b47e7ec2a5df7f8335(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -1533,9 +1533,9 @@ packages:
     engines: {node: '>=6.0.0'}
     hasBin: true
 
-  basket-tv-telemetry@https://codeload.github.com/WencesCapolo/basket-tv-telemetry/tar.gz/6b7294eeaa142da3660eba31605e57ca322e27aa:
-    resolution: {tarball: https://codeload.github.com/WencesCapolo/basket-tv-telemetry/tar.gz/6b7294eeaa142da3660eba31605e57ca322e27aa}
-    version: 0.1.0
+  basket-tv-telemetry@https://codeload.github.com/WencesCapolo/basket-tv-telemetry/tar.gz/d861557bd086f6e3af0aa7b0031d00a6291af38c:
+    resolution: {tarball: https://codeload.github.com/WencesCapolo/basket-tv-telemetry/tar.gz/d861557bd086f6e3af0aa7b0031d00a6291af38c}
+    version: 0.1.1
     engines: {node: '>=20'}
     peerDependencies:
       hono: '>=4.8'
@@ -4657,7 +4657,7 @@ snapshots:
 
   baseline-browser-mapping@2.10.29: {}
 
-  basket-tv-telemetry@https://codeload.github.com/WencesCapolo/basket-tv-telemetry/tar.gz/6b7294eeaa142da3660eba31605e57ca322e27aa(next@16.2.6(@babel/core@7.29.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)):
+  basket-tv-telemetry@https://codeload.github.com/WencesCapolo/basket-tv-telemetry/tar.gz/d861557bd086f6e3af0aa7b0031d00a6291af38c(next@16.2.6(@babel/core@7.29.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)):
     optionalDependencies:
       next: next@16.2.6(@babel/core@7.29.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
 
