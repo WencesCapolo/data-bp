@@ -44,7 +44,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "basket-tv-telemetry": "git+https://github.com/WencesCapolo/basket-tv-telemetry.git#v0.1.1",
+    "basket-tv-telemetry": "git+https://github.com/WencesCapolo/basket-tv-telemetry.git#v0.1.2",
     "basket-tv-ui": "github:WencesCapolo/basket-tv-ui#v0.2.2",
     "better-auth": "1.6.33",
     "chart.js": "^4.4.9",
