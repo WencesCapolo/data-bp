@@ -2,10 +2,6 @@ import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 import "./globals.css";
 import { fontVariables } from "./fonts";
-import { startSyncScheduler } from "@basket/infrastructure/cron/SyncScheduler";
-
-startSyncScheduler();
-
 // basket-telemetry SDK stub (its README): queues window.bpt calls made before
 // /_t/sdk.js loads. Without the nginx /_t/ proxy (local dev) the SDK 404s and
 // the queue simply stays unread.

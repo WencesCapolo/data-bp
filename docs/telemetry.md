@@ -19,7 +19,7 @@ Everything is a no-op until the telemetry service and the env below exist: the S
 `src/instrumentation.ts`:
 
 - `onRequestError` reports every error Next catches in pages, route handlers and the proxy, with `{ method, route, route_type, request_id }`; `request_id` links the report to the request's log line.
-- `register()` (Node runtime only) loads `src/lib/telemetry-shutdown.ts`, which calls `telemetry.flush()` on `SIGTERM`/`SIGINT` so a restart does not drop the last second of the queue. Best effort: under `next start`, Next's own handler closes the server and exits, possibly before the request completes.
+- `register()` (Node runtime only) loads `src/lib/telemetry-shutdown.ts`, which calls `telemetry.flush()` on `SIGTERM`/`SIGINT` so a restart does not drop the last second of the queue. Best effort: under `next start`, Next's own handler closes the server and exits, possibly before the request completes. It also starts the `SyncScheduler`, so the Sync runs after a restart even if nobody opens a page.
 
 ## Server logs
 

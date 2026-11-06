@@ -2,12 +2,17 @@ import type { Instrumentation } from 'next';
 import { requestIdOf } from 'basket-tv-telemetry/log';
 import { telemetry } from '@/lib/telemetry';
 
-// Flush the telemetry queue on SIGTERM/SIGINT. Node runtime only: the import
-// stays out of the Edge bundle.
+// Once per server start, Node runtime only (the imports stay out of the Edge
+// bundle): flush the telemetry queue on SIGTERM/SIGINT, and start the 6-hourly
+// Sync. The Sync used to start from the root layout, so after a restart it did
+// not run until someone opened a page: a deploy with no visitors left Stripe
+// and the Mercado Pago inbox unsynced.
 export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME === 'nodejs') {
     const { flushTelemetryOnShutdown } = await import('@/lib/telemetry-shutdown');
     flushTelemetryOnShutdown();
+    const { startSyncScheduler } = await import('@basket/infrastructure/cron/SyncScheduler');
+    startSyncScheduler();
   }
 }
 
