@@ -131,11 +131,34 @@ describe('MercadoPagoAllTransactionsExport movements', () => {
     expect(back).toMatchObject({ type: 'REFUND', netAmount: -900 });
   });
 
-  it('dates each movement by when its money is released, not by when it was charged', async () => {
+  it('dates a sale by when its money is released, not by when it was charged', async () => {
     const [charge] = await movementsOf(`${HEADER_WITH_DATES}\n${settlement}\n`);
 
     expect(charge.occurredAt?.toISOString()).toBe('2026-10-01T13:00:00.000Z');
     expect(charge.availableAt?.toISOString()).toBe('2026-10-15T13:00:05.000Z');
+  });
+
+  it('dates a refund made after the release by the day the money leaves, under the same name', async () => {
+    // MP repeats the Pago's TRANSACTION_DATE and MONEY_RELEASE_DATE on the
+    // refund row. The refund's own day is SETTLEMENT_DATE, and it only arrives
+    // in that day's file: dated by the release, it would land on a day already
+    // read.
+    const late =
+      '2026-10-01T10:00:00.000-03:00,2026-10-17T09:00:00.000-03:00,2026-10-15T10:00:05.000-03:00,' +
+      `7001,REFUND,-1000.00,ARS,60.00,${META_SUB},40.00,${TAXES},,-900.00`;
+    const [back] = await movementsOf(`${HEADER_WITH_DATES}\n${late}\n`);
+
+    expect(back.availableAt?.toISOString()).toBe('2026-10-17T12:00:00.000Z');
+    expect(back.movementId).toBe('7001:REFUND:2026-10-01T10:00:00.000-03:00:-900.00');
+  });
+
+  it('dates a refund made before the release by the release, where it cancels the sale', async () => {
+    const early =
+      '2026-10-01T10:00:00.000-03:00,2026-10-05T09:00:00.000-03:00,2026-10-15T10:00:05.000-03:00,' +
+      `7001,REFUND,-1000.00,ARS,60.00,${META_SUB},40.00,${TAXES},,-900.00`;
+    const [back] = await movementsOf(`${HEADER_WITH_DATES}\n${early}\n`);
+
+    expect(back.availableAt?.toISOString()).toBe('2026-10-15T13:00:05.000Z');
   });
 
   it('keeps the account adjustments the fee mirror leaves out, because they move cash', async () => {

@@ -126,8 +126,23 @@ function toMovement(id: string, row: Record<string, string>): GatewayMovementPro
         .find(Boolean) ?? 'ARS',
     netAmount: net,
     occurredAt: parseDate(row.transaction_date),
-    availableAt: parseDate(row.money_release_date),
+    availableAt: availableAt(row),
   };
+}
+
+/**
+ * When the movement reaches the available balance: MONEY_RELEASE_DATE, or
+ * SETTLEMENT_DATE when that is later. A refund or chargeback row repeats its
+ * Pago's release date; the money leaves on SETTLEMENT_DATE, and the row only
+ * arrives in that day's file. Before the release, the refund cancels the Pago
+ * on its release day. A sale settles before or when it is released, so it keeps
+ * its release date.
+ */
+function availableAt(row: Record<string, string>): Date | null {
+  const released = parseDate(row.money_release_date);
+  const settled = parseDate(row.settlement_date);
+  if (!released || !settled) return released;
+  return settled > released ? settled : released;
 }
 
 interface Folded {

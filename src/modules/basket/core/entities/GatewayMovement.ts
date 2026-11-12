@@ -6,7 +6,8 @@
  * Pago and dates it by capture: right for "what did we earn". This is the other
  * question — "when did the money become ours to spend" — so it keeps every
  * movement apart, signed in the account's frame (+ in, − out), and dated by
- * `availableAt`: MercadoPago's `MONEY_RELEASE_DATE`. Cashflow reads it.
+ * `availableAt`: MercadoPago's `MONEY_RELEASE_DATE`, or `SETTLEMENT_DATE` for a
+ * refund or chargeback made after the release. Cashflow reads it.
  */
 export interface GatewayMovementProps {
   platform: number;
@@ -21,7 +22,7 @@ export interface GatewayMovementProps {
   /** Signed in the account frame: what the movement did to the balance. */
   netAmount: number;
   occurredAt: Date | null;
-  /** When the money is released into the available balance, or null when the
-   *  Provider has not scheduled it. */
+  /** When the movement reaches the available balance (a sale's release, a late
+   *  refund's own day), or null when the Provider has not scheduled it. */
   availableAt: Date | null;
 }
