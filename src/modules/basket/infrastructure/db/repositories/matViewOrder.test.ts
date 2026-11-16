@@ -21,4 +21,8 @@ describe('materialized view refresh order', () => {
     expect(ALL_VIEWS).toContain('basket_mat_fee_coverage');
     expect(ALL_VIEWS).toContain('basket_mat_period_windows');
   });
+
+  it('rebuilds the subscribers cashflow reads (migration 0026) after the fact table', () => {
+    expect(after('basket_mat_cashflow_subscribers', 'basket_mat_payment_facts')).toBe(true);
+  });
 });
