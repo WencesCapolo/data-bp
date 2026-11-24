@@ -58,3 +58,26 @@ CREATE OR REPLACE VIEW basket_v_cashflow_fx AS
 SELECT day, base_currency, quote_currency, source, rate
 FROM basket_fx_rates
 WHERE source IN ('oficial_cross', 'blue', 'stripe');
+
+-- ============================================================================
+-- basket_v_cashflow_freshness: 0026's `pagos:upload` took the last row of
+-- basket_payment_uploads, which the daily Mercado Pago Export inbox also
+-- writes, so it read fresh while no Pagos Export had come in for weeks. The
+-- `payments` sync state moves only when a Pagos Export is loaded.
+-- ============================================================================
+CREATE OR REPLACE VIEW basket_v_cashflow_freshness AS
+SELECT 'stripe:payouts'::text AS feed, s.last_sync AS last_data_at
+FROM basket_sync_state s
+WHERE s.source = 'payouts:stripe'
+UNION ALL
+SELECT 'mercadopago:movements', MAX(m.synced_at)
+FROM basket_gateway_movements m
+WHERE m.platform = 0
+UNION ALL
+SELECT 'fx:oficial_cross', s.last_sync
+FROM basket_sync_state s
+WHERE s.source = 'fx:oficial_cross'
+UNION ALL
+SELECT 'pagos:upload', s.last_sync
+FROM basket_sync_state s
+WHERE s.source = 'payments';
