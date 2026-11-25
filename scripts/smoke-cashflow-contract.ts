@@ -1,4 +1,4 @@
-// Proves the contract cashflow reads (migrations/sql/0024 and 0026): the role it
+// Proves the contract cashflow reads (migrations/sql/0024, 0026 and 0027): the role it
 // connects as can read the published views and nothing else.
 //
 //   CASHFLOW_READER_URL=postgres://cashflow_reader:…@127.0.0.1:5432/basket_analytics \
@@ -7,7 +7,7 @@
 // Read-only: every statement is a SELECT, and the INSERT it attempts must fail.
 import postgres from 'postgres';
 
-const VIEWS = ['basket_v_cashflow_credits', 'basket_v_cashflow_fx', 'basket_v_cashflow_freshness', 'basket_v_cashflow_subscribers'];
+const VIEWS = ['basket_v_cashflow_credits', 'basket_v_cashflow_fx', 'basket_v_cashflow_freshness', 'basket_v_cashflow_subscribers', 'basket_v_cashflow_plan_prices'];
 const FORBIDDEN = ['basket_payments', 'basket_gateway_movements', 'basket_gateway_payouts', 'basket_fx_rates', 'basket_mat_cashflow_subscribers', 'basket_mat_payment_facts'];
 
 async function main() {

@@ -1,4 +1,4 @@
--- Subscribers by month and country, published to cashflow. See
+-- Subscribers by month, country and plan, published to cashflow. See
 -- docs/adr/0009-cashflow-reads-published-views.md.
 --
 -- Idempotent: drop, then recreate; the published view and its grant are
@@ -15,7 +15,7 @@ DROP MATERIALIZED VIEW IF EXISTS basket_mat_cashflow_subscribers CASCADE;
 
 -- ============================================================================
 -- basket_mat_cashflow_subscribers
--- Grain: one row per (month, country) with a Subscriber active at its close or
+-- Grain: one row per (month, country, plan) with a Subscriber active at its close or
 -- a charged Pago in it, from the month of the first Pago to the month of the
 -- anchor.
 --
@@ -25,6 +25,9 @@ DROP MATERIALIZED VIEW IF EXISTS basket_mat_cashflow_subscribers CASCADE;
 -- measured at its last day, or at the anchor for the month in progress, which
 -- is then `partial`.
 --
+-- plan                  the sub_type of the Subscriber's latest active Pago
+--                       (Mensual_Basico, Mensual_Total, Anual_Total, Free,
+--                       Otros); for charged_transactions, that Pago's own.
 -- active_at_close       Subscribers in the pool on the close day, by the one
 --                       rule: some successful Pago has
 --                       created_at ≤ day ≤ expires_at + 7 days.
@@ -51,42 +54,53 @@ months AS (
     FROM generate_series(a.first_month, DATE_TRUNC('month', a.d), INTERVAL '1 month') AS g
   ) m
 ),
-active AS (
-  SELECT mo.month, f.country,
-         COUNT(DISTINCT f.user_id)::int                                         AS active_at_close,
-         COUNT(DISTINCT f.user_id) FILTER (WHERE f.access_type = 'real')::int   AS active_paid_at_close
+per_user AS (
+  -- One row per Subscriber and month: the country and plan of their latest
+  -- active Pago, so a Subscriber who changed plan counts once, in the new one.
+  SELECT mo.month, f.user_id,
+         (ARRAY_AGG(f.country ORDER BY f.created_at DESC))[1]                     AS country,
+         (ARRAY_AGG(COALESCE(f.sub_type, 'Otros') ORDER BY f.created_at DESC))[1] AS plan,
+         BOOL_OR(f.access_type = 'real')                                          AS paid
   FROM months mo
   JOIN basket_mat_payment_facts f
     ON f.created_at::date <= mo.close_day
    AND (f.expires_at + INTERVAL '7 days')::date >= mo.close_day
-  GROUP BY mo.month, f.country
+  GROUP BY mo.month, f.user_id
+),
+active AS (
+  SELECT month, country, plan,
+         COUNT(*)::int                        AS active_at_close,
+         COUNT(*) FILTER (WHERE paid)::int    AS active_paid_at_close
+  FROM per_user
+  GROUP BY month, country, plan
 ),
 charged AS (
-  SELECT f.month, f.country, COUNT(*)::int AS charged_transactions
+  SELECT f.month, f.country, COALESCE(f.sub_type, 'Otros') AS plan, COUNT(*)::int AS charged_transactions
   FROM basket_mat_payment_facts f
   JOIN months mo ON mo.month = f.month
   WHERE f.amount > 0
-  GROUP BY f.month, f.country
+  GROUP BY 1, 2, 3
 ),
 cells AS (
-  SELECT month, country FROM active
+  SELECT month, country, plan FROM active
   UNION
-  SELECT month, country FROM charged
+  SELECT month, country, plan FROM charged
 )
 SELECT c.month,
        c.country,
+       c.plan,
        COALESCE(a.active_at_close, 0)       AS active_at_close,
        COALESCE(a.active_paid_at_close, 0)  AS active_paid_at_close,
        COALESCE(ch.charged_transactions, 0) AS charged_transactions,
        mo.partial
 FROM cells c
 JOIN months mo ON mo.month = c.month
-LEFT JOIN active a   ON a.month = c.month AND a.country = c.country
-LEFT JOIN charged ch ON ch.month = c.month AND ch.country = c.country;
+LEFT JOIN active a   ON a.month = c.month AND a.country = c.country AND a.plan = c.plan
+LEFT JOIN charged ch ON ch.month = c.month AND ch.country = c.country AND ch.plan = c.plan;
 
 -- Unique, so the Sync can refresh it CONCURRENTLY like the others.
-CREATE UNIQUE INDEX basket_mat_cashflow_subscribers_month_country_idx
-  ON basket_mat_cashflow_subscribers(month, country);
+CREATE UNIQUE INDEX basket_mat_cashflow_subscribers_month_country_plan_idx
+  ON basket_mat_cashflow_subscribers(month, country, plan);
 
 -- ============================================================================
 -- basket_v_cashflow_subscribers
@@ -94,7 +108,7 @@ CREATE UNIQUE INDEX basket_mat_cashflow_subscribers_month_country_idx
 -- rename or retype none without changing cashflow in step.
 -- ============================================================================
 CREATE OR REPLACE VIEW basket_v_cashflow_subscribers AS
-SELECT month, country, active_at_close, active_paid_at_close, charged_transactions, partial
+SELECT month, country, plan, active_at_close, active_paid_at_close, charged_transactions, partial
 FROM basket_mat_cashflow_subscribers;
 
 GRANT SELECT ON basket_v_cashflow_subscribers TO cashflow_reader;
