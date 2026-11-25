@@ -26,6 +26,9 @@ export const ALL_VIEWS: readonly MatViewName[] = [
   // and the fee mirror; the windows read the fact table above.
   'basket_mat_fee_coverage',
   'basket_mat_period_windows',
+  // Subscribers by month and country for cashflow, migration 0026. Reads the
+  // fact table above.
+  'basket_mat_cashflow_subscribers',
 ];
 
 /** Re-analysed after every refresh: the planner otherwise works from the

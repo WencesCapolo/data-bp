@@ -13,7 +13,8 @@ export type MatViewName =
   | 'basket_mat_subscription_last_charge'
   | 'basket_mat_subscriber_lifetime'
   | 'basket_mat_fee_coverage'
-  | 'basket_mat_period_windows';
+  | 'basket_mat_period_windows'
+  | 'basket_mat_cashflow_subscribers';
 
 export interface RefreshResult {
   view: MatViewName;
