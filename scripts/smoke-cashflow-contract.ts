@@ -7,7 +7,7 @@
 // Read-only: every statement is a SELECT, and the INSERT it attempts must fail.
 import postgres from 'postgres';
 
-const VIEWS = ['basket_v_cashflow_credits', 'basket_v_cashflow_fx', 'basket_v_cashflow_freshness', 'basket_v_cashflow_subscribers', 'basket_v_cashflow_plan_prices', 'basket_v_cashflow_sales'];
+const VIEWS = ['basket_v_cashflow_credits', 'basket_v_cashflow_fx', 'basket_v_cashflow_freshness', 'basket_v_cashflow_subscribers', 'basket_v_cashflow_plan_prices', 'basket_v_cashflow_available'];
 const FORBIDDEN = ['basket_payments', 'basket_gateway_movements', 'basket_gateway_payouts', 'basket_fx_rates', 'basket_mat_cashflow_subscribers', 'basket_mat_payment_facts'];
 
 async function main() {
