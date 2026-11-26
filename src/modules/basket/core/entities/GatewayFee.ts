@@ -37,6 +37,9 @@ export interface GatewayFeeProps {
   /** The subscription that invoice belongs to. Resolved via the invoice, since
    *  the charge itself never carries it. Null for one-off charges. */
   subscriptionId: string | null;
+  /** ISO-2 country of the bank that issued the card, as Stripe reports it.
+   *  Null for anything not paid by card, and for every MercadoPago row. */
+  cardCountry: string | null;
 }
 
 export class GatewayFee {

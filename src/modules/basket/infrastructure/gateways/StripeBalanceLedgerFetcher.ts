@@ -20,7 +20,16 @@ interface StripeBalanceTransaction {
   net: number;
   created: number;
   available_on: number | null;
-  source: string | { id: string } | null;
+  source: string | StripeSource | null;
+}
+
+/** The expanded source: a charge, a refund, a dispute… Only the fields that
+ *  lead back to the Pago are read. */
+interface StripeSource {
+  id: string;
+  object?: string;
+  payment_intent?: string | null;
+  charge?: string | null;
 }
 
 interface StripeBalanceTransactionList {
@@ -40,6 +49,11 @@ interface StripeBalanceTransactionList {
  *
  * The payouts' own movements (`payout`, `payout_failure`, …) are left out:
  * they move the money to the bank, they are not money coming in.
+ *
+ * A movement names its Pago the way basket_payment_fees keys it (the
+ * PaymentIntent, else the charge), so a refund joins the fee row of the charge
+ * it reverses. That takes the source expanded: a refund carries its charge only
+ * there.
  */
 export class StripeBalanceLedgerFetcher implements GatewayWindowSource<GatewayMovementProps> {
   readonly platform = STRIPE_PLATFORM;
@@ -57,6 +71,7 @@ export class StripeBalanceLedgerFetcher implements GatewayWindowSource<GatewayMo
       url.searchParams.set('limit', String(PAGE_SIZE));
       url.searchParams.set('created[gte]', String(unix(window.from)));
       url.searchParams.set('created[lt]', String(unix(window.to)));
+      url.searchParams.append('expand[]', 'data.source');
       if (startingAfter) url.searchParams.set('starting_after', startingAfter);
 
       const headers: Record<string, string> = { authorization: `Bearer ${this.cfg.secretKey}` };
@@ -79,7 +94,7 @@ function toMovement(bt: StripeBalanceTransaction): GatewayMovementProps {
   return {
     platform: STRIPE_PLATFORM,
     movementId: bt.id,
-    platformPaymentId: typeof bt.source === 'string' ? bt.source : (bt.source?.id ?? null),
+    platformPaymentId: pagoOf(bt.source),
     type: bt.type,
     currency: bt.currency.toUpperCase(),
     netAmount: fromMinorUnits(bt.net, bt.currency),
@@ -87,6 +102,13 @@ function toMovement(bt: StripeBalanceTransaction): GatewayMovementProps {
     availableAt: bt.available_on ? new Date(bt.available_on * 1000) : null,
     payoutId: null,
   };
+}
+
+function pagoOf(source: StripeBalanceTransaction['source']): string | null {
+  if (!source || typeof source === 'string') return source;
+  if (source.payment_intent) return source.payment_intent;
+  if (source.object === 'charge') return source.id;
+  return source.charge ?? source.id;
 }
 
 function unix(d: Date): number {

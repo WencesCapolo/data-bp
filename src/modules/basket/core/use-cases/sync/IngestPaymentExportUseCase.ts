@@ -110,6 +110,7 @@ export class IngestPaymentExportUseCase {
         // never erases one the API or another Export established.
         invoiceId: null,
         subscriptionId: row.subscriptionId ?? null,
+        cardCountry: null,
       });
       if (buffer.length >= UPSERT_FLUSH_SIZE) await flush();
     }

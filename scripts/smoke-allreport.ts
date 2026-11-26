@@ -184,7 +184,7 @@ async function mergeGuard() {
     grossAmount: 71500, currency: 'ARS', feeAmount: 1287, taxAmount: 3646.5, netAmount: 66566.5,
     settlementCurrency: 'ARS', settlementAmount: 71500, exchangeRate: null,
     refundedAmount: 0, gatewayStatus: 'approved', capturedAt: new Date('2024-07-04T12:00:00Z'),
-    invoiceId: null, subscriptionId: 'sub-from-the-charge',
+    invoiceId: null, subscriptionId: 'sub-from-the-charge', cardCountry: null,
   };
   const reversalOnly = {
     ...charge,

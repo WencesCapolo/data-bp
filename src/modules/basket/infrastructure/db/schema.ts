@@ -285,6 +285,7 @@ export const basketPaymentFees = pgTable('basket_payment_fees', {
   // have no invoice at all. See docs/adr/0005.
   invoiceId: text('invoice_id'),
   subscriptionId: text('subscription_id'),
+  cardCountry: varchar('card_country', { length: 2 }),
   syncedAt: timestamp('synced_at', { withTimezone: true }).notNull().default(sql`NOW()`),
 }, (table) => ({
   pk: primaryKey({ columns: [table.platform, table.platformPaymentId] }),
