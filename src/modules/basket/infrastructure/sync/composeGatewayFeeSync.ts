@@ -13,7 +13,7 @@ import { SyncGatewayFeesUseCase } from '@basket/core/use-cases/sync/SyncGatewayF
 import { StripeCustomerFetcher } from '@basket/infrastructure/gateways/StripeCustomerFetcher';
 import { StripeDisputeFetcher } from '@basket/infrastructure/gateways/StripeDisputeFetcher';
 import { StripePayoutFetcher } from '@basket/infrastructure/gateways/StripePayoutFetcher';
-import { StripePayoutLedgerFetcher } from '@basket/infrastructure/gateways/StripePayoutLedgerFetcher';
+import { StripeBalanceLedgerFetcher } from '@basket/infrastructure/gateways/StripeBalanceLedgerFetcher';
 import { DrizzleGatewayCustomerRepository } from '@basket/infrastructure/db/repositories/DrizzleGatewayCustomerRepository';
 import { DrizzleGatewayDisputeRepository } from '@basket/infrastructure/db/repositories/DrizzleGatewayDisputeRepository';
 import { DrizzleGatewayPayoutRepository } from '@basket/infrastructure/db/repositories/DrizzleGatewayPayoutRepository';
@@ -97,7 +97,7 @@ export function composeGatewayFeeSync(
       customerFetchers.push(new StripeCustomerFetcher({ secretKey: key, ...stripe }));
       disputeFetchers.push(new StripeDisputeFetcher({ secretKey: key, ...stripe }));
       payoutFetchers.push(new StripePayoutFetcher({ secretKey: key, ...stripe }));
-      payoutLedgerFetchers.push(new StripePayoutLedgerFetcher({ secretKey: key, ...stripe }));
+      payoutLedgerFetchers.push(new StripeBalanceLedgerFetcher({ secretKey: key, ...stripe }));
     } else {
       skipped.push({ slug: 'stripe', missing: 'STRIPE_SECRET_KEY' });
     }

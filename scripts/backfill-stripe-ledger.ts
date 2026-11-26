@@ -1,9 +1,9 @@
 // First load of the later Stripe mirrors: clientes, disputadas, transferencias
-// and what each paid transferencia carried (payout-ledger).
+// and the balance ledger that the transferencias sweep (payout-ledger).
 //
 //   tsx --env-file=.env scripts/backfill-stripe-ledger.ts --from=2021-01-01
 //   tsx --env-file=.env scripts/backfill-stripe-ledger.ts --from=2021-01-01 --only=payouts
-//   tsx --env-file=.env scripts/backfill-stripe-ledger.ts --from=2026-08-01 --only=payouts,payout-ledger
+//   tsx --env-file=.env scripts/backfill-stripe-ledger.ts --from=2026-07-15 --only=payouts,payout-ledger
 //
 // The cron does all three on every run (docs/adr/0006), but the two windowed
 // ones refuse to guess a start date: with no watermark they fail rather than
