@@ -56,8 +56,7 @@ _Avoid_: platform (ambiguous with Platform), gateway, processor
 **Balance Movement**:
 One movement of money inside a Provider account — a settlement, a refund, a
 chargeback, a commission invoice — signed as the account saw it and dated by when
-the money is released. A Stripe one also names the payout that carried it to
-the bank. Answers "when was the money ours to spend", where a Pago's
+the money is released. Answers "when was the money ours to spend", where a Pago's
 fee row answers "what did we earn".
 _Avoid_: transaction, ledger entry, settlement (one kind of movement, not all)
 
