@@ -27,8 +27,12 @@ interface StripeCharge {
   amount_refunded: number;
   status: string;
   created: number;
-  payment_method_details?: { card?: { country?: string | null } } | null;
+  payment_method_details?: StripePaymentMethodDetails | null;
+  billing_details?: { address?: { country?: string | null } | null } | null;
 }
+
+/** `type` names the key holding that method's details: `card`, `link`, … */
+type StripePaymentMethodDetails = { type?: string } & Record<string, { country?: string | null } | string | undefined>;
 
 interface StripeInvoice {
   id: string;
@@ -199,11 +203,22 @@ function toFeeProps(
     gatewayStatus: charge.status,
     invoiceId: charge.invoice,
     subscriptionId: charge.invoice ? (subscriptionByInvoice.get(charge.invoice) ?? null) : null,
-    cardCountry: charge.payment_method_details?.card?.country?.toUpperCase() ?? null,
+    cardCountry: paidFrom(charge),
     // The charge date, not the ledger date: it is what basket_payments.created_at
     // holds, so month buckets line up between the two tables.
     capturedAt: new Date(charge.created * 1000),
   };
+}
+
+/**
+ * The country the money came from: the method's own (a card's issuing country;
+ * Link's is the country of the card beneath it), else the billing address.
+ */
+function paidFrom(charge: StripeCharge): string | null {
+  const details = charge.payment_method_details;
+  const method = details?.type ? details[details.type] : undefined;
+  const fromMethod = typeof method === 'object' ? method.country : null;
+  return (fromMethod || charge.billing_details?.address?.country || null)?.toUpperCase() ?? null;
 }
 
 function unix(date: Date): number {

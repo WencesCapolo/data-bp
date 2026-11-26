@@ -6,7 +6,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 const window = { from: new Date('2026-09-01T00:00:00Z'), to: new Date('2026-10-01T00:00:00Z') };
 
-function chargeTxn(id: string, paymentMethodDetails: unknown) {
+function chargeTxn(id: string, paymentMethodDetails: unknown, billingCountry: string | null = null) {
   return {
     id: `txn_${id}`, type: 'charge', amount: 1000, currency: 'usd', fee: 60, net: 940,
     exchange_rate: null, created: 1_788_000_000,
@@ -14,6 +14,7 @@ function chargeTxn(id: string, paymentMethodDetails: unknown) {
       object: 'charge', id: `ch_${id}`, payment_intent: `pi_${id}`, invoice: null,
       amount: 1000, currency: 'usd', amount_refunded: 0, status: 'succeeded', created: 1_788_000_000,
       payment_method_details: paymentMethodDetails,
+      billing_details: { address: { country: billingCountry } },
     },
   };
 }
@@ -34,17 +35,21 @@ async function collect(): Promise<GatewayFeeProps[]> {
 }
 
 describe('StripeFeeFetcher', () => {
-  it('keeps the country of the bank that issued the card, and none for other methods', async () => {
+  it('takes the country the money came from: card, else the method, else billing', async () => {
     stubStripe([
-      chargeTxn('card', { type: 'card', card: { country: 'UY' } }),
-      chargeTxn('link', { type: 'link', link: {} }),
+      chargeTxn('card', { type: 'card', card: { country: 'UY' } }, 'AR'),
+      chargeTxn('link', { type: 'link', link: { country: 'CL' } }, 'AR'),
+      chargeTxn('billing', { type: 'link', link: {} }, 'ec'),
+      chargeTxn('none', { type: 'link', link: {} }),
     ]);
 
     const rows = await collect();
 
     expect(rows.map((r) => [r.platformPaymentId, r.cardCountry])).toEqual([
       ['pi_card', 'UY'],
-      ['pi_link', null],
+      ['pi_link', 'CL'],
+      ['pi_billing', 'EC'],
+      ['pi_none', null],
     ]);
   });
 });
