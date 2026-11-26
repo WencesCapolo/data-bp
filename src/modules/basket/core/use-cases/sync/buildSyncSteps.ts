@@ -25,6 +25,7 @@ import type { FixtureMatchProps } from '@basket/core/entities/FixtureMatch';
 import type { GatewayCustomerProps } from '@basket/core/entities/GatewayCustomer';
 import type { GatewayDisputeProps } from '@basket/core/entities/GatewayDispute';
 import type { GatewayPayoutProps } from '@basket/core/entities/GatewayPayout';
+import type { GatewayMovementProps } from '@basket/core/entities/GatewayMovement';
 import type { SyncGatewayFeesUseCase } from './SyncGatewayFeesUseCase';
 import type { SyncGatewaySubscriptionsUseCase } from './SyncGatewaySubscriptionsUseCase';
 import type { SyncGatewayFullMirrorUseCase, SyncGatewayWindowMirrorUseCase } from './SyncGatewayMirrorUseCase';
@@ -42,6 +43,7 @@ import {
   fixturesStep,
   fxRatesStep,
   paymentsStep,
+  payoutLedgerStep,
   payoutsStep,
   reconcileStep,
   refreshStep,
@@ -108,6 +110,7 @@ export interface SyncSources {
     customers?: SyncGatewayFullMirrorUseCase<GatewayCustomerProps>;
     disputes?: SyncGatewayWindowMirrorUseCase<GatewayDisputeProps>;
     payouts?: SyncGatewayWindowMirrorUseCase<GatewayPayoutProps>;
+    payoutLedger?: SyncGatewayWindowMirrorUseCase<GatewayMovementProps>;
     /** Wider than the fee window: disputes and payouts are sparse. */
     mirrorWindow: MirrorWindow;
   };
@@ -146,6 +149,7 @@ export function buildSyncSteps(s: SyncSources, scope: SyncScope = 'full'): SyncS
     g?.customers ? customersStep({ useCase: g.customers }) : null,
     g?.disputes ? disputesStep({ useCase: g.disputes, window: g.mirrorWindow }) : null,
     g?.payouts ? payoutsStep({ useCase: g.payouts, window: g.mirrorWindow }) : null,
+    g?.payoutLedger ? payoutLedgerStep({ useCase: g.payoutLedger, window: g.mirrorWindow }) : null,
     s.fxRates ? fxRatesStep({ useCase: s.fxRates }) : null,
     s.exportInbox ? exportInboxStep({ useCase: s.exportInbox }) : null,
     // 9–10.

@@ -397,10 +397,12 @@ export const basketGatewayMovements = pgTable('basket_gateway_movements', {
   netAmount: numeric('net_amount', { precision: 14, scale: 2 }).notNull(),
   occurredAt: timestamp('occurred_at', { withTimezone: true }),
   availableAt: timestamp('available_at', { withTimezone: true }),
+  payoutId: text('payout_id'),
   syncedAt: timestamp('synced_at', { withTimezone: true }).notNull().default(sql`NOW()`),
 }, (table) => ({
   pk: primaryKey({ columns: [table.platform, table.movementId] }),
   availableAtIdx: index('basket_gateway_movements_available_at_idx').on(table.availableAt),
+  payoutIdx: index('basket_gateway_movements_payout_id_idx').on(table.payoutId),
 }));
 
 // One row per (day, pair, source). `rate` is quote units per one base unit —

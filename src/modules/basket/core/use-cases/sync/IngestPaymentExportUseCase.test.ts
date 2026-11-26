@@ -13,7 +13,7 @@ const row: PaymentExportRow = {
 };
 const movement: GatewayMovementProps = {
   platform: 0, movementId: '1:SETTLEMENT:t:90.00', platformPaymentId: '1', type: 'SETTLEMENT',
-  currency: 'ARS', netAmount: 90, occurredAt: null, availableAt: null,
+  currency: 'ARS', netAmount: 90, occurredAt: null, availableAt: null, payoutId: null,
 };
 
 function source(withMovements: boolean): IPaymentExportSource {
