@@ -30,6 +30,7 @@
     "smoke:gateway-net": "tsx --env-file=.env scripts/smoke-gateway-net.ts",
     "backfill:subscriptions": "tsx --env-file=.env scripts/backfill-gateway-subscriptions.ts",
     "backfill:stripe-ledger": "tsx --env-file=.env scripts/backfill-stripe-ledger.ts",
+    "backfill:stripe-card-country": "tsx --env-file=.env scripts/backfill-stripe-card-country.ts",
     "smoke:stripe-exports": "tsx --env-file=.env scripts/smoke-stripe-exports.ts",
     "backfill:content": "tsx --env-file=.env scripts/backfill-content.ts",
     "backfill:fx": "tsx --env-file=.env scripts/backfill-fx-rates.ts",

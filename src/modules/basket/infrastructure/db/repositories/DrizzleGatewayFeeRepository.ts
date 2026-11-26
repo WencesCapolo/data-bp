@@ -25,6 +25,7 @@ function toDbValues(f: GatewayFeeProps) {
     capturedAt: f.capturedAt,
     invoiceId: f.invoiceId,
     subscriptionId: f.subscriptionId,
+    cardCountry: f.cardCountry,
   };
 }
 
@@ -128,6 +129,8 @@ export class DrizzleGatewayFeeRepository implements IGatewayFeeRepository {
             // invoice resolves to null, and letting that null replace a link we
             // already have would erase good data on every overlap pass.
             subscriptionId: sql`COALESCE(excluded.subscription_id, ${basketPaymentFees.subscriptionId})`,
+            // An Export that cannot see the card must not erase what the API read.
+            cardCountry: sql`COALESCE(excluded.card_country, ${basketPaymentFees.cardCountry})`,
             syncedAt: sql`NOW()`,
           },
         });

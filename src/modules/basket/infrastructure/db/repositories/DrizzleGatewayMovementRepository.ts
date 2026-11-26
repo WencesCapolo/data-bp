@@ -42,6 +42,8 @@ implements IGatewayMirrorRepository<GatewayMovementProps> {
             // a later file that again leaves it empty never erases it.
             availableAt: sql`COALESCE(excluded.available_at, ${basketGatewayMovements.availableAt})`,
             payoutId: sql`COALESCE(excluded.payout_id, ${basketGatewayMovements.payoutId})`,
+            // Stripe rows first stored the refund's own id; a re-read names its Pago.
+            platformPaymentId: sql`COALESCE(excluded.platform_payment_id, ${basketGatewayMovements.platformPaymentId})`,
             syncedAt: sql`NOW()`,
           },
         });

@@ -67,6 +67,25 @@ describe('StripeBalanceLedgerFetcher', () => {
     expect(asked[0].searchParams.get('created[lt]')).toBe(String(unix('2026-10-01T00:00:00Z')));
   });
 
+  it('names the Pago the way the fee mirror keys it, so a refund joins its charge', async () => {
+    const asked = stubStripe({
+      first: {
+        data: [
+          bt('txn_charge', 'charge', 10000, { source: { object: 'charge', id: 'ch_1', payment_intent: 'pi_1' } }),
+          bt('txn_refund', 'refund', -1500, { source: { object: 'refund', id: 're_1', charge: 'ch_1', payment_intent: 'pi_1' } }),
+          bt('txn_legacy', 'charge', 800, { source: { object: 'charge', id: 'ch_2', payment_intent: null } }),
+          bt('txn_legacy_refund', 'refund', -800, { source: { object: 'refund', id: 're_2', charge: 'ch_2', payment_intent: null } }),
+        ],
+        has_more: false,
+      },
+    });
+
+    const rows = await collect();
+
+    expect(rows.map((r) => r.platformPaymentId)).toEqual(['pi_1', 'pi_1', 'ch_2', 'ch_2']);
+    expect(asked[0].searchParams.getAll('expand[]')).toEqual(['data.source']);
+  });
+
   it('pages through the window', async () => {
     stubStripe({
       first: { data: [bt('txn_a', 'charge', 100)], has_more: true },

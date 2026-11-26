@@ -191,6 +191,7 @@ function toFeeProps(p: MpPayment): GatewayFeeProps {
     // rather than guessed from timing or amount.
     invoiceId: null,
     subscriptionId: null,
+    cardCountry: null,
   };
 }
 

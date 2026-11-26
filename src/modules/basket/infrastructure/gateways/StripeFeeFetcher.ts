@@ -27,6 +27,7 @@ interface StripeCharge {
   amount_refunded: number;
   status: string;
   created: number;
+  payment_method_details?: { card?: { country?: string | null } } | null;
 }
 
 interface StripeInvoice {
@@ -198,6 +199,7 @@ function toFeeProps(
     gatewayStatus: charge.status,
     invoiceId: charge.invoice,
     subscriptionId: charge.invoice ? (subscriptionByInvoice.get(charge.invoice) ?? null) : null,
+    cardCountry: charge.payment_method_details?.card?.country?.toUpperCase() ?? null,
     // The charge date, not the ledger date: it is what basket_payments.created_at
     // holds, so month buckets line up between the two tables.
     capturedAt: new Date(charge.created * 1000),
