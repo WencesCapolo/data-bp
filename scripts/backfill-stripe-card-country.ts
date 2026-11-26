@@ -4,7 +4,10 @@
 //
 //   tsx --env-file=.env scripts/backfill-stripe-card-country.ts --from=2025-09-01
 //
-// Re-runnable: both mirrors upsert by their Stripe key.
+//   tsx --env-file=.env scripts/backfill-stripe-card-country.ts --from=2025-09-01 --only=fees
+//
+// Re-runnable: both mirrors upsert by their Stripe key. --only=fees or
+// --only=payout-ledger runs one pass.
 
 import { sql } from 'drizzle-orm';
 import { connection, db } from '@shared/db/client';
@@ -21,6 +24,8 @@ async function main() {
   const from = new Date(`${fromArg}T00:00:00Z`);
   if (Number.isNaN(from.getTime())) throw new Error(`--from is not a date: ${fromArg}`);
   const to = new Date();
+  const only = arg('only');
+  const want = (pass: string) => !only || only === pass;
 
   const { useCase, payoutLedgerUseCase, skipped } = composeGatewayFeeSync({ only: ['stripe'] });
   if (skipped.length > 0 || !payoutLedgerUseCase) throw new Error('STRIPE_SECRET_KEY not set');
@@ -28,8 +33,10 @@ async function main() {
   console.log(`=== Stripe card country backfill, ${fromArg} → ${to.toISOString().slice(0, 10)} ===`);
 
   const results = [
-    ...(await useCase.execute({ from, to, windowDays: 7 })).map((r) => ({ name: `fees/${r.slug}`, ...r })),
-    ...(await payoutLedgerUseCase.execute({ from, to })).map((r) => ({ name: `${r.mirror}/${r.slug}`, ...r })),
+    ...(want('fees') ? await useCase.execute({ from, to, windowDays: 7 }) : [])
+      .map((r) => ({ name: `fees/${r.slug}`, ...r })),
+    ...(want('payout-ledger') ? await payoutLedgerUseCase.execute({ from, to }) : [])
+      .map((r) => ({ name: `${r.mirror}/${r.slug}`, ...r })),
   ];
   for (const r of results) {
     console.log(
@@ -46,10 +53,10 @@ async function main() {
     FROM basket_gateway_movements m
     LEFT JOIN basket_payment_fees f
       ON f.platform = m.platform AND f.platform_payment_id = m.platform_payment_id
-    WHERE m.platform = 4 AND m.type IN ('charge', 'payment') AND m.available_at >= ${from}
+    WHERE m.platform = 4 AND m.type IN ('charge', 'payment') AND m.available_at >= ${from.toISOString()}
     GROUP BY 1 ORDER BY 1
   `);
-  console.log('\ncharges with a card country, by month released:');
+  console.log('\ncharges with a country, by month released:');
   for (const r of rows as unknown as { month: string; charges: number; with_country: number }[]) {
     console.log(`  ${r.month}  ${r.with_country}/${r.charges}`);
   }
