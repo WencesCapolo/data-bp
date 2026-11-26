@@ -1,8 +1,9 @@
-// First load of the three later Stripe mirrors: clientes, disputadas,
-// transferencias.
+// First load of the later Stripe mirrors: clientes, disputadas, transferencias
+// and what each paid transferencia carried (payout-ledger).
 //
 //   tsx --env-file=.env scripts/backfill-stripe-ledger.ts --from=2021-01-01
 //   tsx --env-file=.env scripts/backfill-stripe-ledger.ts --from=2021-01-01 --only=payouts
+//   tsx --env-file=.env scripts/backfill-stripe-ledger.ts --from=2026-08-01 --only=payouts,payout-ledger
 //
 // The cron does all three on every run (docs/adr/0006), but the two windowed
 // ones refuse to guess a start date: with no watermark they fail rather than
@@ -38,13 +39,14 @@ async function main() {
   const from = arg('from') ? new Date(`${arg('from')}T00:00:00Z`) : undefined;
   const to = arg('to') ? new Date(`${arg('to')}T00:00:00Z`) : new Date();
 
-  const { customersUseCase, disputesUseCase, payoutsUseCase, skipped } = composeGatewayFeeSync();
+  const { customersUseCase, disputesUseCase, payoutsUseCase, payoutLedgerUseCase, skipped } =
+    composeGatewayFeeSync();
   for (const s of skipped) console.warn(`skipping ${s.slug}: ${s.missing} not set`);
   if (!customersUseCase && !disputesUseCase && !payoutsUseCase) {
     throw new Error('no gateway exposes these mirrors — set STRIPE_SECRET_KEY');
   }
-  if (!from && (want('disputes') || want('payouts'))) {
-    throw new Error('--from=YYYY-MM-DD is required for disputes and payouts');
+  if (!from && (want('disputes') || want('payouts') || want('payout-ledger'))) {
+    throw new Error('--from=YYYY-MM-DD is required for disputes, payouts and payout-ledger');
   }
 
   const customers = new DrizzleGatewayCustomerRepository();
@@ -64,6 +66,9 @@ async function main() {
   }
   if (want('payouts') && payoutsUseCase) {
     report(await payoutsUseCase.execute({ from, to }));
+  }
+  if (want('payout-ledger') && payoutLedgerUseCase) {
+    report(await payoutLedgerUseCase.execute({ from, to }));
   }
 
   console.log(

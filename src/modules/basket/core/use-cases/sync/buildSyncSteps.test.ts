@@ -30,6 +30,7 @@ function everySource(): SyncSources {
       customers: stub(),
       disputes: stub(),
       payouts: stub(),
+      payoutLedger: stub(),
       mirrorWindow: { overlapDays: 30, windowDays: 30 },
     },
     fxRates: stub(),
@@ -47,7 +48,7 @@ describe('the full list', () => {
       STEP.tournaments, STEP.teams, STEP.users, STEP.payments, STEP.content,
       STEP.sheets, STEP.fixtures, STEP.dataMasters,
       STEP.fees, STEP.subscriptions, STEP.customers, STEP.disputes, STEP.payouts,
-      STEP.fxRates, STEP.exportInbox,
+      STEP.payoutLedger, STEP.fxRates, STEP.exportInbox,
       STEP.reconcile, STEP.refresh,
     ]);
   });
@@ -64,6 +65,7 @@ describe('the full list', () => {
     const steps = buildSyncSteps(everySource());
     const after = (name: string) => steps.find((s) => s.name === name)?.after ?? [];
     expect(after(STEP.fxRates)).toContain(STEP.fees);
+    expect(after(STEP.payoutLedger)).toContain(STEP.payouts);
     expect(after(STEP.reconcile)).toEqual(expect.arrayContaining([STEP.fees, STEP.exportInbox]));
     expect(after(STEP.refresh)).toContain(STEP.reconcile);
     expect(() => new RunSyncUseCase(steps)).not.toThrow();
@@ -85,6 +87,7 @@ describe('the full list', () => {
       [STEP.customers]: 'never-fatal',
       [STEP.disputes]: 'never-fatal',
       [STEP.payouts]: 'never-fatal',
+      [STEP.payoutLedger]: 'never-fatal',
       [STEP.fxRates]: 'never-fatal',
       [STEP.exportInbox]: 'never-fatal',
       [STEP.reconcile]: 'never-fatal',

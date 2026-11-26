@@ -17,6 +17,7 @@ function toDbValues(m: GatewayMovementProps) {
     netAmount: m.netAmount.toFixed(2),
     occurredAt: m.occurredAt,
     availableAt: m.availableAt,
+    payoutId: m.payoutId,
   };
 }
 
@@ -40,6 +41,7 @@ implements IGatewayMirrorRepository<GatewayMovementProps> {
             // A release date MP had not scheduled yet arrives in a later file;
             // a later file that again leaves it empty never erases it.
             availableAt: sql`COALESCE(excluded.available_at, ${basketGatewayMovements.availableAt})`,
+            payoutId: sql`COALESCE(excluded.payout_id, ${basketGatewayMovements.payoutId})`,
             syncedAt: sql`NOW()`,
           },
         });

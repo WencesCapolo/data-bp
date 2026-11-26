@@ -297,6 +297,7 @@ function composeGateways(): SyncSources['gateways'] {
     customers: g.customersUseCase ?? undefined,
     disputes: g.disputesUseCase ?? undefined,
     payouts: g.payoutsUseCase ?? undefined,
+    payoutLedger: g.payoutLedgerUseCase ?? undefined,
     // Wider windows than fees because both mirrors are sparse — disputes and
     // payouts number in the hundreds a year, not the hundred-thousands — so a
     // 7-day slice would spend requests on empty windows. Longer overlap too: a

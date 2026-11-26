@@ -57,6 +57,7 @@ choice is a fact about the object rather than a preference:
 | clientes | full refresh | the email is edited long after creation, and the list endpoint filters on `created` only — the same trap as cancellation |
 | disputadas | window + overlap | a dispute is opened once and closes within weeks |
 | transferencias | window + overlap | a payout's status settles within days |
+| payout-ledger | window + overlap | what a payout carried, read once it is `paid`; same window as transferencias |
 
 So there are exactly two use cases behind all five mirrors —
 `SyncGatewayWindowMirrorUseCase` and `SyncGatewayFullMirrorUseCase`, generic over

@@ -25,4 +25,7 @@ export interface GatewayMovementProps {
   /** When the movement reaches the available balance (a sale's release, a late
    *  refund's own day), or null when the Provider has not scheduled it. */
   availableAt: Date | null;
+  /** The Stripe payout that carried it to the bank; null for MercadoPago,
+   *  whose ALLReport does not say which withdrawal took the money. */
+  payoutId: string | null;
 }

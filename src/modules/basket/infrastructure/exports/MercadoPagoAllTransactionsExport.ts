@@ -127,6 +127,7 @@ function toMovement(id: string, row: Record<string, string>): GatewayMovementPro
     netAmount: net,
     occurredAt: parseDate(row.transaction_date),
     availableAt: availableAt(row),
+    payoutId: null,
   };
 }
 

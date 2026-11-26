@@ -21,6 +21,7 @@ import type { FixtureMatchProps } from '@basket/core/entities/FixtureMatch';
 import type { GatewayCustomerProps } from '@basket/core/entities/GatewayCustomer';
 import type { GatewayDisputeProps } from '@basket/core/entities/GatewayDispute';
 import type { GatewayPayoutProps } from '@basket/core/entities/GatewayPayout';
+import type { GatewayMovementProps } from '@basket/core/entities/GatewayMovement';
 import type { PaymentUploadRow } from '@basket/core/dtos/PaymentUploadDTO';
 import { LoadUsersFromCsvUseCase } from './LoadUsersFromCsvUseCase';
 import { LoadPaymentsFromCsvUseCase } from './LoadPaymentsFromCsvUseCase';
@@ -53,6 +54,7 @@ export const STEP = {
   customers: 'customers',
   disputes: 'disputes',
   payouts: 'payouts',
+  payoutLedger: 'payout-ledger',
   fxRates: 'fx-rates',
   exportInbox: 'export-inbox',
   reconcile: 'reconcile',
@@ -403,6 +405,20 @@ export function payoutsStep(d: {
   return {
     name: STEP.payouts,
     policy: 'never-fatal',
+    run: async () => ({ gatewayMirrors: await d.useCase.execute(d.window) }),
+  };
+}
+
+/** 8b. What each paid payout carried. After the payouts, so a payout this run
+ *  saw paid is in basket_gateway_payouts when cashflow joins its ledger to it. */
+export function payoutLedgerStep(d: {
+  useCase: SyncGatewayWindowMirrorUseCase<GatewayMovementProps>;
+  window: MirrorWindow;
+}): NeverFatalStep {
+  return {
+    name: STEP.payoutLedger,
+    policy: 'never-fatal',
+    after: [STEP.payouts],
     run: async () => ({ gatewayMirrors: await d.useCase.execute(d.window) }),
   };
 }

@@ -13,12 +13,15 @@ import { SyncGatewayFeesUseCase } from '@basket/core/use-cases/sync/SyncGatewayF
 import { StripeCustomerFetcher } from '@basket/infrastructure/gateways/StripeCustomerFetcher';
 import { StripeDisputeFetcher } from '@basket/infrastructure/gateways/StripeDisputeFetcher';
 import { StripePayoutFetcher } from '@basket/infrastructure/gateways/StripePayoutFetcher';
+import { StripePayoutLedgerFetcher } from '@basket/infrastructure/gateways/StripePayoutLedgerFetcher';
 import { DrizzleGatewayCustomerRepository } from '@basket/infrastructure/db/repositories/DrizzleGatewayCustomerRepository';
 import { DrizzleGatewayDisputeRepository } from '@basket/infrastructure/db/repositories/DrizzleGatewayDisputeRepository';
 import { DrizzleGatewayPayoutRepository } from '@basket/infrastructure/db/repositories/DrizzleGatewayPayoutRepository';
+import { DrizzleGatewayMovementRepository } from '@basket/infrastructure/db/repositories/DrizzleGatewayMovementRepository';
 import type { GatewayCustomerProps } from '@basket/core/entities/GatewayCustomer';
 import type { GatewayDisputeProps } from '@basket/core/entities/GatewayDispute';
 import type { GatewayPayoutProps } from '@basket/core/entities/GatewayPayout';
+import type { GatewayMovementProps } from '@basket/core/entities/GatewayMovement';
 import type { GatewayFullSource, GatewayWindowSource } from '@basket/core/ports/IGatewayMirror';
 import {
   SyncGatewayFullMirrorUseCase,
@@ -46,6 +49,9 @@ export interface ComposedGatewayFeeSync {
   disputesUseCase: SyncGatewayWindowMirrorUseCase<GatewayDisputeProps> | null;
   /** Money leaving the Provider for the bank. Windowed on creation. */
   payoutsUseCase: SyncGatewayWindowMirrorUseCase<GatewayPayoutProps> | null;
+  /** What each paid payout carried, as Balance Movements. Windowed on the
+   *  payout's creation, like the payouts. */
+  payoutLedgerUseCase: SyncGatewayWindowMirrorUseCase<GatewayMovementProps> | null;
   /** Slugs that ended up wired, so callers can report an empty run honestly. */
   slugs: string[];
   /** Gateways skipped for want of a credential, and which env var was missing. */
@@ -70,6 +76,7 @@ export function composeGatewayFeeSync(
   const customerFetchers: GatewayFullSource<GatewayCustomerProps>[] = [];
   const disputeFetchers: GatewayWindowSource<GatewayDisputeProps>[] = [];
   const payoutFetchers: GatewayWindowSource<GatewayPayoutProps>[] = [];
+  const payoutLedgerFetchers: GatewayWindowSource<GatewayMovementProps>[] = [];
   const skipped: { slug: string; missing: string }[] = [];
 
   const countRetry = (slug: string) => () => countGatewayRetry(slug);
@@ -90,6 +97,7 @@ export function composeGatewayFeeSync(
       customerFetchers.push(new StripeCustomerFetcher({ secretKey: key, ...stripe }));
       disputeFetchers.push(new StripeDisputeFetcher({ secretKey: key, ...stripe }));
       payoutFetchers.push(new StripePayoutFetcher({ secretKey: key, ...stripe }));
+      payoutLedgerFetchers.push(new StripePayoutLedgerFetcher({ secretKey: key, ...stripe }));
     } else {
       skipped.push({ slug: 'stripe', missing: 'STRIPE_SECRET_KEY' });
     }
@@ -163,6 +171,14 @@ export function composeGatewayFeeSync(
           'payouts',
           payoutFetchers,
           new DrizzleGatewayPayoutRepository(),
+          syncState(),
+        )
+      : null,
+    payoutLedgerUseCase: payoutLedgerFetchers.length
+      ? new SyncGatewayWindowMirrorUseCase(
+          'payout-ledger',
+          payoutLedgerFetchers,
+          new DrizzleGatewayMovementRepository(),
           syncState(),
         )
       : null,
